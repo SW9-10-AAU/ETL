@@ -1,40 +1,20 @@
-from connect import connect_to_db
 from dotenv import load_dotenv
-import shapely
-from shapely import LineString
+from connect import connect_to_db
+from create_tables import create_tables
+from construct_trajs_stops import construct_trajectories_and_stops
 
 def main():
     load_dotenv()
     
     connection = connect_to_db() 
     
-    cur = connection.cursor()
+    # Create tables Trajectory and Stop
+    create_tables(connection)
     
-    # Retrieve "long" trajectories from Materialized View in DW
-    cur.execute("""--sql
-                SELECT traj FROM linestring_test.trajectories;
-                """)
-    trajectories = cur.fetchall()
+    # Construct Trajectories and Stops from the Points Materialized View 
+    construct_trajectories_and_stops(connection)
     
-    print(trajectories)
-    # [(BINARY_ENCODING,), (BINARY_ENCODING,), (BINARY_ENCODING,)]
-    
-    for (traj,) in trajectories:
-        geom : LineString = shapely.from_wkb(traj)  # decode into Shapely geometry
-        print(geom)            # -> LINESTRING (...)
-        print(geom.geom_type)  # -> 'LineString'
-        print(list(geom.coords))
-    
-    
-    # Create new tables: 
-    # LineString:   ls_trajectory, ls_stop
-    # SOC:          soc_trajectory, soc_stop
-    
-    
-    # Split long trajectories into ls_trajectories and ls_stops + soc format
-    
-    
-    # Upload to DB
-    
+    connection.close()
+     
 if __name__ == "__main__":
     main()
