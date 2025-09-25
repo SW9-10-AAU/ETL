@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="DataSourcePerFileMappings">
+    <file url="mock:///PostgreSQL Fragment (mat_points_view.py:241).sql" value="cc3e07f9-a8ca-4578-9935-bf06f1610e88" />
+    <file url="file://$PROJECT_DIR$/src/mat_points_view.py" value="cc3e07f9-a8ca-4578-9935-bf06f1610e88" />
+  </component>
+</project>

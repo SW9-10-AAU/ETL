@@ -9,9 +9,11 @@ ETL for trajectories
    - Win: `.\.venv\Scripts\Activate.ps1`
    - Mac: `source .venv/bin/activate`
 4. Install requirements: `pip install -r requirements.txt` 
-py
+
 ## Run
 1. Activate environment
    - Win: `.\.venv\Scripts\Activate.ps1`
    - Mac: `source .venv/bin/activate`
-2. Run script: `python ./src/main.py`
+2. Run script: 
+   - Win: `python ./src/main.py`
+   - Mac: `python3 ./src/main.py`
