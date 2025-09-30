@@ -1,7 +1,7 @@
 from psycopg import Connection
 
-def create_tables(connection : Connection):
-    cur = connection.cursor()
+def create_tables(conn : Connection):
+    cur = conn.cursor()
     
     # Schema
     cur.execute("""--sql
@@ -38,5 +38,5 @@ def create_tables(connection : Connection):
     cur.execute("CREATE INDEX IF NOT EXISTS stop_time_idx ON ls_experiment.stop_poly (ts_start, ts_end);")
     cur.execute("CREATE INDEX IF NOT EXISTS stop_geom_idx ON ls_experiment.stop_poly USING GIST (geom);")
     
+    conn.commit()
     cur.close()
-    connection.commit()
