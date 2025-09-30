@@ -17,3 +17,15 @@ ETL for trajectories
 2. Run script: 
    - Win: `python ./src/main.py`
    - Mac: `python3 ./src/main.py`
+
+
+## Functions
+- `mat_points_view.py`: Create a Materialized View for points
+
+### `mat_points_view.py`
+Creates a materialized view named `points` in the PostgreSQL database (dw/ls_experiment/points). This view aggregates AIS points from a single MMSI taken from the `dw.fact.ais_point_fact` table. The resulting view contains six columns: `mmsi`, `geom` containing x, y, timestamp, `sog`, `cog`, `delta_sog`, `delta_depth_draught`.
+
+This prepares points that can then be used for trajectory generation with stops.
+### Run
+- Win: `python ./src/mat_points_view.py`
+- Mac: `python3 src/mat_points_view.py`
