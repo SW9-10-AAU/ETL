@@ -3,21 +3,23 @@ from dotenv import load_dotenv
 
 def main():
     load_dotenv()
-    connection = connect_to_db()
-    cur = connection.cursor()
+    conn = connect_to_db()
+    cur = conn.cursor()
 
     # Example MMSI for testing
-    mmsi = 210051000
+    mmsi = "210051000, 636015105"
 
     # language=SQL
     cur.execute("""
                 DROP MATERIALIZED VIEW IF EXISTS ls_experiment.POINTS;
+                """)
     
+    cur.execute(f"""
                 -- POINTM's with MMSI
                 CREATE MATERIALIZED VIEW IF NOT EXISTS ls_experiment.POINTS AS
                 SELECT
                     V.mmsi,
-                    ST_MakePointM(
+                    ST_PointM(
                         ST_X(AIS.geom::geometry),
                         ST_Y(AIS.geom::geometry),
                         EXTRACT(
@@ -30,6 +32,7 @@ def main():
                                 tim.second_no::double precision
                             )
                         )::double precision
+                        ,4326
                     ) AS geom,
                     AIS.sog,
                     AIS.cog,
@@ -40,22 +43,25 @@ def main():
                 JOIN dim.time_dim TIM ON TIM.time_id = AIS.time_id
                 JOIN dim.date_dim DAT ON DAT.date_id = AIS.date_id
                 WHERE AIS.lat <> 91::double precision
-                  AND V.mmsi = %s;
+				AND V.mmsi IN ({mmsi});
+				""")
 
-                -- index for lookup
-                CREATE INDEX IF NOT EXISTS POINTS_IDX
-                  ON ls_experiment.POINTS USING HASH (mmsi);
+     # Create index for lookup
+    cur.execute("""--sql
+        CREATE INDEX IF NOT EXISTS POINTS_IDX
+        ON ls_experiment.POINTS USING HASH (mmsi);
+    """)
+    
+    # Create spatial index
+    cur.execute("""--sql
+        CREATE INDEX IF NOT EXISTS POINTS_GEOM_IDX
+        ON ls_experiment.POINTS USING GIST (geom) INCLUDE (mmsi);
+    """)
 
-                -- spatial index
-                CREATE INDEX IF NOT EXISTS POINTS_GEOM_IDX
-                  ON ls_experiment.POINTS USING GIST (geom) INCLUDE (mmsi);
-                """,
-                (mmsi))
+    print("Created materialized view and indexes")
 
-    print("Created table")
-
+    conn.commit()
     cur.close()
-    connection.commit()
 
 if __name__ == "__main__":
     main()
