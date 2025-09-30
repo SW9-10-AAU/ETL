@@ -1,12 +1,13 @@
 from connect import connect_to_db
 from dotenv import load_dotenv
-import shapely
-from shapely import LineString
 
 def main():
     load_dotenv()
     connection = connect_to_db()
     cur = connection.cursor()
+
+    # Example MMSI for testing
+    mmsi = 210051000
 
     # language=SQL
     cur.execute("""
@@ -39,7 +40,7 @@ def main():
                 JOIN dim.time_dim TIM ON TIM.time_id = AIS.time_id
                 JOIN dim.date_dim DAT ON DAT.date_id = AIS.date_id
                 WHERE AIS.lat <> 91::double precision
-                  AND V.mmsi = 210051000;
+                  AND V.mmsi = %s;
 
                 -- index for lookup
                 CREATE INDEX IF NOT EXISTS POINTS_IDX
@@ -48,9 +49,8 @@ def main():
                 -- spatial index
                 CREATE INDEX IF NOT EXISTS POINTS_GEOM_IDX
                   ON ls_experiment.POINTS USING GIST (geom) INCLUDE (mmsi);
-                """)
-
-    #trajectories = cur.fetchall()
+                """,
+                (mmsi))
 
     print("Created table")
 
