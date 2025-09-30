@@ -2,7 +2,7 @@ import psycopg
 import sys
 import os
 
-def connect_to_db():
+def connect_to_db() -> psycopg.Connection:
     db_url = os.getenv('DATABASE_URL')
     
     if not db_url:
