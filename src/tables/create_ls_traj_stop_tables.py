@@ -1,8 +1,8 @@
 from psycopg import Connection
 
-def create_tables(conn : Connection):
+def create_ls_traj_stop_tables(conn: Connection):
     cur = conn.cursor()
-    
+
     # Schema
     cur.execute("""--sql
         CREATE SCHEMA IF NOT EXISTS ls_experiment;
@@ -22,7 +22,7 @@ def create_tables(conn : Connection):
     cur.execute("CREATE INDEX IF NOT EXISTS trajectory_mmsi_idx ON ls_experiment.trajectory_ls (mmsi);")
     cur.execute("CREATE INDEX IF NOT EXISTS trajectory_time_idx ON ls_experiment.trajectory_ls (ts_start, ts_end);")
     cur.execute("CREATE INDEX IF NOT EXISTS trajectory_geom_idx ON ls_experiment.trajectory_ls USING GIST (geom);")
-    print("Created trajectory table")
+    print("Created LS trajectory table")
 
     # Stop table
     cur.execute("""--sql
@@ -38,7 +38,7 @@ def create_tables(conn : Connection):
     cur.execute("CREATE INDEX IF NOT EXISTS stop_mmsi_idx ON ls_experiment.stop_poly (mmsi);")
     cur.execute("CREATE INDEX IF NOT EXISTS stop_time_idx ON ls_experiment.stop_poly (ts_start, ts_end);")
     cur.execute("CREATE INDEX IF NOT EXISTS stop_geom_idx ON ls_experiment.stop_poly USING GIST (geom);")
-    print("Created stop table")
+    print("Created LS stop table")
     
     conn.commit()
     cur.close()
