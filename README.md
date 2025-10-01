@@ -29,3 +29,6 @@ This prepares points that can then be used for trajectory generation with stops.
 ### Run
 - Win: `python ./src/mat_points_view.py`
 - Mac: `python3 src/mat_points_view.py`
+
+## Tests
+-  `python -m unittest discover -s tests`
