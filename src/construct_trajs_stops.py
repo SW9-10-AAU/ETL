@@ -73,7 +73,9 @@ def construct_trajectories_and_stops(conn : Connection):
         if len(traj) > 1:
             line = LineString(traj)
             insert_trajectory(cur, mmsi, traj[0].coords[0][2], traj[-1].coords[0][2], line)
-        
+    
+    print("Constructed trajectories and stops")
+    
     conn.commit()
     cur.close()
     
@@ -93,7 +95,7 @@ def get_points(cur : Cursor) -> list:
     # Retrieve points from Materialized View in DW
     cur.execute("""--sql
                 SELECT mmsi, ST_AsBinary(geom) 
-                FROM linestring_test.points
+                FROM ls_experiment.points
                 ORDER BY mmsi, ST_M(geom);
                 """)
     return cur.fetchall() 
