@@ -1,9 +1,6 @@
-from connect import connect_to_db
-from dotenv import load_dotenv
+from psycopg import Connection
 
-def main():
-    load_dotenv()
-    conn = connect_to_db()
+def mat_points_view(conn: Connection):
     cur = conn.cursor()
 
     # Example MMSI for testing
@@ -58,10 +55,10 @@ def main():
         ON ls_experiment.POINTS USING GIST (geom) INCLUDE (mmsi);
     """)
 
-    print("Created materialized view and indexes")
+    print("Created materialized view POINTS")
 
     conn.commit()
     cur.close()
 
 if __name__ == "__main__":
-    main()
+    mat_points_view()
