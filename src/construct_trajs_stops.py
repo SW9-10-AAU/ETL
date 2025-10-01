@@ -35,10 +35,11 @@ def construct_trajectories_and_stops(conn : Connection):
             if dt < 60 and dist < 1000:
                 # break stop
                 if (len(stop) > 1): # build Polygon if stop consists of at least two points
-                    poly = MultiPoint(stop).convex_hull.buffer(0)
+                    # poly = MultiPoint(stop).convex_hull.buffer(0)
+                    line = LineString(stop)
                     ts_start = stop[0].coords[0][2]
                     ts_end   = stop[-1].coords[0][2]
-                    insert_stop(cur, mmsi, ts_start, ts_end, poly)
+                    insert_stop(cur, mmsi, ts_start, ts_end, line)
                     
                     # reset stop
                     stop = []
@@ -81,15 +82,15 @@ def construct_trajectories_and_stops(conn : Connection):
     
 def insert_trajectory(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, line: LineString):
     cur.execute("""--sql
-        INSERT INTO ls_experiment.trajectory_ls (mmsi, ts_start, ts_end, geom)
-        VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_Force3DM(ST_GeomFromWKB(%s, 4326)))
+        INSERT INTO ls_experiment.traj_stop_ls_naive_new (mmsi, ts_start, ts_end, traj_stop_geom, is_traj)
+        VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_Force3DM(ST_GeomFromWKB(%s, 4326)), TRUE)
     """, (mmsi, ts_start, ts_end, line.wkb))
 
-def insert_stop(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, poly):
+def insert_stop(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, line: LineString):
     cur.execute("""--sql
-        INSERT INTO ls_experiment.stop_poly (mmsi, ts_start, ts_end, geom)
-        VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_GeomFromWKB(%s, 4326))
-    """, (mmsi, ts_start, ts_end, poly.wkb))
+        INSERT INTO ls_experiment.traj_stop_ls_naive_new (mmsi, ts_start, ts_end, traj_stop_geom, is_traj)
+        VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_Force3DM(ST_GeomFromWKB(%s, 4326)), FALSE)
+    """, (mmsi, ts_start, ts_end, line.wkb))
 
 def get_points(cur : Cursor) -> list:
     # Retrieve points from Materialized View in DW

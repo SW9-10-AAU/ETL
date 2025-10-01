@@ -11,7 +11,7 @@ def main():
     connection = connect_to_db() 
     
     # Create LS tables Trajectory and Stop
-    #create_ls_traj_stop_tables(connection)
+    create_ls_traj_stop_tables(connection)
 
     # Create CS tables Trajectory and Stop
     #create_cs_traj_stop_tables(connection)
@@ -20,7 +20,7 @@ def main():
     #mat_points_view(connection)
     
     # Construct Trajectories and Stops from the Points Materialized View 
-    #construct_trajectories_and_stops(connection)
+    construct_trajectories_and_stops(connection)
     
     connection.close()
      

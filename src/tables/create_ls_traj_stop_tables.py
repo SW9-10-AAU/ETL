@@ -39,6 +39,20 @@ def create_ls_traj_stop_tables(conn: Connection):
     cur.execute("CREATE INDEX IF NOT EXISTS stop_time_idx ON ls_experiment.stop_poly (ts_start, ts_end);")
     cur.execute("CREATE INDEX IF NOT EXISTS stop_geom_idx ON ls_experiment.stop_poly USING GIST (geom);")
     print("Created LS stop table")
+
+     # Combined trajectory/stop table
+    cur.execute("""--sql
+        CREATE TABLE IF NOT EXISTS ls_experiment.traj_stop_ls_naive_new (
+            traj_stop_id SERIAL PRIMARY KEY,
+            mmsi BIGINT NOT NULL,
+            ts_start TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+            ts_end   TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+            traj_stop_geom geometry(LINESTRINGM, 4326),
+            is_traj BOOLEAN NOT NULL,
+            CONSTRAINT time_check CHECK (ts_start < ts_end)
+        );
+    """)
+    print("Created combined LS traj/stop table")
     
     conn.commit()
     cur.close()
