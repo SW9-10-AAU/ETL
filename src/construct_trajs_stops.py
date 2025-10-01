@@ -2,14 +2,14 @@ from psycopg import Connection, Cursor
 from shapely import from_wkb, Point, LineString, MultiPoint
 from geopy.distance import geodesic
 
-# Threshold constants
-STOP_SOG_THRESHOLD = 1.0      # knots
-STOP_DISTANCE_THRESHOLD = 2000 # meters
-STOP_TIME_THRESHOLD = 5400     # seconds (1.5 h)
-MIN_STOP_POINTS = 2            # minimum points in a stop
-MIN_STOP_DURATION = 5400       # seconds (1.5 h)
-MERGE_DISTANCE_THRESHOLD = 2000 # meters
-MERGE_TIME_THRESHOLD = 3600    # seconds (1 h)
+# Threshold constants matching the paper
+STOP_SOG_THRESHOLD = 1.0          # knots, vT
+STOP_DISTANCE_THRESHOLD = 2000   # meters, disT
+STOP_TIME_THRESHOLD = 5400       # seconds, tT (1.5 h)
+MIN_STOP_POINTS = 10             # Δn
+MIN_STOP_DURATION = 5400         # seconds, Δstopt (1.5 h)
+MERGE_DISTANCE_THRESHOLD = 200  # meters, Δd
+MERGE_TIME_THRESHOLD = 86400     # seconds, Δt (1 d)
 
 def distance_m(p1: Point, p2: Point) -> float:
     """Return distance between two Shapely Points in meters."""
