@@ -14,7 +14,7 @@ def main():
     #create_ls_traj_stop_tables(connection)
 
     # Create CS tables Trajectory and Stop
-    #create_cs_traj_stop_tables(connection)
+    create_cs_traj_stop_tables(connection)
 
     # Create Materialized View POINTS
     #mat_points_view(connection)
