@@ -7,6 +7,34 @@ def encode_lonlat_to_cellid(lon: float, lat: float, zoom: int = ZOOM) -> int:
     x, y = mercantile.tile(lon, lat, zoom).x, mercantile.tile(lon, lat, zoom).y
     return 100_000_000_000_000 + (x * 10_000_000) + y
 
+def bresenham(x0, y0, x1, y1):
+    """Yield all (x, y) tiles between (x0, y0) and (x1, y1) using Bresenham's algorithm."""
+    dx = abs(x1 - x0)
+    dy = abs(y1 - y0)
+    x, y = x0, y0
+    sx = 1 if x0 < x1 else -1
+    sy = 1 if y0 < y1 else -1
+    if dx > dy:
+        err = dx / 2.0
+        while x != x1:
+            yield x, y
+            err -= dy
+            if err < 0:
+                y += sy
+                err += dx
+            x += sx
+        yield x, y
+    else:
+        err = dy / 2.0
+        while y != y1:
+            yield x, y
+            err -= dx
+            if err < 0:
+                x += sx
+                err += dy
+            y += sy
+        yield x, y
+
 def main():
     from dotenv import load_dotenv
     from connect import connect_to_db
@@ -15,18 +43,28 @@ def main():
     connection = connect_to_db()
     cur = connection.cursor()
 
-    cur.execute("SELECT trajectory_id, mmsi, ts_start, ts_end, ST_AsBinary(geom) FROM ls_experiment.trajectory_ls_naive;")
+    cur.execute(
+        "SELECT trajectory_id, mmsi, ts_start, ts_end, ST_AsBinary(geom) FROM ls_experiment.trajectory_ls;")
     rows = cur.fetchall()
 
     for row in rows:
         traj_id, mmsi, ts_start, ts_end, geom_wkb = row
         linestring: LineString = from_wkb(geom_wkb)
-        cellids = [encode_lonlat_to_cellid(lon, lat) for lon, lat, *_ in linestring.coords]
-        # Store as array (Postgres int[]), or as text (comma-separated)
+        coords = list(linestring.coords)
+        cellids = []
+        for i in range(len(coords) - 1):
+            lon0, lat0 = coords[i][:2]
+            lon1, lat1 = coords[i + 1][:2]
+            x0, y0 = mercantile.tile(lon0, lat0, ZOOM).x, mercantile.tile(lon0, lat0, ZOOM).y
+            x1, y1 = mercantile.tile(lon1, lat1, ZOOM).x, mercantile.tile(lon1, lat1, ZOOM).y
+            for x, y in bresenham(x0, y0, x1, y1):
+                cellid = 100_000_000_000_000 + (x * 10_000_000) + y
+                cellids.append(cellid)
+        cellids = list(cellids)
         cur.execute("""
-            INSERT INTO ls_experiment.trajectory_cs (mmsi, ts_start, ts_end, trajectory)
-            VALUES (%s, %s, %s, %s)
-        """, (mmsi, ts_start, ts_end, cellids))
+                    INSERT INTO ls_experiment.trajectory_cs (mmsi, ts_start, ts_end, trajectory)
+                    VALUES (%s, %s, %s, %s)
+                    """, (mmsi, ts_start, ts_end, cellids))
     connection.commit()
     cur.close()
     connection.close()
@@ -34,23 +72,6 @@ def main():
 if __name__ == "__main__":
     main()
 
-
-# def fetch_trajectories(conn: Connection):
-#     cur = conn.cursor()
-#
-#     cur.execute("SELECT trajectory_id, ST_AsBinary(geom) FROM ls_experiment.trajectory_ls_naive;")
-#     rows = cur.fetchall()
-#     cur.close()
-#     return rows
-#
-#
-# def decode_trajectory(row) -> dict[int, int, float, float, LineString]:
-#     traj_id: int = row[0]
-#     mmsi: int = row[1]
-#     ts_start: float = row[2]
-#     ts_end: float = row[3]
-#     trajectory: LineString = from_wkb(row[4])
-#     return traj_id, mmsi, ts_start, ts_end, trajectory
 #
 #
 # def encode_trajectory(cur: Connection, traj_id: int, trajectory: LineString):
