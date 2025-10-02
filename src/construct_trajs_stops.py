@@ -11,6 +11,10 @@ MIN_STOP_DURATION = 5400         # seconds, Δstopt (1.5 h)
 MERGE_DISTANCE_THRESHOLD = 200  # meters, Δd.  (changed from 2km)
 MERGE_TIME_THRESHOLD = 86400     # seconds, Δt (1 d) (changed from 1h)
 
+def distance_m(p1: Point, p2: Point) -> float:
+    """Return distance between two Shapely Points in meters."""
+    return geodesic((p1.y, p1.x), (p2.y, p2.x)).meters
+
 def construct_trajectories_and_stops(conn: Connection):
     cur = conn.cursor()
     point_rows = get_points(cur)
@@ -106,7 +110,3 @@ def get_points(cur: Cursor) -> list:
         ORDER BY mmsi, ST_M(geom);
     """)
     return cur.fetchall()
-
-def distance_m(p1: Point, p2: Point) -> float:
-    """Return distance between two Shapely Points in meters."""
-    return geodesic((p1.y, p1.x), (p2.y, p2.x)).meters
