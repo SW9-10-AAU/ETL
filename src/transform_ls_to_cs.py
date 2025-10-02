@@ -1,5 +1,5 @@
 import mercantile
-from shapely import from_wkb, LineString
+from shapely import from_wkb, LineString, Polygon, Point
 
 ZOOM = 21
 
@@ -8,7 +8,6 @@ def encode_lonlat_to_cellid(lon: float, lat: float, zoom: int = ZOOM) -> int:
     return 100_000_000_000_000 + (x * 10_000_000) + y
 
 def bresenham(x0, y0, x1, y1):
-    """Yield all (x, y) tiles between (x0, y0) and (x1, y1) using Bresenham's algorithm."""
     dx = abs(x1 - x0)
     dy = abs(y1 - y0)
     x, y = x0, y0
@@ -35,20 +34,13 @@ def bresenham(x0, y0, x1, y1):
             y += sy
         yield x, y
 
-def main():
-    from dotenv import load_dotenv
-    from connect import connect_to_db
-
-    load_dotenv()
-    connection = connect_to_db()
+def transform_ls_trajectories_to_cs(connection):
     cur = connection.cursor()
-
     cur.execute(
-        "SELECT trajectory_id, mmsi, ts_start, ts_end, ST_AsBinary(geom) FROM ls_experiment.trajectory_ls;")
+        "SELECT trajectory_id, mmsi, ts_start, ts_end, ST_AsBinary(geom) FROM ls_experiment.trajectory_ls ORDER BY trajectory_id;")
     rows = cur.fetchall()
-
     for row in rows:
-        traj_id, mmsi, ts_start, ts_end, geom_wkb = row
+        _, mmsi, ts_start, ts_end, geom_wkb = row
         linestring: LineString = from_wkb(geom_wkb)
         coords = list(linestring.coords)
         cellids = []
@@ -60,19 +52,37 @@ def main():
             for x, y in bresenham(x0, y0, x1, y1):
                 cellid = 100_000_000_000_000 + (x * 10_000_000) + y
                 cellids.append(cellid)
-        cellids = list(cellids)
         cur.execute("""
-                    INSERT INTO ls_experiment.trajectory_cs (mmsi, ts_start, ts_end, trajectory)
-                    VALUES (%s, %s, %s, %s)
-                    """, (mmsi, ts_start, ts_end, cellids))
+            INSERT INTO ls_experiment.trajectory_cs (mmsi, ts_start, ts_end, trajectory)
+            VALUES (%s, %s, %s, %s)
+        """, (mmsi, ts_start, ts_end, cellids))
     connection.commit()
     cur.close()
-    connection.close()
 
-if __name__ == "__main__":
-    main()
+def transform_ls_stops_to_cs(connection):
+    cur = connection.cursor()
+    cur.execute(
+        "SELECT stop_id, mmsi, ts_start, ts_end, ST_AsBinary(geom) FROM ls_experiment.stop_poly ORDER BY stop_id;")
+    rows = cur.fetchall()
+    for row in rows:
+        _, mmsi, ts_start, ts_end, geom_wkb = row
+        polygon: Polygon = from_wkb(geom_wkb)
+        minx, miny, maxx, maxy = polygon.bounds
+        cellids = []
+        # Loop over all tiles in bounding box
+        for tile in mercantile.tiles(minx, miny, maxx, maxy, ZOOM):
+            tile_BBox = mercantile.bounds(tile)
+            lon, lat = ((tile_BBox.west + tile_BBox.east) / 2), ((tile_BBox.north + tile_BBox.south) / 2)
+            if polygon.contains(Point(lon, lat)):
+                cellid = 100_000_000_000_000 + (tile.x * 10_000_000) + tile.y
+                cellids.append(cellid)
+        cur.execute("""
+            INSERT INTO ls_experiment.stop_cs (mmsi, ts_start, ts_end, trajectory)
+            VALUES (%s, %s, %s, %s)
+        """, (mmsi, ts_start, ts_end, cellids))
+    connection.commit()
+    cur.close()
 
-#
 #
 # def encode_trajectory(cur: Connection, traj_id: int, trajectory: LineString):
 #     cur.execute("""--sql
