@@ -1,5 +1,5 @@
 from psycopg import Connection, Cursor
-from shapely import from_wkb, Point, LineString, MultiPoint
+from shapely import Polygon, from_wkb, Point, LineString, MultiPoint
 from geopy.distance import geodesic
 
 # Threshold constants matching the paper but with adjustmenst
@@ -27,9 +27,10 @@ def construct_trajectories_and_stops(conn: Connection):
         by_mmsi.setdefault(mmsi, []).append((point, sog))
 
     for mmsi, points in by_mmsi.items():
-        traj, stop = [], []
+        traj : list[Point] = []
+        stop : list[Point] = []
         prev = None
-        candidate_stops = []
+        candidate_stops : list[list[Point]] = []
 
         for p, s in points:
             t = p.coords[0][2]
@@ -66,7 +67,7 @@ def construct_trajectories_and_stops(conn: Connection):
             candidate_stops.append(stop)
 
         # Merge nearby candidate stops
-        merged_stops = []
+        merged_stops : list[list[Point]] = []
         if candidate_stops:
             merged = candidate_stops[0]
             for st in candidate_stops[1:]:
@@ -97,7 +98,7 @@ def insert_trajectory(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, li
         VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_Force3DM(ST_GeomFromWKB(%s, 4326)))
     """, (mmsi, ts_start, ts_end, line.wkb))
 
-def insert_stop(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, poly):
+def insert_stop(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, poly: Polygon):
     cur.execute("""
         INSERT INTO ls_experiment.stop_poly (mmsi, ts_start, ts_end, geom)
         VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_GeomFromWKB(%s, 4326))
