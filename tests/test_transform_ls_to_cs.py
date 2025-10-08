@@ -8,30 +8,30 @@ class TestEncodeLonLatToMVTCellId(unittest.TestCase):
     def test_HouHavn(self):
         lon, lat = 10.383365, 57.056374
         cell_id = transform.encode_lonlat_to_cellid(lon, lat)
-        self.assertEqual(cell_id, 111090630641880)
+        self.assertEqual(cell_id, 1_1109063_0641880)
 
     def test_toprightquadrant_VenoeHavn(self):
         lon, lat = 8.614294, 56.550693
         cell_id = transform.encode_lonlat_to_cellid(lon, lat)
-        self.assertEqual(cell_id, 110987570647260)
+        self.assertEqual(cell_id, 1_1098757_0647260)
 
     def test_topleftquadrant_Canada(self):
         lon, lat = -123.120231, 49.290563
 
         cell_id = transform.encode_lonlat_to_cellid(lon, lat)
-        self.assertEqual(cell_id, 103313480717620)
+        self.assertEqual(cell_id, 1_0331348_0717620)
 
     def test_bottomleftquadrant_BuenosAires(self):
         lon, lat = -57.853151, -34.469250
 
         cell_id = transform.encode_lonlat_to_cellid(lon, lat)
-        self.assertEqual(cell_id, 107115561262712)
+        self.assertEqual(cell_id, 1_0711556_1262712)
 
     def test_bottomrightquadrant_Melbourne(self):
         lon, lat = 144.944281, -37.815050
 
         cell_id = transform.encode_lonlat_to_cellid(lon, lat)
-        self.assertEqual(cell_id, 118929371286854)    
+        self.assertEqual(cell_id, 1_1892937_1286854)    
     
     
 class TestLineStringToCellString(unittest.TestCase):
