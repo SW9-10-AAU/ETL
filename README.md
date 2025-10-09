@@ -23,7 +23,7 @@ ETL for trajectories
 - `mat_points_view.py`: Creates a Materialized View for points
 - `create_cs_traj_stop_tables.py`: Creates CS tables for trajectory with stops
 
-### `mat_points_view.py`
+### [`mat_points_view.py`](/src/tables/mat_points_view.py)
 Creates a materialized view named `points` in the PostgreSQL database (dw/ls_experiment/points). This view aggregates AIS points from a single MMSI taken from the `dw.fact.ais_point_fact` table. The resulting view contains six columns: `mmsi`, `geom` containing x, y, timestamp, `sog`, `cog`, `delta_sog`, `delta_depth_draught`.
 
 This prepares points that can then be used for trajectory generation with stops.
