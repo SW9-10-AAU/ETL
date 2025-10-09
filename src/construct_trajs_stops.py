@@ -1,5 +1,5 @@
 from psycopg import Connection, Cursor
-from shapely import convex_hull, from_wkb, Point, LineString, Polygon, MultiPoint
+from shapely import from_wkb, Point, LineString, Polygon, MultiPoint
 from geopy.distance import geodesic
 
 def distance_m(p1: Point, p2: Point) -> float:
@@ -85,7 +85,7 @@ def insert_trajectory(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, li
         VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_Force3DM(ST_GeomFromWKB(%s, 4326)))
     """, (mmsi, ts_start, ts_end, line.wkb))
 
-def insert_stop(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, poly):
+def insert_stop(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, poly : Polygon):
     cur.execute("""--sql
         INSERT INTO ls_experiment.stop_poly (mmsi, ts_start, ts_end, geom)
         VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_GeomFromWKB(%s, 4326))
