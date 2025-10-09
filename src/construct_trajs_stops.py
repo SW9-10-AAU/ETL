@@ -13,7 +13,7 @@ MERGE_TIME_THRESHOLD = 86400     # seconds, Δt (1 d) (changed from 1h)
 
 def distance_m(p1: Point, p2: Point) -> float:
     """Return distance between two Shapely Points in meters."""
-    return geodesic((p1.y, p1.x), (p2.y, p2.x)).meters
+    return geodesic((p1.y, p1.x), (p2.y, p2.x)).meters # x and y is swapped because this is (lat,lon), and Shapely/PostGIS is (lon,lat)
 
 def construct_trajectories_and_stops(conn: Connection):
     cur = conn.cursor()
@@ -22,29 +22,29 @@ def construct_trajectories_and_stops(conn: Connection):
     # group by MMSI
     by_mmsi: dict[int, list[tuple[Point, float]]] = {}
     for (mmsi, geom, sog) in point_rows:
-        point = from_wkb(geom)
+        point = Point(from_wkb(geom)) # decode into Shapely Point
         sog = float(sog)
         by_mmsi.setdefault(mmsi, []).append((point, sog))
 
     for mmsi, points in by_mmsi.items():
         traj : list[Point] = []
         stop : list[Point] = []
-        prev = None
+        prev_point = None
         candidate_stops : list[list[Point]] = []
 
-        for point_geom, sog in points:
-            t = point_geom.coords[0][2]
-            if prev is None:
-                traj = [point_geom]
-                prev = point_geom
+        for point, sog in points:
+            t = point.coords[0][2] # epoch time
+            if prev_point is None:
+                traj = [point]
+                prev_point = point
                 continue
             
-            dt = t - prev.coords[0][2]
-            dist = distance_m(prev, point_geom)
+            dt = t - prev_point.coords[0][2]
+            dist = distance_m(prev_point, point)
 
             # Candidate stop condition
             if sog < STOP_SOG_THRESHOLD and dt < STOP_TIME_THRESHOLD and dist < STOP_DISTANCE_THRESHOLD:
-                stop.append(point_geom)
+                stop.append(point)
                 # finish trajectory
                 if len(traj) > 1:
                     insert_trajectory(cur, mmsi, traj[0].coords[0][2], traj[-1].coords[0][2], LineString(traj))
@@ -55,9 +55,9 @@ def construct_trajectories_and_stops(conn: Connection):
                     candidate_stops.append(stop)
                 stop = []
                 # continue trajectory
-                traj.append(point_geom)
+                traj.append(point)
 
-            prev = point_geom
+            prev_point = point
 
         # flush last trajectory
         if len(traj) > 1:
@@ -88,6 +88,8 @@ def construct_trajectories_and_stops(conn: Connection):
             ts_end   = st[-1].coords[0][2]
             if len(st) >= MIN_STOP_POINTS and (ts_end - ts_start) >= MIN_STOP_DURATION:
                 insert_stop(cur, mmsi, ts_start, ts_end, MultiPoint(st).convex_hull.buffer(0))
+            else:
+                print("Not valid stop") # TODO: Fix this
 
     conn.commit()
     cur.close()
@@ -105,6 +107,7 @@ def insert_stop(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, poly: Po
     """, (mmsi, ts_start, ts_end, poly.wkb))
 
 def get_points(cur: Cursor) -> list:
+    # Retrieve points from Materialized View in DW
     cur.execute("""
         SELECT mmsi, ST_AsBinary(geom), sog
         FROM ls_experiment.points
