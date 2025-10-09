@@ -44,13 +44,13 @@ def mat_points_view(conn: Connection):
 				""")
 
      # Create index for lookup
-    cur.execute("""--sql
+    cur.execute("""
         CREATE INDEX IF NOT EXISTS POINTS_IDX
         ON ls_experiment.POINTS USING HASH (mmsi);
     """)
     
     # Create spatial index
-    cur.execute("""--sql
+    cur.execute("""
         CREATE INDEX IF NOT EXISTS POINTS_GEOM_IDX
         ON ls_experiment.POINTS USING GIST (geom) INCLUDE (mmsi);
     """)
