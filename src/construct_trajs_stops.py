@@ -81,23 +81,23 @@ def construct_trajectories_and_stops(conn : Connection):
     
 def insert_trajectory(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, line: LineString):
     cur.execute("""
-        INSERT INTO ls_experiment.trajectory_ls (mmsi, ts_start, ts_end, geom)
-        VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_Force3DM(ST_GeomFromWKB(%s, 4326)))
-    """, (mmsi, ts_start, ts_end, line.wkb))
+            INSERT INTO ls_experiment.trajectory_ls (mmsi, ts_start, ts_end, geom)
+            VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_Force3DM(ST_GeomFromWKB(%s, 4326)))
+        """, (mmsi, ts_start, ts_end, line.wkb))
 
 def insert_stop(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, poly):
     cur.execute("""
-        INSERT INTO ls_experiment.stop_poly (mmsi, ts_start, ts_end, geom)
-        VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_GeomFromWKB(%s, 4326))
-    """, (mmsi, ts_start, ts_end, poly.wkb))
+            INSERT INTO ls_experiment.stop_poly (mmsi, ts_start, ts_end, geom)
+            VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_GeomFromWKB(%s, 4326))
+        """, (mmsi, ts_start, ts_end, poly.wkb))
 
 def get_points(cur : Cursor) -> list:
     # Retrieve points from Materialized View in DW
     cur.execute("""
-                SELECT mmsi, ST_AsBinary(geom) 
-                FROM ls_experiment.points
-                ORDER BY mmsi, ST_M(geom);
-                """)
+            SELECT mmsi, ST_AsBinary(geom) 
+            FROM ls_experiment.points
+            ORDER BY mmsi, ST_M(geom);
+        """)
     return cur.fetchall() 
         
     
