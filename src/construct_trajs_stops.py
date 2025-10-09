@@ -32,19 +32,19 @@ def construct_trajectories_and_stops(conn: Connection):
         prev = None
         candidate_stops : list[list[Point]] = []
 
-        for p, s in points:
-            t = p.coords[0][2]
+        for point_geom, sog in points:
+            t = point_geom.coords[0][2]
             if prev is None:
-                traj = [p]
-                prev = p
+                traj = [point_geom]
+                prev = point_geom
                 continue
             
             dt = t - prev.coords[0][2]
-            dist = distance_m(prev, p)
+            dist = distance_m(prev, point_geom)
 
             # Candidate stop condition
-            if s < STOP_SOG_THRESHOLD and dt < STOP_TIME_THRESHOLD and dist < STOP_DISTANCE_THRESHOLD:
-                stop.append(p)
+            if sog < STOP_SOG_THRESHOLD and dt < STOP_TIME_THRESHOLD and dist < STOP_DISTANCE_THRESHOLD:
+                stop.append(point_geom)
                 # finish trajectory
                 if len(traj) > 1:
                     insert_trajectory(cur, mmsi, traj[0].coords[0][2], traj[-1].coords[0][2], LineString(traj))
@@ -55,9 +55,9 @@ def construct_trajectories_and_stops(conn: Connection):
                     candidate_stops.append(stop)
                 stop = []
                 # continue trajectory
-                traj.append(p)
+                traj.append(point_geom)
 
-            prev = p
+            prev = point_geom
 
         # flush last trajectory
         if len(traj) > 1:
