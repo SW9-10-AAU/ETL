@@ -1,4 +1,3 @@
-from collections.abc import Iterator
 from psycopg import Connection
 import mercantile
 from mercantile import Tile
@@ -51,17 +50,20 @@ def bresenham(x0 : int, y0 : int, x1 : int, y1 : int) -> list[tuple[int, int]]:
 
 def transform_ls_trajectories_to_cs(connection : Connection):
     cur = connection.cursor()
-    cur.execute(
-        "SELECT trajectory_id, mmsi, ts_start, ts_end, ST_AsBinary(geom) FROM ls_experiment.trajectory_ls ORDER BY trajectory_id;")
+    cur.execute("""
+            SELECT trajectory_id, mmsi, ts_start, ts_end, ST_AsBinary(geom) 
+            FROM ls_experiment.trajectory_ls 
+            ORDER BY trajectory_id;
+        """)
     rows = cur.fetchall()
     for row in rows:
         _, mmsi, ts_start, ts_end, geom_wkb = row
         linestring: LineString = from_wkb(geom_wkb)
         cellstring = convert_linestring_to_cellstring(linestring)
         cur.execute("""
-            INSERT INTO ls_experiment.trajectory_cs (mmsi, ts_start, ts_end, trajectory)
-            VALUES (%s, %s, %s, %s)
-        """, (mmsi, ts_start, ts_end, cellstring))
+                INSERT INTO ls_experiment.trajectory_cs (mmsi, ts_start, ts_end, trajectory)
+                VALUES (%s, %s, %s, %s)
+            """, (mmsi, ts_start, ts_end, cellstring))
     connection.commit()
     cur.close()
     
@@ -81,17 +83,20 @@ def convert_linestring_to_cellstring(linestring : LineString) -> list[int]:
 
 def transform_ls_stops_to_cs(connection : Connection):
     cur = connection.cursor()
-    cur.execute(
-        "SELECT stop_id, mmsi, ts_start, ts_end, ST_AsBinary(geom) FROM ls_experiment.stop_poly ORDER BY stop_id;")
+    cur.execute("""
+            SELECT stop_id, mmsi, ts_start, ts_end, ST_AsBinary(geom) 
+            FROM ls_experiment.stop_poly 
+            ORDER BY stop_id;
+        """)
     rows = cur.fetchall()
     for row in rows:
         _, mmsi, ts_start, ts_end, geom_wkb = row
         polygon: Polygon = from_wkb(geom_wkb)
         cellstring = convert_polygon_to_cellstring(polygon)
         cur.execute("""
-            INSERT INTO ls_experiment.stop_cs (mmsi, ts_start, ts_end, trajectory)
-            VALUES (%s, %s, %s, %s)
-        """, (mmsi, ts_start, ts_end, cellstring))
+                INSERT INTO ls_experiment.stop_cs (mmsi, ts_start, ts_end, trajectory)
+                VALUES (%s, %s, %s, %s)
+            """, (mmsi, ts_start, ts_end, cellstring))
     connection.commit()
     cur.close()
     
