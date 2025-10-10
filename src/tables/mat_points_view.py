@@ -8,12 +8,12 @@ def mat_points_view(conn: Connection):
 
     # language=SQL
     cur.execute("""
-            DROP MATERIALIZED VIEW IF EXISTS ls_experiment.POINTS;
+            DROP MATERIALIZED VIEW IF EXISTS prototype1.POINTS;
         """)
     
     cur.execute(f"""
             -- POINTM's with MMSI
-            CREATE MATERIALIZED VIEW IF NOT EXISTS ls_experiment.POINTS AS
+            CREATE MATERIALIZED VIEW IF NOT EXISTS prototype1.POINTS AS
             SELECT
                 V.mmsi,
                 ST_PointM(
@@ -46,13 +46,13 @@ def mat_points_view(conn: Connection):
      # Create index for lookup
     cur.execute("""
             CREATE INDEX IF NOT EXISTS POINTS_IDX
-            ON ls_experiment.POINTS USING HASH (mmsi);
+            ON prototype1.POINTS USING HASH (mmsi);
         """)
     
     # Create spatial index
     cur.execute("""
             CREATE INDEX IF NOT EXISTS POINTS_GEOM_IDX
-            ON ls_experiment.POINTS USING GIST (geom) INCLUDE (mmsi);
+            ON prototype1.POINTS USING GIST (geom) INCLUDE (mmsi);
         """)
 
     print("Created materialized view POINTS")
