@@ -52,18 +52,22 @@ def transform_ls_trajectories_to_cs(connection : Connection):
     cur = connection.cursor()
     cur.execute("""
             SELECT trajectory_id, mmsi, ts_start, ts_end, ST_AsBinary(geom) 
-            FROM ls_experiment.trajectory_ls 
+            FROM prototype1.trajectory_ls 
             ORDER BY trajectory_id;
         """)
     rows = cur.fetchall()
+
     for row in rows:
         _, mmsi, ts_start, ts_end, geom_wkb = row
         linestring: LineString = from_wkb(geom_wkb)
         cellstring = convert_linestring_to_cellstring(linestring)
+
+        unique_cells: bool = len(cellstring) == len(set(cellstring))
+
         cur.execute("""
-                INSERT INTO ls_experiment.trajectory_cs (mmsi, ts_start, ts_end, trajectory)
-                VALUES (%s, %s, %s, %s)
-            """, (mmsi, ts_start, ts_end, cellstring))
+                INSERT INTO prototype1.trajectory_cs (mmsi, ts_start, ts_end, unique_cells, trajectory)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (mmsi, ts_start, ts_end, unique_cells, cellstring))
     connection.commit()
     cur.close()
     
@@ -85,7 +89,7 @@ def transform_ls_stops_to_cs(connection : Connection):
     cur = connection.cursor()
     cur.execute("""
             SELECT stop_id, mmsi, ts_start, ts_end, ST_AsBinary(geom) 
-            FROM ls_experiment.stop_poly 
+            FROM prototype1.stop_poly 
             ORDER BY stop_id;
         """)
     rows = cur.fetchall()
@@ -94,7 +98,7 @@ def transform_ls_stops_to_cs(connection : Connection):
         polygon: Polygon = from_wkb(geom_wkb)
         cellstring = convert_polygon_to_cellstring(polygon)
         cur.execute("""
-                INSERT INTO ls_experiment.stop_cs (mmsi, ts_start, ts_end, trajectory)
+                INSERT INTO prototype1.stop_cs (mmsi, ts_start, ts_end, trajectory)
                 VALUES (%s, %s, %s, %s)
             """, (mmsi, ts_start, ts_end, cellstring))
     connection.commit()
