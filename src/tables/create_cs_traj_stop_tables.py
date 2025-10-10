@@ -11,7 +11,7 @@ def create_cs_traj_stop_tables(conn: Connection):
                 ts_start      TIMESTAMP WITHOUT TIME ZONE NOT NULL,
                 ts_end        TIMESTAMP WITHOUT TIME ZONE NOT NULL,
                 unique_cells  boolean DEFAULT FALSE,
-                trajectory    bigint ARRAY                NOT NULL,
+                cellstring    bigint ARRAY                NOT NULL,
                 CONSTRAINT trajectory_time_check CHECK (ts_start < ts_end)
             );
         """)
@@ -26,9 +26,9 @@ def create_cs_traj_stop_tables(conn: Connection):
     cur.execute("""
             CREATE INDEX IF NOT EXISTS trajectory_trajectory_idx 
             ON prototype1.trajectory_cs 
-            USING GIN (trajectory);
+            USING GIN (cellstring);
         """)
-    print("Created CS trajectory table")
+    print("Created CS trajectory table if not exists")
 
     # Stop table
     cur.execute("""
@@ -39,7 +39,7 @@ def create_cs_traj_stop_tables(conn: Connection):
                 ts_start    TIMESTAMP WITHOUT TIME ZONE NOT NULL,
                 ts_end      TIMESTAMP WITHOUT TIME ZONE NOT NULL,
                 unique_cells  boolean DEFAULT TRUE,
-                trajectory  bigint ARRAY                NOT NULL,
+                cellstring  bigint ARRAY                NOT NULL,
                 CONSTRAINT stop_time_check CHECK (ts_start < ts_end)
             );
         """)
@@ -54,9 +54,9 @@ def create_cs_traj_stop_tables(conn: Connection):
     cur.execute("""
             CREATE INDEX IF NOT EXISTS stop_trajectory_idx
             ON prototype1.stop_cs 
-            USING GIN (trajectory);
+            USING GIN (cellstring);
         """)
-    print("Created CS stop table")
+    print("Created CS stop table if not exists")
 
     conn.commit()
     cur.close()

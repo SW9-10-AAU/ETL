@@ -32,7 +32,7 @@ def create_ls_traj_stop_tables(conn: Connection):
             ON prototype1.trajectory_ls 
             USING GIST (geom);
         """)
-    print("Created LS trajectory table")
+    print("Created LS trajectory table if not exists")
 
     # Stop table
     cur.execute("""
@@ -58,7 +58,7 @@ def create_ls_traj_stop_tables(conn: Connection):
             ON prototype1.stop_poly 
             USING GIST (geom);
         """)
-    print("Created LS stop table")
+    print("Created LS stop table if not exists")
     
     conn.commit()
     cur.close()
