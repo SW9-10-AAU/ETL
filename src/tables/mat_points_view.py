@@ -5,11 +5,6 @@ def mat_points_view(conn: Connection):
 
     # Example MMSI for testing
     mmsi = "210051000, 636015105"
-
-    # language=SQL
-    cur.execute("""
-            DROP MATERIALIZED VIEW IF EXISTS ls_experiment.POINTS;
-        """)
     
     cur.execute(f"""
             -- POINTM's with MMSI
@@ -55,7 +50,7 @@ def mat_points_view(conn: Connection):
             ON ls_experiment.POINTS USING GIST (geom) INCLUDE (mmsi);
         """)
 
-    print("Created materialized view POINTS")
+    print("Created materialized view POINTS if not exists.")
 
     conn.commit()
     cur.close()
