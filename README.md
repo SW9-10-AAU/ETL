@@ -20,20 +20,25 @@ ETL for trajectories
 
 
 ## Functions
-- `mat_points_view.py`: Creates a Materialized View for points
-- `create_cs_traj_stop_tables.py`: Creates CS tables for trajectory with stops
+- [`main.py`](/src/main.py): Main script to run all steps
+- [`drop_all_tables.py`](/src/tables/drop_all_tables.py): Drops all tables in the schema
+- [`mat_points_view.py`](/src/tables/mat_points_view.py): Creates a Materialized View for points
+- [`create_cs_traj_stop_tables.py`](/src/tables/create_cs_traj_stop_tables.py): Creates CS tables for trajectory with stops
+
+### [`main.py`](/src/main.py)
+Main script to run all steps in order: drop tables, create materialized view, create trajectory and stop tables.
+
+#### Run
+- Win: `python ./src/main.py`
+- Mac: `python3 src/main.py`
+
+### [`drop_all_tables.py`](/src/tables/drop_all_tables.py)
+Drops all tables in the PostgreSQL database (dw/prototype1/trajectory_cs, dw/prototype1/stop_cs, dw/prototype1/trajectory_ls, dw/prototype1/stop_poly, dw/prototype1/points).
 
 ### [`mat_points_view.py`](/src/tables/mat_points_view.py)
 Creates a materialized view named `points` in the PostgreSQL database (dw/prototype1/points). This view aggregates AIS points from a single MMSI taken from the `dw.fact.ais_point_fact` table. The resulting view contains six columns: `mmsi`, `geom` containing x, y, timestamp, `sog`, `cog`, `delta_sog`, `delta_depth_draught`.
 
 This prepares points that can then be used for trajectory generation with stops.
-#### Run
-- Win: `python ./src/tables/mat_points_view.py`
-- Mac: `python3 src/tables/mat_points_view.py`
 
-### `create_cs_traj_stop_tables.py`
+### [`create_cs_traj_stop_tables.py`](/src/tables/create_cs_traj_stop_tables.py)
 Creates one table for trajectory and one table for stops in the PostgreSQL database (dw/prototype1/trajectory_cs).
-
-#### Run
-- Win: `python ./src/tables/create_cs_traj_stop_tables.py`
-- Mac: `python3 src/tables/create_cs_traj_stop_tables.py`
