@@ -52,7 +52,7 @@ def transform_ls_trajectories_to_cs(connection : Connection):
     cur = connection.cursor()
     cur.execute("""
             SELECT trajectory_id, mmsi, ts_start, ts_end, ST_AsBinary(geom) 
-            FROM ls_experiment.trajectory_ls 
+            FROM ls_experiment.trajectory_ls_new 
             ORDER BY trajectory_id;
         """)
     rows = cur.fetchall()
@@ -85,7 +85,7 @@ def transform_ls_stops_to_cs(connection : Connection):
     cur = connection.cursor()
     cur.execute("""
             SELECT stop_id, mmsi, ts_start, ts_end, ST_AsBinary(geom) 
-            FROM ls_experiment.stop_poly 
+            FROM ls_experiment.stop_poly_new 
             ORDER BY stop_id;
         """)
     rows = cur.fetchall()

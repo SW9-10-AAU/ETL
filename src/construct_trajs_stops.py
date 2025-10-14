@@ -3,13 +3,13 @@ from shapely import Polygon, from_wkb, Point, LineString, MultiPoint
 from geopy.distance import geodesic
 
 # Threshold constants matching the paper but with adjustmenst
-STOP_SOG_THRESHOLD = 1.0          # knots, vT
-STOP_DISTANCE_THRESHOLD = 2000   # meters, disT
-STOP_TIME_THRESHOLD = 5400       # seconds, tT (1.5 h)
-MIN_STOP_POINTS = 10             # Δn
-MIN_STOP_DURATION = 5400         # seconds, Δstopt (1.5 h)
-MERGE_DISTANCE_THRESHOLD = 200  # meters, Δd.  (changed from 2km)
-MERGE_TIME_THRESHOLD = 86400     # seconds, Δt (1 d) (changed from 1h)
+STOP_SOG_THRESHOLD = 1.0            # knots, vT (original = 1 knot)
+STOP_DISTANCE_THRESHOLD = 250       # meters, disT (original = 2 km)
+STOP_TIME_THRESHOLD = 5400          # seconds, tT (original = 1.5 h)
+MIN_STOP_POINTS = 10                # Δn
+MIN_STOP_DURATION = 5400            # seconds, Δstopt (original = 1.5 h)
+MERGE_DISTANCE_THRESHOLD = 250      # meters, Δd. (original = 2 km)
+MERGE_TIME_THRESHOLD = 3600         # seconds, Δt (original = 1 h)
 
 def distance_m(p1: Point, p2: Point) -> float:
     """Return distance between two Shapely Points in meters."""
@@ -44,18 +44,21 @@ def construct_trajectories_and_stops(conn: Connection):
 
             # Candidate stop condition
             if sog < STOP_SOG_THRESHOLD and dt < STOP_TIME_THRESHOLD and dist < STOP_DISTANCE_THRESHOLD:
+                stop.append(prev_point)
                 stop.append(point)
+                
                 # finish trajectory
                 if len(traj) > 1:
                     insert_trajectory(cur, mmsi, traj[0].coords[0][2], traj[-1].coords[0][2], LineString(traj))
-                traj = []
+                    traj = []
             else:
+                traj.append(prev_point)
+                traj.append(point)
+                
                 # finish candidate stop
                 if len(stop) >= MIN_STOP_POINTS:
                     candidate_stops.append(stop)
-                stop = []
-                # continue trajectory
-                traj.append(point)
+                    stop = []
 
             prev_point = point
 
@@ -70,39 +73,41 @@ def construct_trajectories_and_stops(conn: Connection):
         merged_stops : list[list[Point]] = []
         if candidate_stops:
             merged = candidate_stops[0]
-            for st in candidate_stops[1:]:
+            for candidate_stop in candidate_stops[1:]:
                 # distance between centers
                 center_prev = MultiPoint(merged).centroid
-                center_curr = MultiPoint(st).centroid
-                time_gap = st[0].coords[0][2] - merged[-1].coords[0][2]
+                center_curr = MultiPoint(candidate_stop).centroid
+                time_gap = candidate_stop[0].coords[0][2] - merged[-1].coords[0][2]
                 if distance_m(center_prev, center_curr) < MERGE_DISTANCE_THRESHOLD and time_gap < MERGE_TIME_THRESHOLD:
-                    merged.extend(st)
+                    merged.extend(candidate_stop)
                 else:
                     merged_stops.append(merged)
-                    merged = st
+                    merged = candidate_stop
             merged_stops.append(merged)
 
         # Insert final stops with duration check
-        for st in merged_stops:
-            ts_start = st[0].coords[0][2]
-            ts_end   = st[-1].coords[0][2]
-            if len(st) >= MIN_STOP_POINTS and (ts_end - ts_start) >= MIN_STOP_DURATION:
-                insert_stop(cur, mmsi, ts_start, ts_end, MultiPoint(st).convex_hull.buffer(0))
+        for merged_stop in merged_stops:
+            ts_start = merged_stop[0].coords[0][2]
+            ts_end   = merged_stop[-1].coords[0][2]
+            if len(merged_stop) >= MIN_STOP_POINTS and (ts_end - ts_start) >= MIN_STOP_DURATION:
+                insert_stop(cur, mmsi, ts_start, ts_end, MultiPoint(merged_stop).convex_hull.buffer(0))
             else:
-                print("Not valid stop") # TODO: Fix this
-
+                # insert_stop(cur, 111111, ts_start, ts_end, MultiPoint(merged_stop).convex_hull.buffer(0))
+                insert_trajectory(cur, mmsi, ts_start, ts_end, LineString(merged_stop))
+                print(f"Inserted fallback 'slow' trajectory (MMSI: {mmsi})")
+                
     conn.commit()
     cur.close()
 
 def insert_trajectory(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, line: LineString):
     cur.execute("""
-            INSERT INTO ls_experiment.trajectory_ls (mmsi, ts_start, ts_end, geom)
+            INSERT INTO ls_experiment.trajectory_ls_new (mmsi, ts_start, ts_end, geom)
             VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_Force3DM(ST_GeomFromWKB(%s, 4326)))
         """, (mmsi, ts_start, ts_end, line.wkb))
 
 def insert_stop(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, poly: Polygon):
     cur.execute("""
-            INSERT INTO ls_experiment.stop_poly (mmsi, ts_start, ts_end, geom)
+            INSERT INTO ls_experiment.stop_poly_new (mmsi, ts_start, ts_end, geom)
             VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_GeomFromWKB(%s, 4326))
         """, (mmsi, ts_start, ts_end, poly.wkb))
 
