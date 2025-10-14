@@ -1,3 +1,4 @@
+import time
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from typing import cast
 from psycopg import Connection, Cursor, connect
@@ -123,8 +124,15 @@ def construct_trajectories_and_stops(conn: Connection, db_conn_str: str, max_wor
     cur = conn.cursor()
     mmsis = get_mmsis(cur)
     cur.close()
+    
+    total_mmsis = len(mmsis)
+    if total_mmsis == 0:
+        print("No MMSIs to process.")
+        return
+    
+    print(f"Found {total_mmsis} distinct MMSIs to process using {max_workers} workers.")
 
-    print(f"Found {len(mmsis)} distinct MMSIs to process.")
+    start_time = time.perf_counter()
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures: dict[FutureResult, int] = {}
@@ -133,19 +141,30 @@ def construct_trajectories_and_stops(conn: Connection, db_conn_str: str, max_wor
             fut = executor.submit(process_single_mmsi, db_conn_str, m)
             futures[cast(FutureResult, fut)] = m
 
-        results = []
-        for i, future in enumerate(as_completed(futures)):
+        completed_count = 0
+        for future in as_completed(futures):
+            completed_count += 1
             mmsi = futures[future]
             try:
                 mmsi, num_points, num_trajs, num_stops, merge_cases = future.result()
                 print(f"MMSI {mmsi}: {num_points} points, {num_trajs} trajectories, {num_stops} stops, merge cases: {merge_cases}")
-                results.append((mmsi, num_trajs, num_stops, merge_cases))
             except Exception as e:
                 print(f"Error processing MMSI {mmsi}: {e}")
-                results.append((mmsi, 0, 0, [0, 0, 0, 0]))
-            print(f"Progress: {i+1}/{len(mmsis)} ({(i+1)/len(mmsis)*100:.2f}%)")
+                
+            # Timing and progress tracking
+            elapsed = time.perf_counter() - start_time
+            avg_time = elapsed / completed_count
+            remaining = total_mmsis - completed_count
+            eta = remaining * avg_time
 
+            print(
+                f"Progress: {completed_count}/{total_mmsis} ({(completed_count / total_mmsis) * 100:.2f}%) | "
+                f"Avg per MMSI: {avg_time:.2f}s | ETA: {eta/60:.1f} min | Total elapsed: {elapsed/60:.1f} min\n"
+            )
+
+    total_time = time.perf_counter() - start_time
     print("All MMSIs processed.")
+    print(f"Total elapsed: {total_time/60:.2f} min | Avg per MMSI: {total_time/total_mmsis:.2f} sec")
     
 # ----------------------------------------------------------------------
 
