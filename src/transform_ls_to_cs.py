@@ -62,12 +62,12 @@ def transform_ls_trajectories_to_cs(connection : Connection):
         linestring: LineString = from_wkb(geom_wkb)
         cellstring = convert_linestring_to_cellstring(linestring)
 
-        is_unique_cells(cellstring)
+        unique_cells: bool = is_unique_cells(cellstring)
 
         cur.execute("""
                 INSERT INTO prototype1.trajectory_cs (mmsi, ts_start, ts_end, unique_cells, cellstring)
                 VALUES (%s, %s, %s, %s, %s)
-            """, (mmsi, ts_start, ts_end, is_unique_cells, cellstring))
+            """, (mmsi, ts_start, ts_end, unique_cells, cellstring))
     connection.commit()
     cur.close()
     
