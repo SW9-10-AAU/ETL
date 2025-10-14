@@ -65,7 +65,7 @@ def transform_ls_trajectories_to_cs(connection : Connection):
         is_unique_cells(cellstring)
 
         cur.execute("""
-                INSERT INTO prototype1.trajectory_cs (mmsi, ts_start, ts_end, unique_cells, trajectory)
+                INSERT INTO prototype1.trajectory_cs (mmsi, ts_start, ts_end, unique_cells, cellstring)
                 VALUES (%s, %s, %s, %s, %s)
             """, (mmsi, ts_start, ts_end, is_unique_cells, cellstring))
     connection.commit()
@@ -98,7 +98,7 @@ def transform_ls_stops_to_cs(connection : Connection):
         polygon: Polygon = from_wkb(geom_wkb)
         cellstring = convert_polygon_to_cellstring(polygon)
         cur.execute("""
-                INSERT INTO prototype1.stop_cs (mmsi, ts_start, ts_end, trajectory)
+                INSERT INTO prototype1.stop_cs (mmsi, ts_start, ts_end, cellstring)
                 VALUES (%s, %s, %s, %s)
             """, (mmsi, ts_start, ts_end, cellstring))
     connection.commit()
