@@ -13,7 +13,7 @@ def main():
     connection = connect_to_db()
 
     # Drop existing tables and views
-    drop_all_tables(connection)
+    # drop_all_tables(connection)
 
     # Create LineString/Polygon tables Trajectory and Stop
     create_ls_traj_stop_tables(connection)
@@ -22,7 +22,7 @@ def main():
     create_cs_traj_stop_tables(connection)
 
     # Create Materialized View POINTS
-    mat_points_view(connection)
+    # mat_points_view(connection)
     
     # Construct Trajectories and Stops from the Points Materialized View 
     construct_trajectories_and_stops(connection)

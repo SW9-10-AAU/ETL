@@ -1,3 +1,4 @@
+from typing import cast
 from psycopg import Connection, Cursor
 from shapely import Polygon, from_wkb, Point, LineString, MultiPoint
 from geopy.distance import geodesic
@@ -11,6 +12,8 @@ MIN_STOP_DURATION = 5400            # seconds, Δstopt (original = 1.5 h)
 MERGE_DISTANCE_THRESHOLD = 250      # meters, Δd. (original = 2 km)     CHANGED TO 250m
 MERGE_TIME_THRESHOLD = 3600         # seconds, Δt (original = 1 h)
 
+AISPoint = tuple[int, bytes, float | None]  # (mmsi, geom as WKB, sog)
+
 def distance_m(p1: Point, p2: Point) -> float:
     """Return distance between two Shapely Points in meters."""
     return geodesic((p1.y, p1.x), (p2.y, p2.x)).meters # x and y is swapped because this is (lat,lon), and Shapely/PostGIS is (lon,lat)
@@ -18,16 +21,14 @@ def distance_m(p1: Point, p2: Point) -> float:
 def construct_trajectories_and_stops(conn: Connection):
     """Construct trajectories and stops from points in the database."""
     cur = conn.cursor()
-    point_rows = get_points(cur)
+    mmsis = get_mmsis(cur)
+    print(f"Found {len(mmsis)} distinct MMSIs to process.")
     
-    # Group by MMSI
-    by_mmsi: dict[int, list[tuple[Point, float]]] = {}
-    for (mmsi, geom, sog) in point_rows:
-        point = Point(from_wkb(geom)) # decode into Shapely Point
-        sog = float(sog)
-        by_mmsi.setdefault(mmsi, []).append((point, sog))
+    num_mmsis = len(mmsis)
 
-    for mmsi, points in by_mmsi.items():
+    for i, mmsi in enumerate(mmsis):
+        points: list[tuple[Point, float]] = [(cast(Point, from_wkb(geom_wkb)), float(sog) if sog is not None else 0.0) for (_, geom_wkb, sog) in get_points_for_mmsi(cur, mmsi)]
+        print(f"Processing MMSI {mmsi}: {len(points)} points.")
         traj : list[Point] = []
         stop : list[Point] = []
         prev_point = None
@@ -106,11 +107,13 @@ def construct_trajectories_and_stops(conn: Connection):
         for trajectory in trajs:
             ts_start = trajectory[0].coords[0][2]
             ts_end   = trajectory[-1].coords[0][2]
-            insert_trajectory(cur, mmsi, ts_start, ts_end, LineString(trajectory))
+            if len(trajectory) > 1 and ts_end > ts_start: # End time must be after start time
+               insert_trajectory(cur, mmsi, ts_start, ts_end, LineString(trajectory))
         
         print(f"MMSI {mmsi}: Inserted {len(trajs)} trajectories, {num_stops} stops, cases: {merge_case_count} merges of non-valid stops")
+        print(f"Progress: {i+1}/{num_mmsis} ({(i+1)/num_mmsis*100:.2f}%)")
+        conn.commit()
         
-    conn.commit()
     cur.close()
 
 def insert_or_merge_with_trajectories(trajs: list[list[Point]], stop: list[Point], case_count: list[int]):
@@ -177,11 +180,35 @@ def insert_stop(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, poly: Po
             VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_GeomFromWKB(%s, 4326))
         """, (mmsi, ts_start, ts_end, poly.wkb))
 
-def get_points(cur: Cursor) -> list:
-    """Fetch all points from the database ordered by MMSI and time."""
+def get_mmsis(cur: Cursor) -> list[int]:
+    """Fetch distinct MMSIs from the database."""
+    cur.execute("""
+            SELECT DISTINCT mmsi
+            FROM prototype1.points
+            WHERE LENGTH(mmsi::text) = 9
+                AND LEFT(mmsi::text, 1) BETWEEN '2' AND '7'
+                AND mmsi NOT IN (
+                    SELECT DISTINCT mmsi FROM prototype1.stop_poly
+                    UNION
+                    SELECT DISTINCT mmsi FROM prototype1.trajectory_ls
+                )
+            ORDER BY mmsi;
+        """)
+    rows = cur.fetchall()
+    return [row[0] for row in rows]
+
+def get_points_for_mmsi(cur: Cursor, mmsi: int) -> list[AISPoint]:
+    """Fetch all points for a specific MMSI from the database ordered by time."""
     cur.execute("""
             SELECT mmsi, ST_AsBinary(geom), sog
             FROM prototype1.points
-            ORDER BY mmsi, ST_M(geom);
-        """)
-    return cur.fetchall()
+            WHERE mmsi = %s
+            ORDER BY ST_M(geom);
+        """, (mmsi,))
+    rows = cur.fetchall()
+    
+    return [
+        (int(row[0]), bytes(row[1]), float(row[2]) if row[2] is not None else None)
+        for row in rows 
+        if row[0] is not None and row[1] is not None
+    ]
