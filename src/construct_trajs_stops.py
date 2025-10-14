@@ -30,7 +30,10 @@ def construct_trajectories_and_stops(conn: Connection):
         traj : list[Point] = []
         stop : list[Point] = []
         prev_point = None
+        trajs : list[list[Point]] = []
         candidate_stops : list[list[Point]] = []
+        case_count: list[int] = [0,0,0,0]
+        num_stops: int = 0
 
         for point, sog in points:
             t = point.coords[0][2] # epoch time
@@ -49,7 +52,8 @@ def construct_trajectories_and_stops(conn: Connection):
                 
                 # finish trajectory
                 if len(traj) > 1:
-                    insert_trajectory(cur, mmsi, traj[0].coords[0][2], traj[-1].coords[0][2], LineString(traj))
+                    trajs.append(traj)
+                    # insert_trajectory(cur, mmsi, traj[0].coords[0][2], traj[-1].coords[0][2], LineString(traj))
                     traj = []
             else:
                 traj.append(prev_point)
@@ -64,7 +68,8 @@ def construct_trajectories_and_stops(conn: Connection):
 
         # flush last trajectory
         if len(traj) > 1:
-            insert_trajectory(cur, mmsi, traj[0].coords[0][2], traj[-1].coords[0][2], LineString(traj))
+            trajs.append(traj)
+            # insert_trajectory(cur, mmsi, traj[0].coords[0][2], traj[-1].coords[0][2], LineString(traj))
         # flush last stop
         if len(stop) >= MIN_STOP_POINTS:
             candidate_stops.append(stop)
@@ -90,14 +95,74 @@ def construct_trajectories_and_stops(conn: Connection):
             ts_start = merged_stop[0].coords[0][2]
             ts_end   = merged_stop[-1].coords[0][2]
             if len(merged_stop) >= MIN_STOP_POINTS and (ts_end - ts_start) >= MIN_STOP_DURATION:
+                num_stops += 1
                 insert_stop(cur, mmsi, ts_start, ts_end, MultiPoint(merged_stop).convex_hull.buffer(0))
             else:
-                # insert_stop(cur, 111111, ts_start, ts_end, MultiPoint(merged_stop).convex_hull.buffer(0))
-                insert_trajectory(cur, mmsi, ts_start, ts_end, LineString(merged_stop))
-                print(f"Inserted fallback 'slow' trajectory (MMSI: {mmsi})")
+                # insert_trajectory(cur, mmsi, ts_start, ts_end, LineString(merged_stop))
+                # print(f"Inserted 'slow' trajectory (MMSI: {mmsi})")
+                insert_or_merge_with_trajectories(trajs, merged_stop, case_count)
+        
+        # Insert trajectories
+        for trajectory in trajs:
+            ts_start = trajectory[0].coords[0][2]
+            ts_end   = trajectory[-1].coords[0][2]
+            insert_trajectory(cur, mmsi, ts_start, ts_end, LineString(trajectory))
+        
+        print(f"MMSI {mmsi}: Inserted {len(trajs)} trajectories, {num_stops} stops, cases: {case_count} merges of non-valid stops")
                 
     conn.commit()
     cur.close()
+
+def insert_or_merge_with_trajectories(trajs: list[list[Point]], stop: list[Point], case_count: list[int]):
+    """Insert or merge a non-valid stop with existing trajectories."""
+    if not stop or not trajs:
+        trajs.append(stop)
+        return
+
+    first_stop_pt = stop[0]
+    last_stop_pt = stop[-1]
+
+    merge_before_idx = None
+    merge_after_idx = None
+
+    # Find trajectories to merge with
+    for i, traj in enumerate(trajs):
+        first_traj_pt = traj[0]
+        last_traj_pt = traj[-1]
+
+        # Compare full (x, y, z) - exact equality
+        if (last_traj_pt.coords[0] == first_stop_pt.coords[0]):
+            merge_before_idx = i
+        if (first_traj_pt.coords[0] == last_stop_pt.coords[0]):
+            merge_after_idx = i
+
+    # Case 1: Stop connects two existing trajectories (bridge)
+    if merge_before_idx is not None and merge_after_idx is not None and merge_before_idx != merge_after_idx:
+        before_traj = trajs[merge_before_idx]
+        after_traj = trajs[merge_after_idx]
+        merged_traj = before_traj + stop + after_traj
+        # replace both in list
+        trajs[merge_before_idx] = merged_traj
+        # remove the later one (index may shift if before < after)
+        trajs.pop(merge_after_idx if merge_after_idx > merge_before_idx else merge_before_idx + 1)
+        case_count[0] += 1
+        return
+
+    # Case 2: Stop continues an existing trajectory
+    if merge_before_idx is not None:
+        trajs[merge_before_idx].extend(stop)
+        case_count[1] += 1
+        return
+
+    # Case 3: Stop precedes an existing trajectory
+    if merge_after_idx is not None:
+        trajs[merge_after_idx] = stop + trajs[merge_after_idx]
+        case_count[2] += 1
+        return
+
+    # Case 4: No merge possible = treat as new trajectory
+    trajs.append(stop)
+    case_count[3] += 1
 
 def insert_trajectory(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, line: LineString):
     cur.execute("""
