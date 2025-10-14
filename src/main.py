@@ -31,7 +31,7 @@ def main():
     # mat_points_view(connection)
     
     # Construct Trajectories and Stops from the Points Materialized View 
-    construct_trajectories_and_stops(connection, db_url, max_workers=8)
+    construct_trajectories_and_stops(connection, db_url, min(os.cpu_count() or 4, 12))
 
     # Transform LS Trajectories to CS Trajectories
     #transform_ls_trajectories_to_cs(connection)
