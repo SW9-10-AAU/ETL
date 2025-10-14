@@ -2,13 +2,13 @@ from psycopg import Connection, Cursor
 from shapely import Polygon, from_wkb, Point, LineString, MultiPoint
 from geopy.distance import geodesic
 
-# Threshold constants matching the paper but with adjustmenst
+# Threshold constants matching the paper but with ADJUSTMENTS
 STOP_SOG_THRESHOLD = 1.0            # knots, vT (original = 1 knot)
-STOP_DISTANCE_THRESHOLD = 250       # meters, disT (original = 2 km)
+STOP_DISTANCE_THRESHOLD = 250       # meters, disT (original = 2 km)    CHANGED TO 250m
 STOP_TIME_THRESHOLD = 5400          # seconds, tT (original = 1.5 h)
-MIN_STOP_POINTS = 10                # Δn
+MIN_STOP_POINTS = 10                # Δn (original = 10 points)
 MIN_STOP_DURATION = 5400            # seconds, Δstopt (original = 1.5 h)
-MERGE_DISTANCE_THRESHOLD = 250      # meters, Δd. (original = 2 km)
+MERGE_DISTANCE_THRESHOLD = 250      # meters, Δd. (original = 2 km)     CHANGED TO 250m
 MERGE_TIME_THRESHOLD = 3600         # seconds, Δt (original = 1 h)
 
 def distance_m(p1: Point, p2: Point) -> float:
@@ -53,7 +53,6 @@ def construct_trajectories_and_stops(conn: Connection):
                 # finish trajectory
                 if len(traj) > 1:
                     trajs.append(traj)
-                    # insert_trajectory(cur, mmsi, traj[0].coords[0][2], traj[-1].coords[0][2], LineString(traj))
                     traj = []
             else:
                 traj.append(prev_point)
@@ -69,7 +68,6 @@ def construct_trajectories_and_stops(conn: Connection):
         # flush last trajectory
         if len(traj) > 1:
             trajs.append(traj)
-            # insert_trajectory(cur, mmsi, traj[0].coords[0][2], traj[-1].coords[0][2], LineString(traj))
         # flush last stop
         if len(stop) >= MIN_STOP_POINTS:
             candidate_stops.append(stop)
@@ -98,8 +96,6 @@ def construct_trajectories_and_stops(conn: Connection):
                 num_stops += 1
                 insert_stop(cur, mmsi, ts_start, ts_end, MultiPoint(merged_stop).convex_hull.buffer(0))
             else:
-                # insert_trajectory(cur, mmsi, ts_start, ts_end, LineString(merged_stop))
-                # print(f"Inserted 'slow' trajectory (MMSI: {mmsi})")
                 insert_or_merge_with_trajectories(trajs, merged_stop, case_count)
         
         # Insert trajectories
