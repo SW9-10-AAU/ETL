@@ -67,6 +67,25 @@ class TestPolygonToCellString(unittest.TestCase):
         
         self.assertEqual(cellstring, expected_cellstring)
         self.assertNotIn(example_cellid, cellstring) # cell that overlaps the polygon, but its centre is not inside the polygon
+
+class TestLinestringToCellStringInsertion(unittest.TestCase):
+
+    def test_unique_cells_false(self):
+        linestring = LineString([[10.836495399475098, 57.36823654174805],[10.836495399475099, 57.36823654174805],[10.83551025390625, 57.368526458740234]])
+        cellstring = transform.convert_linestring_to_cellstring(linestring)
+
+        is_unique = transform.is_unique_cells(cellstring)
+
+        self.assertFalse(is_unique) # because the first two points are in the same cell
+
+    def test_unique_cells_true(self):
+        linestring = LineString([[10.836495399475098, 57.36823654174805],[10.83551025390625, 57.368526458740234]])
+        cellstring = transform.convert_linestring_to_cellstring(linestring)
+
+        is_unique = transform.is_unique_cells(cellstring)
+        print(cellstring)
+
+        self.assertTrue(is_unique) # all points are in different cells
     
 if __name__ == '__main__':
     unittest.main()

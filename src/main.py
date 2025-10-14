@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 from connect import connect_to_db
+from tables.drop_all_tables import drop_all_tables
 from tables.create_ls_traj_stop_tables import create_ls_traj_stop_tables
 from tables.create_cs_traj_stop_tables import create_cs_traj_stop_tables
 from tables.mat_points_view import mat_points_view
@@ -10,7 +11,10 @@ def main():
     load_dotenv()
     
     connection = connect_to_db()
-    
+
+    # Drop existing tables and views
+    #drop_all_tables(connection)
+
     # Create LineString/Polygon tables Trajectory and Stop
     create_ls_traj_stop_tables(connection)
 

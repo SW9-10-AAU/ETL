@@ -167,13 +167,13 @@ def insert_or_merge_with_trajectories(trajs: list[list[Point]], stop: list[Point
 
 def insert_trajectory(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, line: LineString):
     cur.execute("""
-            INSERT INTO ls_experiment.trajectory_ls_new (mmsi, ts_start, ts_end, geom)
+            INSERT INTO prototype1.trajectory_ls (mmsi, ts_start, ts_end, geom)
             VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_Force3DM(ST_GeomFromWKB(%s, 4326)))
         """, (mmsi, ts_start, ts_end, line.wkb))
 
 def insert_stop(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, poly: Polygon):
     cur.execute("""
-            INSERT INTO ls_experiment.stop_poly_new (mmsi, ts_start, ts_end, geom)
+            INSERT INTO prototype1.stop_poly (mmsi, ts_start, ts_end, geom)
             VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_GeomFromWKB(%s, 4326))
         """, (mmsi, ts_start, ts_end, poly.wkb))
 
@@ -181,7 +181,7 @@ def get_points(cur: Cursor) -> list:
     """Fetch all points from the database ordered by MMSI and time."""
     cur.execute("""
             SELECT mmsi, ST_AsBinary(geom), sog
-            FROM ls_experiment.points
+            FROM prototype1.points
             ORDER BY mmsi, ST_M(geom);
         """)
     return cur.fetchall()
