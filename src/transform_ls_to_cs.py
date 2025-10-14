@@ -62,12 +62,12 @@ def transform_ls_trajectories_to_cs(connection : Connection):
         linestring: LineString = from_wkb(geom_wkb)
         cellstring = convert_linestring_to_cellstring(linestring)
 
-        unique_cells: bool = len(cellstring) == len(set(cellstring))
+        is_unique_cells(cellstring)
 
         cur.execute("""
                 INSERT INTO prototype1.trajectory_cs (mmsi, ts_start, ts_end, unique_cells, trajectory)
                 VALUES (%s, %s, %s, %s, %s)
-            """, (mmsi, ts_start, ts_end, unique_cells, cellstring))
+            """, (mmsi, ts_start, ts_end, is_unique_cells, cellstring))
     connection.commit()
     cur.close()
     
@@ -122,3 +122,6 @@ def get_tiles_in_polygon_bbox(polygon : Polygon) -> list[Tile]:
     minx, miny, maxx, maxy = polygon.bounds
     tiles = list(mercantile.tiles(minx, miny, maxx, maxy, ZOOM))
     return tiles
+
+def is_unique_cells(cellstring : list[int]) -> bool:
+    return len(cellstring) == len(set(cellstring))
