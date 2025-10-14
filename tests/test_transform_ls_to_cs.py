@@ -3,9 +3,6 @@ from mercantile import Tile
 import src.transform_ls_to_cs as transform
 from shapely import LineString, Polygon
 
-from src.transform_ls_to_cs import is_unique_cells
-
-
 class TestEncodeLonLatToMVTCellId(unittest.TestCase):
 
     def test_HouHavn(self):
