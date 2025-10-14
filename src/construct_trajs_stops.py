@@ -99,6 +99,7 @@ def construct_trajectories_and_stops(conn: Connection):
                 num_stops += 1
                 insert_stop(cur, mmsi, ts_start, ts_end, MultiPoint(merged_stop).convex_hull.buffer(0))
             else:
+                # Non-valid stop, try to merge with existing trajectories
                 insert_or_merge_with_trajectories(trajs, merged_stop, merge_case_count)
         
         # Insert trajectories
