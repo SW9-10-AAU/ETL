@@ -6,6 +6,7 @@ from shapely import Polygon, from_wkb, Point, LineString, MultiPoint
 from geopy.distance import geodesic
 
 # Threshold constants matching the paper but with ADJUSTMENTS
+MIN_SOG = 0.0
 STOP_SOG_THRESHOLD = 1.0            # knots, vT (original = 1 knot)
 STOP_DISTANCE_THRESHOLD = 250       # meters, disT (original = 2 km)    CHANGED TO 250m
 STOP_TIME_THRESHOLD = 5400          # seconds, tT (original = 1.5 h)
@@ -13,6 +14,7 @@ MIN_STOP_POINTS = 10                # Δn (original = 10 points)
 MIN_STOP_DURATION = 5400            # seconds, Δstopt (original = 1.5 h)
 MERGE_DISTANCE_THRESHOLD = 250      # meters, Δd. (original = 2 km)     CHANGED TO 250m
 MERGE_TIME_THRESHOLD = 3600         # seconds, Δt (original = 1 h)
+MAX_DIST_DIFF_POINTS_IN_TRAJ = 2500 
 
 AISPoint = tuple[int, bytes, float | None]  # (mmsi, geom as WKB, sog)
 ProcessResult = tuple[int, int, int, int, list[int]]  # (mmsi, num_points, num_trajs, num_stops, merge_case_count)
@@ -29,8 +31,8 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
     """
     with connect(db_conn_str) as conn:
         cur = conn.cursor()
-        points: list[tuple[Point, float]] = [
-            (cast(Point, from_wkb(geom_wkb)), float(sog) if sog is not None else 0.0)
+        points: list[tuple[Point, float | None]] = [
+            (cast(Point, from_wkb(geom_wkb)), sog)
             for (_, geom_wkb, sog) in get_points_for_mmsi(cur, mmsi)
         ]
 
@@ -51,9 +53,9 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
             
             time_diff = current_time - prev_point.coords[0][2]
             dist_diff = distance_m(prev_point, point)
-
+                
             # Candidate stop condition
-            if sog < STOP_SOG_THRESHOLD and time_diff < STOP_TIME_THRESHOLD and dist_diff < STOP_DISTANCE_THRESHOLD:
+            if sog is not None and sog < STOP_SOG_THRESHOLD and time_diff < STOP_TIME_THRESHOLD and dist_diff < STOP_DISTANCE_THRESHOLD:
                 stop.append(prev_point)
                 stop.append(point)
                 
@@ -63,10 +65,13 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
                     traj = []
             else:
                 traj.append(prev_point)
-                traj.append(point)
+                if (dist_diff < MAX_DIST_DIFF_POINTS_IN_TRAJ): # Only use non-skewed AIS points
+                    traj.append(point)
+                else: 
+                    continue # Important to not update prev_point to the skewed AIS point
                 
                 # finish candidate stop
-                if len(stop) >= MIN_STOP_POINTS:
+                if len(stop) > 1:
                     candidate_stops.append(stop)
                     stop = []
 
@@ -122,7 +127,8 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
 def construct_trajectories_and_stops(conn: Connection, db_conn_str: str, max_workers: int = 4):
     """Parallel version of the main loop."""
     cur = conn.cursor()
-    mmsis = get_mmsis(cur)
+    # mmsis = get_mmsis(cur)
+    mmsis = [277547000, 266457000, 210388000]
     cur.close()
     
     total_mmsis = len(mmsis)
@@ -222,13 +228,13 @@ def insert_or_merge_with_trajectories(trajs: list[list[Point]], stop: list[Point
 
 def insert_trajectory(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, line: LineString):
     cur.execute("""
-            INSERT INTO prototype1.trajectory_ls (mmsi, ts_start, ts_end, geom)
+            INSERT INTO prototype1.trajectory_ls_testing (mmsi, ts_start, ts_end, geom)
             VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_Force3DM(ST_GeomFromWKB(%s, 4326)))
         """, (mmsi, ts_start, ts_end, line.wkb))
 
 def insert_stop(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, poly: Polygon):
     cur.execute("""
-            INSERT INTO prototype1.stop_poly (mmsi, ts_start, ts_end, geom)
+            INSERT INTO prototype1.stop_poly_testing (mmsi, ts_start, ts_end, geom)
             VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_GeomFromWKB(%s, 4326))
         """, (mmsi, ts_start, ts_end, poly.wkb))
 
@@ -240,9 +246,9 @@ def get_mmsis(cur: Cursor) -> list[int]:
             WHERE LENGTH(mmsi::text) = 9
                 AND LEFT(mmsi::text, 1) BETWEEN '2' AND '7'
                 AND mmsi NOT IN (
-                    SELECT DISTINCT mmsi FROM prototype1.stop_poly
+                    SELECT DISTINCT mmsi FROM prototype1.stop_poly_testing
                     UNION
-                    SELECT DISTINCT mmsi FROM prototype1.trajectory_ls
+                    SELECT DISTINCT mmsi FROM prototype1.trajectory_ls_testing
                 )
             GROUP BY mmsi
             HAVING COUNT(*) > 1
