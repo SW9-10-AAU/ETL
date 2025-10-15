@@ -119,7 +119,7 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
 
 # ----------------------------------------------------------------------
 
-def construct_trajectories_and_stops(conn: Connection, db_conn_str: str, max_workers: int = 8):
+def construct_trajectories_and_stops(conn: Connection, db_conn_str: str, max_workers: int = 4):
     """Parallel version of the main loop."""
     cur = conn.cursor()
     mmsis = get_mmsis(cur)
@@ -137,9 +137,9 @@ def construct_trajectories_and_stops(conn: Connection, db_conn_str: str, max_wor
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures: dict[FutureResult, int] = {}
 
-        for m in mmsis:
-            fut = executor.submit(process_single_mmsi, db_conn_str, m)
-            futures[cast(FutureResult, fut)] = m
+        for mmsi in mmsis:
+            fut: FutureResult = executor.submit(process_single_mmsi, db_conn_str, mmsi)
+            futures[fut] = mmsi
 
         completed_count = 0
         for future in as_completed(futures):
