@@ -1,3 +1,4 @@
+from math import inf
 import time
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from typing import cast
@@ -6,7 +7,6 @@ from shapely import Polygon, from_wkb, Point, LineString, MultiPoint
 from geopy.distance import geodesic
 
 # Threshold constants matching the paper but with ADJUSTMENTS
-MIN_SOG = 0.0
 STOP_SOG_THRESHOLD = 1.0            # knots, vT (original = 1 knot)
 STOP_DISTANCE_THRESHOLD = 250       # meters, disT (original = 2 km)    CHANGED TO 250m
 STOP_TIME_THRESHOLD = 5400          # seconds, tT (original = 1.5 h)
@@ -14,7 +14,10 @@ MIN_STOP_POINTS = 10                # Δn (original = 10 points)
 MIN_STOP_DURATION = 5400            # seconds, Δstopt (original = 1.5 h)
 MERGE_DISTANCE_THRESHOLD = 250      # meters, Δd. (original = 2 km)     CHANGED TO 250m
 MERGE_TIME_THRESHOLD = 3600         # seconds, Δt (original = 1 h)
-MAX_DIST_DIFF_POINTS_IN_TRAJ = 2500 
+MAX_DIST_DIFF_POINTS_IN_TRAJ = 2500  # meters, max distance between consecutive points in a trajectory (to avoid skewed AIS points) 
+KNOT_AS_MPS = 0.514444  # 1 knot = 0.514444 m/s
+MAX_TIME_DIFF_POINTS_IN_TRAJ = MAX_DIST_DIFF_POINTS_IN_TRAJ / KNOT_AS_MPS  # seconds, max time difference between consecutive points in a trajectory (to avoid skewed AIS points)
+MAX_VESSEL_SPEED = 60.0 # knots, used to filter out erroneous AIS points (e.g. > 60 knots)
 
 AISPoint = tuple[int, bytes, float | None]  # (mmsi, geom as WKB, sog)
 ProcessResult = tuple[int, int, int, int, list[int]]  # (mmsi, num_points, num_trajs, num_stops, merge_case_count)
@@ -44,7 +47,7 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
         merge_case_count: list[int] = [0,0,0,0] # List corresponding to the 4 merge cases for non-valid stops merged with existing trajectories
         num_stops: int = 0
 
-        for point, sog in points:
+        for i, (point, sog) in enumerate(points):
             current_time = point.coords[0][2] # epoch time
             if prev_point is None:
                 traj = [point]
@@ -65,11 +68,25 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
                     traj = []
             else:
                 traj.append(prev_point)
-                if (dist_diff < MAX_DIST_DIFF_POINTS_IN_TRAJ): # Only use non-skewed AIS points
+                avg_vessel_speed = dist_diff / time_diff / KNOT_AS_MPS if time_diff > 0 else inf
+                if (avg_vessel_speed < MAX_VESSEL_SPEED):
+                # if ((dist_diff < MAX_DIST_DIFF_POINTS_IN_TRAJ and time_diff < MAX_TIME_DIFF_POINTS_IN_TRAJ) 
+                #     or dist_diff_to_next_point < MAX_DIST_DIFF_POINTS_IN_TRAJ): # Only use non-skewed AIS points
                     traj.append(point)
-                else: 
+                else:
                     continue # Important to not update prev_point to the skewed AIS point
                 
+                    # TODO: FIX THIS LOGIC
+                    next_dist_diff = distance_m(point, points[i+1][0]) if i+1 < len(points) else 0
+                    next_time_diff = points[i+1][0].coords[0][2] - current_time if i+1 < len(points) else 0
+                    next_avg_vessel_speed = next_dist_diff / next_time_diff / KNOT_AS_MPS if next_time_diff > 0 else inf
+                    if (next_avg_vessel_speed > MAX_VESSEL_SPEED):
+                        continue # skip skewed AIS point
+                    trajs.append(traj)
+                    traj = []
+                    prev_point = None
+                    continue
+                 
                 # finish candidate stop
                 if len(stop) > 1:
                     candidate_stops.append(stop)
@@ -128,7 +145,8 @@ def construct_trajectories_and_stops(conn: Connection, db_conn_str: str, max_wor
     """Parallel version of the main loop."""
     cur = conn.cursor()
     # mmsis = get_mmsis(cur)
-    mmsis = [277547000, 266457000, 210388000]
+    # mmsis = [277547000, 266457000, 210388000]
+    mmsis = [219026000, 210388000] # Bornholmsfærgen
     cur.close()
     
     total_mmsis = len(mmsis)
