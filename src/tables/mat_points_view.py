@@ -2,9 +2,6 @@ from psycopg import Connection
 
 def mat_points_view(conn: Connection):
     cur = conn.cursor()
-
-    # Example MMSI for testing
-    mmsi = "210051000, 636015105"
     
     cur.execute(f"""
             -- POINTM's with MMSI
@@ -34,8 +31,7 @@ def mat_points_view(conn: Connection):
             JOIN dim.vessel_dim V ON AIS.vessel_id = V.vessel_id
             JOIN dim.time_dim TIM ON TIM.time_id = AIS.time_id
             JOIN dim.date_dim DAT ON DAT.date_id = AIS.date_id
-            WHERE AIS.lat <> 91::double precision
-            AND V.mmsi IN ({mmsi}); -- Restriction of MMSI's
+            WHERE AIS.lat <> 91::double precision;
         """)
 
      # Create index for lookup
