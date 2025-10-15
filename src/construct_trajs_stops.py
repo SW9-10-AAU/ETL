@@ -1,5 +1,7 @@
+import time
+from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from typing import cast
-from psycopg import Connection, Cursor
+from psycopg import Connection, Cursor, connect
 from shapely import Polygon, from_wkb, Point, LineString, MultiPoint
 from geopy.distance import geodesic
 
@@ -13,22 +15,25 @@ MERGE_DISTANCE_THRESHOLD = 250      # meters, Δd. (original = 2 km)     CHANGED
 MERGE_TIME_THRESHOLD = 3600         # seconds, Δt (original = 1 h)
 
 AISPoint = tuple[int, bytes, float | None]  # (mmsi, geom as WKB, sog)
+ProcessResult = tuple[int, int, int, int, list[int]]  # (mmsi, num_points, num_trajs, num_stops, merge_case_count)
+FutureResult = Future[ProcessResult] # Future returning ProcessResult
 
 def distance_m(p1: Point, p2: Point) -> float:
     """Return distance between two Shapely Points in meters."""
     return geodesic((p1.y, p1.x), (p2.y, p2.x)).meters # x and y is swapped because this is (lat,lon), and Shapely/PostGIS is (lon,lat)
 
-def construct_trajectories_and_stops(conn: Connection):
-    """Construct trajectories and stops from points in the database."""
-    cur = conn.cursor()
-    mmsis = get_mmsis(cur)
-    print(f"Found {len(mmsis)} distinct MMSIs to process.")
-    
-    num_mmsis = len(mmsis)
+def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
+    """
+    Process a single MMSI — constructs trajectories and stops.
+    Returns (mmsi, num_points, num_trajs, num_stops, merge_case_count).
+    """
+    with connect(db_conn_str) as conn:
+        cur = conn.cursor()
+        points: list[tuple[Point, float]] = [
+            (cast(Point, from_wkb(geom_wkb)), float(sog) if sog is not None else 0.0)
+            for (_, geom_wkb, sog) in get_points_for_mmsi(cur, mmsi)
+        ]
 
-    for i, mmsi in enumerate(mmsis):
-        points: list[tuple[Point, float]] = [(cast(Point, from_wkb(geom_wkb)), float(sog) if sog is not None else 0.0) for (_, geom_wkb, sog) in get_points_for_mmsi(cur, mmsi)]
-        print(f"Processing MMSI {mmsi}: {len(points)} points.")
         traj : list[Point] = []
         stop : list[Point] = []
         prev_point = None
@@ -67,10 +72,9 @@ def construct_trajectories_and_stops(conn: Connection):
 
             prev_point = point
 
-        # append remaining trajectory
+        # Final append (remaining traj or stop)
         if len(traj) > 1:
             trajs.append(traj)
-        # append remaining stop
         if len(stop) > 1:
             candidate_stops.append(stop)
 
@@ -79,7 +83,6 @@ def construct_trajectories_and_stops(conn: Connection):
         if candidate_stops:
             merged_stop = candidate_stops[0]
             for candidate_stop in candidate_stops[1:]:
-                # distance between centers
                 center_prev = MultiPoint(merged_stop).centroid
                 center_curr = MultiPoint(candidate_stop).centroid
                 start_time_curr = candidate_stop[0].coords[0][2]
@@ -92,29 +95,78 @@ def construct_trajectories_and_stops(conn: Connection):
                     merged_stop = candidate_stop
             merged_stops.append(merged_stop)
 
-        # Insert final stops with duration check
+        # Insert final stops
         for merged_stop in merged_stops:
             ts_start = merged_stop[0].coords[0][2]
-            ts_end   = merged_stop[-1].coords[0][2]
+            ts_end = merged_stop[-1].coords[0][2]
             if len(merged_stop) >= MIN_STOP_POINTS and (ts_end - ts_start) >= MIN_STOP_DURATION:
                 num_stops += 1
                 insert_stop(cur, mmsi, ts_start, ts_end, MultiPoint(merged_stop).convex_hull.buffer(0))
             else:
                 # Non-valid stop, try to merge with existing trajectories
                 insert_or_merge_with_trajectories(trajs, merged_stop, merge_case_count)
-        
+
         # Insert trajectories
         for trajectory in trajs:
             ts_start = trajectory[0].coords[0][2]
-            ts_end   = trajectory[-1].coords[0][2]
-            if len(trajectory) > 1 and ts_end > ts_start: # End time must be after start time
-               insert_trajectory(cur, mmsi, ts_start, ts_end, LineString(trajectory))
-        
-        print(f"MMSI {mmsi}: Inserted {len(trajs)} trajectories, {num_stops} stops, cases: {merge_case_count} merges of non-valid stops")
-        print(f"Progress: {i+1}/{num_mmsis} ({(i+1)/num_mmsis*100:.2f}%)")
+            ts_end = trajectory[-1].coords[0][2]
+            if len(trajectory) > 1 and ts_end > ts_start:
+                insert_trajectory(cur, mmsi, ts_start, ts_end, LineString(trajectory))
+
         conn.commit()
-        
+        cur.close()
+        return (mmsi, len(points), len(trajs), num_stops, merge_case_count)
+
+# ----------------------------------------------------------------------
+
+def construct_trajectories_and_stops(conn: Connection, db_conn_str: str, max_workers: int = 4):
+    """Parallel version of the main loop."""
+    cur = conn.cursor()
+    mmsis = get_mmsis(cur)
     cur.close()
+    
+    total_mmsis = len(mmsis)
+    if total_mmsis == 0:
+        print("No MMSIs to process.")
+        return
+    
+    print(f"Found {total_mmsis} distinct MMSIs to process using {max_workers} workers.")
+
+    start_time = time.perf_counter()
+
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures: dict[FutureResult, int] = {}
+
+        for mmsi in mmsis:
+            fut: FutureResult = executor.submit(process_single_mmsi, db_conn_str, mmsi)
+            futures[fut] = mmsi
+
+        completed_count = 0
+        for future in as_completed(futures):
+            completed_count += 1
+            mmsi = futures[future]
+            try:
+                mmsi, num_points, num_trajs, num_stops, merge_cases = future.result()
+                print(f"MMSI {mmsi}: {num_points} points, {num_trajs} trajectories, {num_stops} stops, merge cases: {merge_cases}")
+            except Exception as e:
+                print(f"Error processing MMSI {mmsi}: {e}")
+                
+            # Timing and progress tracking
+            elapsed = time.perf_counter() - start_time
+            avg_time = elapsed / completed_count
+            remaining = total_mmsis - completed_count
+            eta = remaining * avg_time
+
+            print(
+                f"Progress: {completed_count}/{total_mmsis} ({(completed_count / total_mmsis) * 100:.2f}%) | "
+                f"Avg per MMSI: {avg_time:.2f}s | ETA: {eta/60:.1f} min | Total elapsed: {elapsed/60:.1f} min\n"
+            )
+
+    total_time = time.perf_counter() - start_time
+    print("All MMSIs processed.")
+    print(f"Total elapsed: {total_time/60:.2f} min | Avg per MMSI: {total_time/total_mmsis:.2f} sec")
+    
+# ----------------------------------------------------------------------
 
 def insert_or_merge_with_trajectories(trajs: list[list[Point]], stop: list[Point], case_count: list[int]):
     """Insert or merge a non-valid stop with existing trajectories."""
@@ -181,9 +233,9 @@ def insert_stop(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, poly: Po
         """, (mmsi, ts_start, ts_end, poly.wkb))
 
 def get_mmsis(cur: Cursor) -> list[int]:
-    """Fetch distinct MMSIs from the database."""
+    """Fetch distinct MMSIs with at least 2 AIS points from the database."""
     cur.execute("""
-            SELECT DISTINCT mmsi
+            SELECT mmsi
             FROM prototype1.points
             WHERE LENGTH(mmsi::text) = 9
                 AND LEFT(mmsi::text, 1) BETWEEN '2' AND '7'
@@ -192,6 +244,8 @@ def get_mmsis(cur: Cursor) -> list[int]:
                     UNION
                     SELECT DISTINCT mmsi FROM prototype1.trajectory_ls
                 )
+            GROUP BY mmsi
+            HAVING COUNT(*) > 1
             ORDER BY mmsi;
         """)
     rows = cur.fetchall()
