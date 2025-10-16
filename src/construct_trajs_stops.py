@@ -18,6 +18,7 @@ MERGE_TIME_THRESHOLD = 3600         # seconds, Δt (original = 1 h)
 # Threshold constants for removing AIS outlier points
 KNOT_AS_MPS = 0.514444  # 1 knot = 0.514444 m/s
 MAX_VESSEL_SPEED = 70.0 # knots, used to filter out false AIS points (e.g. > 70 knots)
+MAX_AIS_POINT_GAP = 5400 # seconds, max time gap between two AIS points to be considered valid
 
 AISPoint = tuple[int, bytes, float | None]  # (mmsi, geom as WKB, sog)
 ProcessResult = tuple[int, int, int, int, list[int]]  # (mmsi, num_points, num_trajs, num_stops, merge_case_count)
@@ -70,7 +71,15 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
             else:
                 traj.append(prev_point) 
                 if (avg_vessel_speed < MAX_VESSEL_SPEED): # Only use points that do not imply an unrealistic speed
-                    traj.append(point)
+                    if time_diff < MAX_AIS_POINT_GAP:
+                        traj.append(point)
+                    else: 
+                        # Cut trajectory due to large time gap
+                        if len(traj) > 1:
+                            trajs.append(traj)
+                            traj = [point]
+                            prev_point = point
+                            continue
                 else: 
                     continue # Important to not update prev_point to the skewed AIS point
                 
@@ -135,9 +144,11 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
 def construct_trajectories_and_stops(conn: Connection, db_conn_str: str, max_workers: int = 4):
     """Parallel version of the main loop."""
     cur = conn.cursor()
-    # mmsis = get_mmsis(cur)
+    mmsis = get_mmsis(cur)
     # mmsis = [277547000, 266457000, 210388000]
-    mmsis = [219026000, 210388000, 211440680, 211444890] # Bornholmsfærgen og elfen færge i tyskland
+    # mmsis = [219026000, 210388000, 211440680, 211444890] # Bornholmsfærgen og elfen færge i tyskland
+    # mmsis = [209207000, 211219630, 205795000, 209276000, 210195000] # For testing ships that have turned off their AIS transponder
+    # mmsis = [209207000]
     cur.close()
     
     total_mmsis = len(mmsis)
