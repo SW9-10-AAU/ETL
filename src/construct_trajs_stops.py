@@ -110,7 +110,11 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
             ts_end = merged_stop[-1].coords[0][2]
             if len(merged_stop) >= MIN_STOP_POINTS and (ts_end - ts_start) >= MIN_STOP_DURATION:
                 num_stops += 1
-                insert_stop(cur, mmsi, ts_start, ts_end, MultiPoint(merged_stop).convex_hull.buffer(0))
+                stop_poly = MultiPoint(merged_stop).convex_hull.buffer(0)
+                if(stop_poly.geom_type == 'Polygon'):
+                    insert_stop(cur, mmsi, ts_start, ts_end, stop_poly)
+                else:
+                    insert_or_merge_with_trajectories(trajs, merged_stop, merge_case_count)
             else:
                 # Non-valid stop, try to merge with existing trajectories
                 insert_or_merge_with_trajectories(trajs, merged_stop, merge_case_count)
