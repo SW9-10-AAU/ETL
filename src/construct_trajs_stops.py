@@ -6,7 +6,7 @@ from psycopg import Connection, Cursor, connect
 from shapely import Polygon, from_wkb, Point, LineString, MultiPoint
 from geopy.distance import geodesic
 
-# Threshold constants matching the paper but with ADJUSTMENTS
+# Threshold constants matching the paper t with ADJUSTMENTS
 STOP_SOG_THRESHOLD = 1.0            # knots, vT (original = 1 knot)
 STOP_DISTANCE_THRESHOLD = 250       # meters, disT (original = 2 km)    CHANGED TO 250m
 STOP_TIME_THRESHOLD = 5400          # seconds, tT (original = 1.5 h)
@@ -119,11 +119,11 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
             ts_end = merged_stop[-1].coords[0][2]
             if len(merged_stop) >= MIN_STOP_POINTS and (ts_end - ts_start) >= MIN_STOP_DURATION:
                 num_stops += 1
-                stop_poly = MultiPoint(merged_stop).convex_hull.buffer(0)
-                if(stop_poly.geom_type == 'Polygon'):
-                    insert_stop(cur, mmsi, ts_start, ts_end, stop_poly)
+                stop_geom = MultiPoint(merged_stop).convex_hull
+                if(stop_geom.geom_type == 'Polygon'):
+                    insert_stop(cur, mmsi, ts_start, ts_end, cast(Polygon, stop_geom)) # Only insert if valid polygon
                 else:
-                    insert_or_merge_with_trajectories(trajs, merged_stop, merge_case_count)
+                    insert_or_merge_with_trajectories(trajs, merged_stop, merge_case_count) # Fallback to merging as trajectory if POLYGON EMPTY
             else:
                 # Non-valid stop, try to merge with existing trajectories
                 insert_or_merge_with_trajectories(trajs, merged_stop, merge_case_count)
@@ -144,11 +144,12 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
 def construct_trajectories_and_stops(conn: Connection, db_conn_str: str, max_workers: int = 4):
     """Parallel version of the main loop."""
     cur = conn.cursor()
-    mmsis = get_mmsis(cur)
+    # mmsis = get_mmsis(cur)
     # mmsis = [277547000, 266457000, 210388000]
     # mmsis = [219026000, 210388000, 211440680, 211444890] # Bornholmsfærgen og elfen færge i tyskland
     # mmsis = [209207000, 211219630, 205795000, 209276000, 210195000] # For testing ships that have turned off their AIS transponder
     # mmsis = [209207000]
+    mmsis = [211366340] # test POLYGON EMPTY
     cur.close()
     
     total_mmsis = len(mmsis)
