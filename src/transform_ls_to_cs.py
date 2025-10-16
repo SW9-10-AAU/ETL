@@ -9,6 +9,7 @@ ZOOM = 21
 ENCODE_OFFSET = 100_000_000_000_000
 ENCODE_MULT = 10_000_000
 BATCH_SIZE = 5_000
+MAX_WORKERS = 4
 
 
 # --- Encoding Utilities ---
@@ -99,7 +100,7 @@ def process_stop_row(row: tuple):
     polygon: Polygon = from_wkb(geom_wkb)
 
     if polygon.is_empty:
-        print(f"⚠️ Skipping empty stop {stop_id}")
+        print(f"Skipping empty stop {stop_id}")
         return None
 
     cellstring = convert_polygon_to_cellstring(polygon)
@@ -120,18 +121,19 @@ def stream_query(cur, query: str, batch_size: int):
 
 # --- Main Transformation Functions ---
 
-def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = 4, batch_size: int = BATCH_SIZE):
+def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = MAX_WORKERS,
+                                    batch_size: int = BATCH_SIZE):
     total_processed = 0
     insert_query = """
                    INSERT INTO prototype1.trajectory_cs (trajectory_id, mmsi, ts_start, ts_end, unique_cells, cellstring)
-                   VALUES (%s, %s, %s, %s, %s, %s) \
+                   VALUES (%s, %s, %s, %s, %s, %s)
                    """
 
     with connection.cursor() as cur:
         query = """
                 SELECT trajectory_id, mmsi, ts_start, ts_end, ST_AsBinary(geom)
                 FROM prototype1.trajectory_ls
-                ORDER BY trajectory_id; \
+                ORDER BY trajectory_id;
                 """
 
         for batch in stream_query(cur, query, batch_size):
@@ -154,18 +156,18 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = 4
     print(f"Finished processing all trajectories ({total_processed:,} total)")
 
 
-def transform_ls_stops_to_cs(connection: Connection, max_workers: int = 4, batch_size: int = BATCH_SIZE):
+def transform_ls_stops_to_cs(connection: Connection, max_workers: int = MAX_WORKERS, batch_size: int = BATCH_SIZE):
     total_processed = 0
     insert_query = """
                    INSERT INTO prototype1.stop_cs (stop_id, mmsi, ts_start, ts_end, cellstring)
-                   VALUES (%s, %s, %s, %s, %s) \
+                   VALUES (%s, %s, %s, %s, %s)
                    """
 
     with connection.cursor() as cur:
         query = """
                 SELECT stop_id, mmsi, ts_start, ts_end, ST_AsBinary(geom)
                 FROM prototype1.stop_poly
-                ORDER BY stop_id; \
+                ORDER BY stop_id;
                 """
 
         for batch in stream_query(cur, query, batch_size):
@@ -181,7 +183,8 @@ def transform_ls_stops_to_cs(connection: Connection, max_workers: int = 4, batch
                         print(f"Worker error: {e}")
 
             with connection.cursor() as insert_cur:
-                insert_cur.executemany(insert_query, [(sid, m, s, e, c) for (sid, m, s, e, c) in results])
+                insert_cur.executemany(insert_query, [(stop_id, mmsi, start_time, end_time, cellstring) for
+                                                      (stop_id, mmsi, start_time, end_time, cellstring) in results])
             connection.commit()
 
             total_processed += len(results)
