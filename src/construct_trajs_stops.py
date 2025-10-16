@@ -14,10 +14,10 @@ MIN_STOP_POINTS = 10                # Δn (original = 10 points)
 MIN_STOP_DURATION = 5400            # seconds, Δstopt (original = 1.5 h)
 MERGE_DISTANCE_THRESHOLD = 250      # meters, Δd. (original = 2 km)     CHANGED TO 250m
 MERGE_TIME_THRESHOLD = 3600         # seconds, Δt (original = 1 h)
-MAX_DIST_DIFF_POINTS_IN_TRAJ = 2500  # meters, max distance between consecutive points in a trajectory (to avoid skewed AIS points) 
+
+# Threshold constants for removing AIS outlier points
 KNOT_AS_MPS = 0.514444  # 1 knot = 0.514444 m/s
-MAX_TIME_DIFF_POINTS_IN_TRAJ = MAX_DIST_DIFF_POINTS_IN_TRAJ / KNOT_AS_MPS  # seconds, max time difference between consecutive points in a trajectory (to avoid skewed AIS points)
-MAX_VESSEL_SPEED = 60.0 # knots, used to filter out erroneous AIS points (e.g. > 60 knots)
+MAX_VESSEL_SPEED = 70.0 # knots, used to filter out false AIS points (e.g. > 70 knots)
 
 AISPoint = tuple[int, bytes, float | None]  # (mmsi, geom as WKB, sog)
 ProcessResult = tuple[int, int, int, int, list[int]]  # (mmsi, num_points, num_trajs, num_stops, merge_case_count)
@@ -56,8 +56,9 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
             
             time_diff = current_time - prev_point.coords[0][2]
             dist_diff = distance_m(prev_point, point)
-                
-            # Candidate stop condition
+            avg_vessel_speed = dist_diff / time_diff / KNOT_AS_MPS if time_diff > 0 else inf
+
+            # Candidate stop condition 
             if sog is not None and sog < STOP_SOG_THRESHOLD and time_diff < STOP_TIME_THRESHOLD and dist_diff < STOP_DISTANCE_THRESHOLD:
                 stop.append(prev_point)
                 stop.append(point)
@@ -67,31 +68,17 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
                     trajs.append(traj)
                     traj = []
             else:
-                traj.append(prev_point)
-                avg_vessel_speed = dist_diff / time_diff / KNOT_AS_MPS if time_diff > 0 else inf
-                if (avg_vessel_speed < MAX_VESSEL_SPEED):
-                # if ((dist_diff < MAX_DIST_DIFF_POINTS_IN_TRAJ and time_diff < MAX_TIME_DIFF_POINTS_IN_TRAJ) 
-                #     or dist_diff_to_next_point < MAX_DIST_DIFF_POINTS_IN_TRAJ): # Only use non-skewed AIS points
+                traj.append(prev_point) 
+                if (avg_vessel_speed < MAX_VESSEL_SPEED): # Only use points that do not imply an unrealistic speed
                     traj.append(point)
-                else:
+                else: 
                     continue # Important to not update prev_point to the skewed AIS point
                 
-                    # TODO: FIX THIS LOGIC
-                    next_dist_diff = distance_m(point, points[i+1][0]) if i+1 < len(points) else 0
-                    next_time_diff = points[i+1][0].coords[0][2] - current_time if i+1 < len(points) else 0
-                    next_avg_vessel_speed = next_dist_diff / next_time_diff / KNOT_AS_MPS if next_time_diff > 0 else inf
-                    if (next_avg_vessel_speed > MAX_VESSEL_SPEED):
-                        continue # skip skewed AIS point
-                    trajs.append(traj)
-                    traj = []
-                    prev_point = None
-                    continue
-                 
                 # finish candidate stop
                 if len(stop) > 1:
                     candidate_stops.append(stop)
                     stop = []
-
+                
             prev_point = point
 
         # Final append (remaining traj or stop)
@@ -146,7 +133,7 @@ def construct_trajectories_and_stops(conn: Connection, db_conn_str: str, max_wor
     cur = conn.cursor()
     # mmsis = get_mmsis(cur)
     # mmsis = [277547000, 266457000, 210388000]
-    mmsis = [219026000, 210388000] # Bornholmsfærgen
+    mmsis = [219026000, 210388000, 211440680, 211444890] # Bornholmsfærgen og elfen færge i tyskland
     cur.close()
     
     total_mmsis = len(mmsis)
