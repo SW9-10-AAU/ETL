@@ -1,6 +1,7 @@
+from typing import Literal, LiteralString
 import mercantile
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from psycopg import Connection
+from psycopg import Connection, Cursor
 from shapely import from_wkb, LineString, Polygon, Point
 
 # --- Constants ---
@@ -56,15 +57,14 @@ def convert_linestring_to_cellstring(ls: LineString) -> list[int]:
     if ls.is_empty:
         return []
     coords = ls.coords
-    cellstring = []
-    append = cellstring.append
+    cellstring: list[int] = []
     for c0, c1 in zip(coords[:-1], coords[1:]):
         lon0, lat0 = c0[:2]
         lon1, lat1 = c1[:2]
         x0, y0 = get_tile_xy(lon0, lat0)
         x1, y1 = get_tile_xy(lon1, lat1)
         for x, y in bresenham(x0, y0, x1, y1):
-            append(encode_tile_xy_to_cellid(x, y))
+            cellstring.append(encode_tile_xy_to_cellid(x, y))
     return cellstring
 
 
@@ -73,15 +73,13 @@ def convert_polygon_to_cellstring(poly: Polygon) -> list[int]:
         return []
     minx, miny, maxx, maxy = poly.bounds
     tiles = mercantile.tiles(minx, miny, maxx, maxy, ZOOM)
-    cellstring = []
-    append = cellstring.append
-    contains = poly.contains
+    cellstring: list[int] = []
 
     for tile in tiles:
         bounds = mercantile.bounds(tile)
         center = Point((bounds.west + bounds.east) / 2, (bounds.north + bounds.south) / 2)
-        if contains(center):
-            append(encode_tile_xy_to_cellid(tile.x, tile.y))
+        if poly.contains(center):
+            cellstring.append(encode_tile_xy_to_cellid(tile.x, tile.y))
     return cellstring
 
 
@@ -109,7 +107,7 @@ def process_stop_row(row: tuple):
 
 # --- Streaming Batch Helpers ---
 
-def stream_query(cur, query: str, batch_size: int):
+def get_batches(cur: Cursor, query: LiteralString, batch_size: int):
     """Generator that yields rows in batches."""
     cur.execute(query)
     while True:
@@ -136,7 +134,7 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
                 ORDER BY trajectory_id;
                 """
 
-        for batch in stream_query(cur, query, batch_size):
+        for batch in get_batches(cur, query, batch_size):
             with ProcessPoolExecutor(max_workers=max_workers) as executor:
                 futures = [executor.submit(process_trajectory_row, row) for row in batch]
                 results = []
@@ -170,7 +168,7 @@ def transform_ls_stops_to_cs(connection: Connection, max_workers: int = MAX_WORK
                 ORDER BY stop_id;
                 """
 
-        for batch in stream_query(cur, query, batch_size):
+        for batch in get_batches(cur, query, batch_size):
             with ProcessPoolExecutor(max_workers=max_workers) as executor:
                 futures = [executor.submit(process_stop_row, row) for row in batch]
                 results = []
