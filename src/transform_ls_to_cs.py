@@ -123,6 +123,7 @@ def get_batches(cur: Cursor, query: LiteralString, batch_size: int):
 
 def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = MAX_WORKERS,
                                     batch_size: int = BATCH_SIZE):
+    print(f"Processing trajectories using {max_workers} workers.")
     total_processed = 0
     insert_query = """
                    INSERT INTO prototype1.trajectory_cs (trajectory_id, mmsi, ts_start, ts_end, unique_cells, cellstring)
@@ -160,6 +161,7 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
 
 
 def transform_ls_stops_to_cs(connection: Connection, max_workers: int = MAX_WORKERS, batch_size: int = BATCH_SIZE):
+    print(f"Processing stops using {max_workers} workers.")
     total_processed = 0
     insert_query = """
                    INSERT INTO prototype1.stop_cs (stop_id, mmsi, ts_start, ts_end, cellstring)
