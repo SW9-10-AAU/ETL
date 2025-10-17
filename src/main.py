@@ -19,7 +19,7 @@ def main():
     connection = connect_to_db()
 
     # Drop existing tables and views
-    # drop_all_tables(connection)
+    drop_all_tables(connection)
 
     # Create LineString/Polygon tables Trajectory and Stop
     # create_ls_traj_stop_tables(connection)

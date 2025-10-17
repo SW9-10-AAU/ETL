@@ -15,7 +15,7 @@ def create_ls_traj_stop_tables(conn: Connection):
                 mmsi          BIGINT                      NOT NULL,
                 ts_start      TIMESTAMP WITHOUT TIME ZONE NOT NULL,
                 ts_end        TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-                geom          geometry(LINESTRINGM, 4326) NOT NULL,
+                geom          geometry(LINESTRING, 4326) NOT NULL,
                 CONSTRAINT trajectory_time_check CHECK (ts_start < ts_end)
             );
         """)

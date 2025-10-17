@@ -1,3 +1,4 @@
+from math import inf
 import time
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from typing import cast
@@ -14,6 +15,11 @@ MIN_STOP_DURATION = 5400            # seconds, Δstopt (original = 1.5 h)
 MERGE_DISTANCE_THRESHOLD = 250      # meters, Δd. (original = 2 km)     CHANGED TO 250m
 MERGE_TIME_THRESHOLD = 3600         # seconds, Δt (original = 1 h)
 
+# Threshold constants for removing AIS outlier points
+KNOT_AS_MPS = 0.514444  # 1 knot = 0.514444 m/s
+MAX_VESSEL_SPEED = 70.0 # knots, used to filter out false AIS points (e.g. > 70 knots)
+MAX_AIS_POINT_GAP = 5400 # seconds (1.5 h), max time gap between two AIS points to be considered valid
+
 AISPoint = tuple[int, bytes, float | None]  # (mmsi, geom as WKB, sog)
 ProcessResult = tuple[int, int, int, int, list[int]]  # (mmsi, num_points, num_trajs, num_stops, merge_case_count)
 FutureResult = Future[ProcessResult] # Future returning ProcessResult
@@ -29,8 +35,8 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
     """
     with connect(db_conn_str) as conn:
         cur = conn.cursor()
-        points: list[tuple[Point, float]] = [
-            (cast(Point, from_wkb(geom_wkb)), float(sog) if sog is not None else 0.0)
+        points: list[tuple[Point, float | None]] = [
+            (cast(Point, from_wkb(geom_wkb)), sog)
             for (_, geom_wkb, sog) in get_points_for_mmsi(cur, mmsi)
         ]
 
@@ -51,9 +57,10 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
             
             time_diff = current_time - prev_point.coords[0][2]
             dist_diff = distance_m(prev_point, point)
+            avg_vessel_speed = dist_diff / time_diff / KNOT_AS_MPS if time_diff > 0 else inf
 
-            # Candidate stop condition
-            if sog < STOP_SOG_THRESHOLD and time_diff < STOP_TIME_THRESHOLD and dist_diff < STOP_DISTANCE_THRESHOLD:
+            # Candidate stop condition 
+            if sog is not None and sog < STOP_SOG_THRESHOLD and time_diff < STOP_TIME_THRESHOLD and dist_diff < STOP_DISTANCE_THRESHOLD:
                 stop.append(prev_point)
                 stop.append(point)
                 
@@ -62,14 +69,25 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
                     trajs.append(traj)
                     traj = []
             else:
-                traj.append(prev_point)
-                traj.append(point)
+                traj.append(prev_point) 
+                if (avg_vessel_speed < MAX_VESSEL_SPEED): # Only use points that do not imply an unrealistic speed
+                    if time_diff < MAX_AIS_POINT_GAP:
+                        traj.append(point)
+                    else: 
+                        # Cut trajectory due to large time gap
+                        if len(traj) > 1:
+                            trajs.append(traj)
+                            traj = [point]
+                            prev_point = point
+                            continue
+                else: 
+                    continue # Important to not update prev_point to the skewed AIS point
                 
                 # finish candidate stop
-                if len(stop) >= MIN_STOP_POINTS:
+                if len(stop) > 1:
                     candidate_stops.append(stop)
                     stop = []
-
+                    
             prev_point = point
 
         # Final append (remaining traj or stop)
@@ -101,7 +119,11 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
             ts_end = merged_stop[-1].coords[0][2]
             if len(merged_stop) >= MIN_STOP_POINTS and (ts_end - ts_start) >= MIN_STOP_DURATION:
                 num_stops += 1
-                insert_stop(cur, mmsi, ts_start, ts_end, MultiPoint(merged_stop).convex_hull.buffer(0))
+                stop_geom = MultiPoint(merged_stop).convex_hull
+                if(stop_geom.geom_type == 'Polygon'):
+                    insert_stop(cur, mmsi, ts_start, ts_end, cast(Polygon, stop_geom)) # Only insert if valid polygon
+                else:
+                    insert_or_merge_with_trajectories(trajs, merged_stop, merge_case_count) # Fallback to merging as trajectory if POLYGON EMPTY
             else:
                 # Non-valid stop, try to merge with existing trajectories
                 insert_or_merge_with_trajectories(trajs, merged_stop, merge_case_count)
@@ -123,6 +145,7 @@ def construct_trajectories_and_stops(conn: Connection, db_conn_str: str, max_wor
     """Parallel version of the main loop."""
     cur = conn.cursor()
     mmsis = get_mmsis(cur)
+    
     cur.close()
     
     total_mmsis = len(mmsis)
@@ -223,7 +246,7 @@ def insert_or_merge_with_trajectories(trajs: list[list[Point]], stop: list[Point
 def insert_trajectory(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, line: LineString):
     cur.execute("""
             INSERT INTO prototype1.trajectory_ls (mmsi, ts_start, ts_end, geom)
-            VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_Force3DM(ST_GeomFromWKB(%s, 4326)))
+            VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_Force2D(ST_GeomFromWKB(%s, 4326)))
         """, (mmsi, ts_start, ts_end, line.wkb))
 
 def insert_stop(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, poly: Polygon):

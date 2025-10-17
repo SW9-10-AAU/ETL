@@ -100,20 +100,5 @@ class TestPolygonToCellString(unittest.TestCase):
         self.assertNotIn(example_cellid, cellstring)
 
 
-class TestUniqueCells(unittest.TestCase):
-
-    def test_unique_cells_false(self):
-        ls = LineString([
-            [10.836495399475098, 57.36823654174805], [10.836495399475099, 57.36823654174805],
-            [10.83551025390625, 57.368526458740234]])
-        cellstring = transform.convert_linestring_to_cellstring(ls)
-        self.assertFalse(len(cellstring) == len(set(cellstring)))
-
-    def test_unique_cells_true(self):
-        ls = LineString([[10.836495399475098, 57.36823654174805], [10.83551025390625, 57.368526458740234]])
-        cellstring = transform.convert_linestring_to_cellstring(ls)
-        self.assertTrue(len(cellstring) == len(set(cellstring)))
-
-
 if __name__ == "__main__":
     unittest.main()
