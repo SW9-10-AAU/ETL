@@ -6,7 +6,7 @@ from psycopg import Connection, Cursor, connect
 from shapely import Polygon, from_wkb, Point, LineString, MultiPoint
 from geopy.distance import geodesic
 
-# Threshold constants matching the paper t with ADJUSTMENTS
+# Threshold constants matching the paper but with ADJUSTMENTS
 STOP_SOG_THRESHOLD = 1.0            # knots, vT (original = 1 knot)
 STOP_DISTANCE_THRESHOLD = 250       # meters, disT (original = 2 km)    CHANGED TO 250m
 STOP_TIME_THRESHOLD = 5400          # seconds, tT (original = 1.5 h)
@@ -18,7 +18,7 @@ MERGE_TIME_THRESHOLD = 3600         # seconds, Δt (original = 1 h)
 # Threshold constants for removing AIS outlier points
 KNOT_AS_MPS = 0.514444  # 1 knot = 0.514444 m/s
 MAX_VESSEL_SPEED = 70.0 # knots, used to filter out false AIS points (e.g. > 70 knots)
-MAX_AIS_POINT_GAP = 5400 # seconds, max time gap between two AIS points to be considered valid
+MAX_AIS_POINT_GAP = 5400 # seconds (1.5 h), max time gap between two AIS points to be considered valid
 
 AISPoint = tuple[int, bytes, float | None]  # (mmsi, geom as WKB, sog)
 ProcessResult = tuple[int, int, int, int, list[int]]  # (mmsi, num_points, num_trajs, num_stops, merge_case_count)
@@ -48,7 +48,7 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
         merge_case_count: list[int] = [0,0,0,0] # List corresponding to the 4 merge cases for non-valid stops merged with existing trajectories
         num_stops: int = 0
 
-        for i, (point, sog) in enumerate(points):
+        for point, sog in points:
             current_time = point.coords[0][2] # epoch time
             if prev_point is None:
                 traj = [point]
@@ -87,7 +87,7 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
                 if len(stop) > 1:
                     candidate_stops.append(stop)
                     stop = []
-                
+                    
             prev_point = point
 
         # Final append (remaining traj or stop)
