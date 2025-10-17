@@ -6,7 +6,7 @@ def create_cs_traj_stop_tables(conn: Connection):
     # Trajectory table
     cur.execute("""
             CREATE TABLE IF NOT EXISTS prototype1.trajectory_cs (
-                trajectory_id SERIAL PRIMARY KEY,
+                trajectory_id BIGINT PRIMARY KEY,
                 mmsi          BIGINT                      NOT NULL,
                 ts_start      TIMESTAMP WITHOUT TIME ZONE NOT NULL,
                 ts_end        TIMESTAMP WITHOUT TIME ZONE NOT NULL,
@@ -34,7 +34,7 @@ def create_cs_traj_stop_tables(conn: Connection):
     cur.execute("""
             CREATE TABLE IF NOT EXISTS prototype1.stop_cs
             (
-                stop_id     SERIAL PRIMARY KEY,
+                stop_id     BIGINT PRIMARY KEY,
                 mmsi        BIGINT                      NOT NULL,
                 ts_start    TIMESTAMP WITHOUT TIME ZONE NOT NULL,
                 ts_end      TIMESTAMP WITHOUT TIME ZONE NOT NULL,
