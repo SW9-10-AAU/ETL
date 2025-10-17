@@ -20,8 +20,8 @@ def encode_tile_xy_to_cellid(x: int, y: int) -> int:
 
 
 def get_tile_xy(lon: float, lat: float, zoom: int = ZOOM) -> tuple[int, int]:
-    t = mercantile.tile(lon, lat, zoom)
-    return t.x, t.y
+    time = mercantile.tile(lon, lat, zoom)
+    return time.x, time.y
 
 
 def encode_lonlat_to_cellid(lon: float, lat: float, zoom: int = ZOOM) -> int:
@@ -145,7 +145,10 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
                         print(f"Worker error: {e}")
 
             with connection.cursor() as insert_cur:
-                insert_cur.executemany(insert_query, [(tid, m, s, e, u, c) for (tid, m, s, e, u, c) in results])
+                insert_cur.executemany(insert_query,
+                                       [(trajectory_id, mmsi, start_time, end_time, is_unique, cellstring) for
+                                        (trajectory_id, mmsi, start_time, end_time, is_unique, cellstring) in
+                                        results])
             connection.commit()
 
             total_processed += len(results)
