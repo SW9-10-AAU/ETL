@@ -145,11 +145,7 @@ def construct_trajectories_and_stops(conn: Connection, db_conn_str: str, max_wor
     """Parallel version of the main loop."""
     cur = conn.cursor()
     mmsis = get_mmsis(cur)
-    # mmsis = [277547000, 266457000, 210388000]
-    # mmsis = [219026000, 210388000, 211440680, 211444890] # Bornholmsfærgen og elfen færge i tyskland
-    # mmsis = [209207000, 211219630, 205795000, 209276000, 210195000] # For testing ships that have turned off their AIS transponder
-    # mmsis = [209207000]
-    # mmsis = [211366340] # test POLYGON EMPTY
+    
     cur.close()
     
     total_mmsis = len(mmsis)
@@ -249,13 +245,13 @@ def insert_or_merge_with_trajectories(trajs: list[list[Point]], stop: list[Point
 
 def insert_trajectory(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, line: LineString):
     cur.execute("""
-            INSERT INTO prototype1.trajectory_ls_testing (mmsi, ts_start, ts_end, geom)
-            VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_Force3DM(ST_GeomFromWKB(%s, 4326)))
+            INSERT INTO prototype1.trajectory_ls (mmsi, ts_start, ts_end, geom)
+            VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_Force2D(ST_GeomFromWKB(%s, 4326)))
         """, (mmsi, ts_start, ts_end, line.wkb))
 
 def insert_stop(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, poly: Polygon):
     cur.execute("""
-            INSERT INTO prototype1.stop_poly_testing (mmsi, ts_start, ts_end, geom)
+            INSERT INTO prototype1.stop_poly (mmsi, ts_start, ts_end, geom)
             VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_GeomFromWKB(%s, 4326))
         """, (mmsi, ts_start, ts_end, poly.wkb))
 
@@ -267,9 +263,9 @@ def get_mmsis(cur: Cursor) -> list[int]:
             WHERE LENGTH(mmsi::text) = 9
                 AND LEFT(mmsi::text, 1) BETWEEN '2' AND '7'
                 AND mmsi NOT IN (
-                    SELECT DISTINCT mmsi FROM prototype1.stop_poly_testing
+                    SELECT DISTINCT mmsi FROM prototype1.stop_poly
                     UNION
-                    SELECT DISTINCT mmsi FROM prototype1.trajectory_ls_testing
+                    SELECT DISTINCT mmsi FROM prototype1.trajectory_ls
                 )
             GROUP BY mmsi
             HAVING COUNT(*) > 1

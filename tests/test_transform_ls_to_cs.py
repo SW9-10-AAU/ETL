@@ -83,7 +83,6 @@ class TestLinestringToCellStringInsertion(unittest.TestCase):
         cellstring = transform.convert_linestring_to_cellstring(linestring)
 
         is_unique = transform.is_unique_cells(cellstring)
-        print(cellstring)
 
         self.assertTrue(is_unique) # all points are in different cells
     
