@@ -1,8 +1,14 @@
-from typing import Literal, LiteralString
+from typing import LiteralString, cast
 import mercantile
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from psycopg import Connection, Cursor
 from shapely import from_wkb, LineString, Polygon, Point
+
+Row = tuple[int, int, int, int, bytes]  # (trajectory_id/stop_id, mmsi, ts_start, ts_end, geom_wkb)
+ProcessResultTraj = tuple[int, int, int, int, bool, list[int]]  # trajectory_id, mmsi, ts_start, ts_end, is_unique, cellstring
+ProcessResultStop = tuple[int, int, int, int, list[int]]  # stop_id, mmsi, ts_start, ts_end, cellstring
+FutureResultTraj = Future[ProcessResultTraj]
+FutureResultStop = Future[ProcessResultStop]
 
 # --- Constants ---
 
@@ -85,27 +91,23 @@ def convert_polygon_to_cellstring(poly: Polygon) -> list[int]:
 
 # --- Worker Functions ---
 
-def process_trajectory_row(row: tuple):
+def process_trajectory_row(row: Row) -> ProcessResultTraj:
     trajectory_id, mmsi, ts_start, ts_end, geom_wkb = row
-    linestring: LineString = from_wkb(geom_wkb)
+    linestring = cast(LineString, from_wkb(geom_wkb))
     cellstring = convert_linestring_to_cellstring(linestring)
     is_unique = len(cellstring) == len(set(cellstring))
     return trajectory_id, mmsi, ts_start, ts_end, is_unique, cellstring
 
 
-def process_stop_row(row: tuple):
+def process_stop_row(row: Row) -> ProcessResultStop:
     stop_id, mmsi, ts_start, ts_end, geom_wkb = row
-    polygon: Polygon = from_wkb(geom_wkb)
-
-    if polygon.is_empty:
-        print(f"Skipping empty stop {stop_id}")
-        return None
+    polygon = cast(Polygon, from_wkb(geom_wkb))
 
     cellstring = convert_polygon_to_cellstring(polygon)
     return stop_id, mmsi, ts_start, ts_end, cellstring
 
 
-# --- Streaming Batch Helpers ---
+# --- Batch Helper ---
 
 def get_batches(cur: Cursor, query: LiteralString, batch_size: int):
     """Generator that yields rows in batches."""
@@ -136,11 +138,11 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
 
         for batch in get_batches(cur, query, batch_size):
             with ProcessPoolExecutor(max_workers=max_workers) as executor:
-                futures = [executor.submit(process_trajectory_row, row) for row in batch]
-                results = []
-                for f in as_completed(futures):
+                futures: list[FutureResultTraj] = [executor.submit(process_trajectory_row, row) for row in batch]
+                results: list[ProcessResultTraj] = []
+                for future in as_completed(futures):
                     try:
-                        results.append(f.result())
+                        results.append(future.result())
                     except Exception as e:
                         print(f"Worker error: {e}")
 
@@ -173,13 +175,11 @@ def transform_ls_stops_to_cs(connection: Connection, max_workers: int = MAX_WORK
 
         for batch in get_batches(cur, query, batch_size):
             with ProcessPoolExecutor(max_workers=max_workers) as executor:
-                futures = [executor.submit(process_stop_row, row) for row in batch]
-                results = []
-                for f in as_completed(futures):
+                futures: list[FutureResultStop] = [executor.submit(process_stop_row, row) for row in batch]
+                results: list[ProcessResultStop] = []
+                for future in as_completed(futures):
                     try:
-                        result = f.result()
-                        if result is not None:
-                            results.append(result)
+                        results.append(future.result())
                     except Exception as e:
                         print(f"Worker error: {e}")
 
