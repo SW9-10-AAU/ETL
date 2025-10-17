@@ -45,3 +45,4 @@ Creates one table for trajectory and one table for stops in the PostgreSQL datab
 
 ### [`convert_area_polygon_to_cs.py`](/src/tables/convert_area_polygon_to_cs.py)
 Converts a polygon area to a cellstring and uploads both polygon and cellstring to the PostgreSQL database (benchmark.area_poly, benchmark.area_cs).
+Use this tool to draw a polygon: https://www.keene.edu/campus/maps/tool/

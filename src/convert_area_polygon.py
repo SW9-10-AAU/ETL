@@ -38,6 +38,7 @@ def main():
     """
     Example polygon — Læsø region.
     Replace with your own coordinates as needed.
+    Draw polygon using this tool: https://www.keene.edu/campus/maps/tool/
     """
     name = "Læsø region"
     polygon = Polygon([
