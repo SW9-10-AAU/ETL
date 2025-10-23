@@ -24,7 +24,7 @@ def create_cs_traj_stop_tables(conn: Connection):
             ON prototype1.trajectory_cs (ts_start, ts_end);
         """)
     cur.execute("""
-            CREATE INDEX IF NOT EXISTS trajectory_trajectory_idx 
+            CREATE INDEX IF NOT EXISTS trajectory_cellstring_gin_idx 
             ON prototype1.trajectory_cs 
             USING GIN (cellstring);
         """)
@@ -52,7 +52,7 @@ def create_cs_traj_stop_tables(conn: Connection):
             ON prototype1.stop_cs (ts_start, ts_end);
         """)
     cur.execute("""
-            CREATE INDEX IF NOT EXISTS stop_trajectory_idx
+            CREATE INDEX IF NOT EXISTS stop_cellstring_gin_idx
             ON prototype1.stop_cs 
             USING GIN (cellstring);
         """)

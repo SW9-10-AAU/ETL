@@ -22,10 +22,10 @@ def main():
     drop_all_tables(connection)
 
     # Create LineString/Polygon tables Trajectory and Stop
-    # create_ls_traj_stop_tables(connection)
+    create_ls_traj_stop_tables(connection)
 
     # Create CellString tables Trajectory and Stop
-    # create_cs_traj_stop_tables(connection)
+    create_cs_traj_stop_tables(connection)
 
     # Create Materialized View POINTS
     # mat_points_view(connection)
