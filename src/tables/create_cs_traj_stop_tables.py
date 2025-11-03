@@ -28,7 +28,7 @@ def create_cs_traj_stop_tables(conn: Connection):
     cur.execute("""
             CREATE INDEX IF NOT EXISTS trajectory_cellstring_z13_gin_idx 
             ON prototype2.trajectory_cs_extrazoom 
-            USING GIN (cellstring_z13);
+            USING GIN (cellstring_z13 gin__int_ops);
         """)
     cur.execute("""
             CREATE INDEX IF NOT EXISTS trajectory_cellstring_z21_gin_idx 

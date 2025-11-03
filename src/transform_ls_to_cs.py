@@ -30,8 +30,8 @@ def encode_tile_xy_to_cellid(x: int, y: int, zoom: int = DEFAULT_ZOOM) -> int:
     return ENCODE_OFFSET_Z21 + (x * ENCODE_MULT_Z21) + y
 
 def get_tile_xy(lon: float, lat: float, zoom: int = DEFAULT_ZOOM) -> tuple[int, int]:
-    time = mercantile.tile(lon, lat, zoom)
-    return time.x, time.y
+    tile = mercantile.tile(lon, lat, zoom)
+    return tile.x, tile.y
 
 
 def encode_lonlat_to_cellid(lon: float, lat: float, zoom: int = DEFAULT_ZOOM) -> int:
@@ -71,8 +71,8 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -
     for c0, c1 in zip(coords[:-1], coords[1:]):
         lon0, lat0 = c0[:2]
         lon1, lat1 = c1[:2]
-        x0, y0 = get_tile_xy(lon0, lat0)
-        x1, y1 = get_tile_xy(lon1, lat1)
+        x0, y0 = get_tile_xy(lon0, lat0, zoom)
+        x1, y1 = get_tile_xy(lon1, lat1, zoom)
         for x, y in bresenham(x0, y0, x1, y1):
             cellstring.append(encode_tile_xy_to_cellid(x, y, zoom))
     return cellstring
@@ -98,8 +98,8 @@ def convert_polygon_to_cellstring(poly: Polygon, zoom: int = DEFAULT_ZOOM) -> li
 def process_trajectory_row(row: Row) -> ProcessResultTraj:
     trajectory_id, mmsi, ts_start, ts_end, geom_wkb = row
     linestring = cast(LineString, from_wkb(geom_wkb))
-    cellstring_z21 = convert_linestring_to_cellstring(linestring, 21)
     cellstring_z13 = convert_linestring_to_cellstring(linestring, 13)
+    cellstring_z21 = convert_linestring_to_cellstring(linestring, 21)
     is_unique = len(cellstring_z21) == len(set(cellstring_z21))
     return (trajectory_id, mmsi, ts_start, ts_end, is_unique, cellstring_z13, cellstring_z21)
 
@@ -108,8 +108,8 @@ def process_stop_row(row: Row) -> ProcessResultStop:
     stop_id, mmsi, ts_start, ts_end, geom_wkb = row
     polygon = cast(Polygon, from_wkb(geom_wkb))
 
-    cellstring_z21 = convert_polygon_to_cellstring(polygon, 21)
     cellstring_z13 = convert_polygon_to_cellstring(polygon, 13)
+    cellstring_z21 = convert_polygon_to_cellstring(polygon, 21)
     return stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z21
 
 
