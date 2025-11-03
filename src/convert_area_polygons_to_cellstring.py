@@ -11,7 +11,7 @@ def convert_area_polygons_to_cs():
     conn = connect_to_db()
     cur = conn.cursor()
     
-    # Fetch all area polygons from benchmark.area_poly
+    # Fetch all area polygons from benchmark.area_poly (not already converted)
     cur.execute("""
             SELECT area_poly.name, ST_AsBinary(area_poly.geom)
             FROM benchmark.area_poly as area_poly
@@ -30,7 +30,7 @@ def convert_area_polygons_to_cs():
         print("Converting polygon to cellstrings")
         cellstring_z13 = convert_polygon_to_cellstring(polygon, 13)
         cellstring_z21 = convert_polygon_to_cellstring(polygon, 21)
-        print(f"Conversion succeeded with {len(cellstring_z13)} cells (zoom 13) and {len(cellstring_z21)} cells (zoom 21).")
+        print(f"Conversion of {name} succeeded with {len(cellstring_z13)} cells (zoom 13) and {len(cellstring_z21)} cells (zoom 21).")
         
         cur.execute("""
                 INSERT INTO benchmark.area_cs_extrazoom (name, cellstring_z13, cellstring_z21)
