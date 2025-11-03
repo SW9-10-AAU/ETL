@@ -58,6 +58,9 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
                 prev_point = point
                 continue
             
+            # Skip duplicate points
+            if (point.coords[0] == prev_point.coords[0]):
+                continue
             time_diff = current_time - prev_point.coords[0][2]
             dist_diff = distance_m(prev_point, point)
             avg_vessel_speed = dist_diff / time_diff / KNOT_AS_MPS if time_diff > 0 else inf
@@ -146,10 +149,10 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
             if len(trajectory) > MIN_AIS_POINTS_IN_TRAJ and ts_end > ts_start and avg_traj_speed > 1:
                 insert_trajectory(cur, mmsi, ts_start, ts_end, LineString(trajectory))
                 num_inserted_trajs += 1
-            else:
+            elif ts_end - ts_start >= MIN_STOP_DURATION:
                 stop_geom = MultiPoint(trajectory).convex_hull
                 if(stop_geom.geom_type == 'Polygon'):
-                    insert_stop(cur, mmsi, ts_start, ts_end, cast(Polygon, stop_geom)) # Insert as stoop if not valid trajectory
+                    insert_stop(cur, mmsi, ts_start, ts_end, cast(Polygon, stop_geom)) # Insert as stop if not valid trajectory
                     num_stops += 1
 
         conn.commit()
