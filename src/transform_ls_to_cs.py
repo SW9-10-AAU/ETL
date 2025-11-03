@@ -2,7 +2,7 @@ from typing import LiteralString, cast
 import mercantile
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from psycopg import Connection, Cursor
-from shapely import from_wkb, LineString, Polygon, Point
+from shapely import from_wkb, LineString, Polygon, box
 
 Row = tuple[int, int, int, int, bytes]  # (trajectory_id/stop_id, mmsi, ts_start, ts_end, geom_wkb)
 ProcessResultTraj = tuple[
@@ -84,8 +84,8 @@ def convert_polygon_to_cellstring(poly: Polygon) -> list[int]:
 
     for tile in tiles:
         bounds = mercantile.bounds(tile)
-        center = Point((bounds.west + bounds.east) / 2, (bounds.north + bounds.south) / 2)
-        if poly.contains(center):
+        tile_poly = box(bounds.west, bounds.south, bounds.east, bounds.north)
+        if poly.intersects(tile_poly):
             cellstring.append(encode_tile_xy_to_cellid(tile.x, tile.y))
     return cellstring
 
@@ -167,7 +167,7 @@ def transform_ls_stops_to_cs(connection: Connection, max_workers: int = MAX_WORK
     print(f"Processing stops using {max_workers} workers.")
     total_processed = 0
     insert_query = """
-                   INSERT INTO prototype1.stop_cs (stop_id, mmsi, ts_start, ts_end, cellstring)
+                   INSERT INTO prototype2.stop_cs (stop_id, mmsi, ts_start, ts_end, cellstring)
                    VALUES (%s, %s, %s, %s, %s)
                    """
 
