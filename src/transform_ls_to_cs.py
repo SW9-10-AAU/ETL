@@ -5,7 +5,8 @@ from psycopg import Connection, Cursor
 from shapely import from_wkb, LineString, Polygon, Point
 
 Row = tuple[int, int, int, int, bytes]  # (trajectory_id/stop_id, mmsi, ts_start, ts_end, geom_wkb)
-ProcessResultTraj = tuple[int, int, int, int, bool, list[int]]  # trajectory_id, mmsi, ts_start, ts_end, is_unique, cellstring
+ProcessResultTraj = tuple[
+    int, int, int, int, bool, list[int]]  # trajectory_id, mmsi, ts_start, ts_end, is_unique, cellstring
 ProcessResultStop = tuple[int, int, int, int, list[int]]  # stop_id, mmsi, ts_start, ts_end, cellstring
 FutureResultTraj = Future[ProcessResultTraj]
 FutureResultStop = Future[ProcessResultStop]
@@ -94,9 +95,11 @@ def convert_polygon_to_cellstring(poly: Polygon) -> list[int]:
 def process_trajectory_row(row: Row) -> ProcessResultTraj:
     trajectory_id, mmsi, ts_start, ts_end, geom_wkb = row
     linestring = cast(LineString, from_wkb(geom_wkb))
-    cellstring = convert_linestring_to_cellstring(linestring)
-    is_unique = len(cellstring) == len(set(cellstring))
-    return trajectory_id, mmsi, ts_start, ts_end, is_unique, cellstring
+    raw_cellstring = convert_linestring_to_cellstring(linestring)
+    cellstring: set = set(raw_cellstring)
+    list_cellstring: list = list(cellstring)
+    is_unique: bool = True
+    return trajectory_id, mmsi, ts_start, ts_end, is_unique, list_cellstring
 
 
 def process_stop_row(row: Row) -> ProcessResultStop:
@@ -126,7 +129,7 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
     print(f"Processing trajectories using {max_workers} workers.")
     total_processed = 0
     insert_query = """
-                   INSERT INTO prototype1.trajectory_cs (trajectory_id, mmsi, ts_start, ts_end, unique_cells, cellstring)
+                   INSERT INTO prototype2.trajectory_cs (trajectory_id, mmsi, ts_start, ts_end, unique_cells, cellstring)
                    VALUES (%s, %s, %s, %s, %s, %s)
                    """
 
