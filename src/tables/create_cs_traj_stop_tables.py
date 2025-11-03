@@ -1,5 +1,6 @@
 from psycopg import Connection
 
+
 def create_cs_traj_stop_tables(conn: Connection):
     cur = conn.cursor()
 

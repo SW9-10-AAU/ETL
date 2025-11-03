@@ -2,7 +2,7 @@ from typing import LiteralString, cast
 import mercantile
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from psycopg import Connection, Cursor
-from shapely import from_wkb, LineString, Polygon, Point
+from shapely import from_wkb, LineString, Polygon, box
 
 Row = tuple[int, int, int, int, bytes]  # (trajectory_id/stop_id, mmsi, ts_start, ts_end, geom_wkb)
 ProcessResultTraj = tuple[int, int, int, int, bool, list[int], list[int]]  # trajectory_id, mmsi, ts_start, ts_end, is_unique, cellstring_z13, cellstring_z21
@@ -87,8 +87,8 @@ def convert_polygon_to_cellstring(poly: Polygon, zoom: int = DEFAULT_ZOOM) -> li
 
     for tile in tiles:
         bounds = mercantile.bounds(tile)
-        center = Point((bounds.west + bounds.east) / 2, (bounds.north + bounds.south) / 2)
-        if poly.contains(center):
+        tile_poly  = box(bounds.west, bounds.south, bounds.east, bounds.north)
+        if poly.intersects(tile_poly):
             cellstring.append(encode_tile_xy_to_cellid(tile.x, tile.y, zoom))
     return cellstring
 

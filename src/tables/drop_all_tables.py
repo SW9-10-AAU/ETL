@@ -1,5 +1,6 @@
 from psycopg import Connection
 
+
 def drop_all_tables(conn: Connection):
     cur = conn.cursor()
 
