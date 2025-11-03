@@ -4,11 +4,14 @@ def drop_all_tables(conn: Connection):
     cur = conn.cursor()
 
     # Drop tables if they exist
-    # cur.execute("DROP TABLE IF EXISTS prototype1.trajectory_ls;")
-    # cur.execute("DROP TABLE IF EXISTS prototype1.stop_poly;")
-    # cur.execute("DROP TABLE IF EXISTS prototype1.trajectory_cs;")
-    # cur.execute("DROP TABLE IF EXISTS prototype1.stop_cs;")
+    #cur.execute("DROP TABLE IF EXISTS prototype2.trajectory_ls;")
+    #cur.execute("DROP TABLE IF EXISTS prototype2.stop_poly;")
+    #cur.execute("DROP TABLE IF EXISTS prototype2.trajectory_cs;")
+    #cur.execute("DROP TABLE IF EXISTS prototype2.stop_cs;")
     # cur.execute("DROP MATERIALIZED VIEW IF EXISTS prototype1.points;")
+
+    cur.execute("DROP TABLE IF EXISTS prototype2.trajectory_ls_testing;")
+    cur.execute("DROP TABLE IF EXISTS prototype2.stop_poly_testing;")
 
     print("Dropped all tables and materialized view if they existed.")
 

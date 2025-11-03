@@ -126,14 +126,14 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
     print(f"Processing trajectories using {max_workers} workers.")
     total_processed = 0
     insert_query = """
-                   INSERT INTO prototype1.trajectory_cs (trajectory_id, mmsi, ts_start, ts_end, unique_cells, cellstring)
+                   INSERT INTO prototype2.trajectory_cs (trajectory_id, mmsi, ts_start, ts_end, unique_cells, cellstring)
                    VALUES (%s, %s, %s, %s, %s, %s)
                    """
 
     with connection.cursor() as cur:
         query = """
                 SELECT trajectory_id, mmsi, ts_start, ts_end, ST_AsBinary(geom)
-                FROM prototype1.trajectory_ls
+                FROM prototype2.trajectory_ls
                 ORDER BY trajectory_id;
                 """
 
@@ -164,14 +164,14 @@ def transform_ls_stops_to_cs(connection: Connection, max_workers: int = MAX_WORK
     print(f"Processing stops using {max_workers} workers.")
     total_processed = 0
     insert_query = """
-                   INSERT INTO prototype1.stop_cs (stop_id, mmsi, ts_start, ts_end, cellstring)
+                   INSERT INTO prototype2.stop_cs (stop_id, mmsi, ts_start, ts_end, cellstring)
                    VALUES (%s, %s, %s, %s, %s)
                    """
 
     with connection.cursor() as cur:
         query = """
                 SELECT stop_id, mmsi, ts_start, ts_end, ST_AsBinary(geom)
-                FROM prototype1.stop_poly
+                FROM prototype2.stop_poly
                 WHERE stop_id <> 2444 -- Temporary filter to skip "long" stop
                 ORDER BY stop_id;
                 """

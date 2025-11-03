@@ -3,6 +3,7 @@
 ## Repository Summary
 
 This is an **ETL (Extract, Transform, Load) pipeline** for processing AIS (Automatic Identification System) trajectory data. The repository contains Python scripts that:
+
 - Extract ship trajectory data from a PostgreSQL/PostGIS database
 - Transform LineString geometries to Cell-String representations using map tiles (MVT/Mercantile at zoom level 21)
 - Construct trajectories and stops from raw AIS point data using parallel processing
@@ -11,6 +12,7 @@ This is an **ETL (Extract, Transform, Load) pipeline** for processing AIS (Autom
 **Repository Size:** ~350KB | **Language:** Python 3.11-3.12 | **Files:** 10 Python files (~755 lines of code)
 
 **Key Technologies:**
+
 - PostgreSQL with PostGIS extension for spatial data
 - Python libraries: psycopg (3.2.10), shapely (2.1.1), mercantile (1.2.1), geopy (2.4.1), numpy (2.3.3)
 - Unit testing with Python's unittest framework
@@ -21,6 +23,7 @@ This is an **ETL (Extract, Transform, Load) pipeline** for processing AIS (Autom
 ### Prerequisites (Critical - ALWAYS Required)
 
 1. **PostgreSQL Installation Required**: This project requires PostgreSQL with PostGIS extension for database operations
+
    - On Windows: Add PostgreSQL bin folder (containing libpq.dll) to system PATH
    - Database connection string must be configured in `.env` file
 
@@ -29,19 +32,23 @@ This is an **ETL (Extract, Transform, Load) pipeline** for processing AIS (Autom
 ### Environment Setup (ALWAYS Follow This Order)
 
 **Step 1: Install Dependencies** (ALWAYS run this first)
+
 ```bash
 pip install -r requirements.txt
 ```
+
 - This installs all required packages including psycopg, shapely, mercantile, geopy, numpy, python-dotenv
 - Typical installation time: 10-30 seconds
 - Must be run before ANY other commands
 
 **Step 2: Install Development Tools** (Required for linting/CI validation)
+
 ```bash
 pip install flake8
 ```
 
 **Step 3: Configure Database Connection** (Required for running the application)
+
 - Copy `.env.example` to `.env`
 - Update `DATABASE_URL` with actual PostgreSQL connection string:
   ```
@@ -54,35 +61,43 @@ pip install flake8
 The CI pipeline runs flake8 in two stages:
 
 **Stage 1: Critical Syntax Errors** (Build fails if this fails)
+
 ```bash
 flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
 ```
+
 - Checks for Python syntax errors and undefined names
 - Exit code MUST be 0 (no errors)
 
 **Stage 2: Code Quality Warnings** (Non-blocking, exit-zero)
+
 ```bash
 flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 ```
+
 - Max line length: 127 characters
 - Max complexity: 10
 - Does not fail the build, but warnings should be addressed
 
 **Known Linting Issues** (Pre-existing, not blockers):
+
 - ~189 total warnings in existing code (mostly E231, W293, E302, E261)
 - These are informational and don't block CI
 
 ### Testing (ALWAYS Run Before Committing)
 
 **Run All Tests:**
+
 ```bash
 python -m unittest discover -s tests
 ```
+
 - Expected output: "Ran 11 tests in ~0.007s" with "OK"
 - Tests must pass for CI to succeed
 - Test files location: `tests/` directory
 
 **Test Files:**
+
 - `tests/test_connect.py` - Database connection tests (mocked)
 - `tests/test_transform_ls_to_cs.py` - Geometry transformation tests
 
@@ -91,6 +106,7 @@ python -m unittest discover -s tests
 ### Running the Application
 
 **Main Entry Point:**
+
 ```bash
 python src/main.py
 # or on some systems
@@ -98,11 +114,13 @@ python3 src/main.py
 ```
 
 **Prerequisites for Running:**
+
 - Valid `.env` file with `DATABASE_URL` configured
 - PostgreSQL database must be accessible
-- Database schema `prototype1` should exist
+- Database schema `prototype2` should exist
 
 **Expected Behavior:**
+
 - Creates database tables for trajectories and stops
 - Processes AIS point data in parallel (uses CPU cores, max 12)
 - Inserts transformed data into PostgreSQL tables
@@ -139,6 +157,7 @@ python3 src/main.py
 ### Key Source Files
 
 **src/main.py** - Main Orchestrator (42 lines)
+
 - Loads environment variables with `python-dotenv`
 - Validates DATABASE_URL exists
 - Calls ETL steps in sequence:
@@ -148,11 +167,13 @@ python3 src/main.py
   4. Optional steps commented out: `drop_all_tables()`, `mat_points_view()`, transform functions
 
 **src/connect.py** - Database Connection (11 lines)
+
 - Single function: `connect_to_db()` returns psycopg.Connection
 - Reads DATABASE_URL from environment
 - Exits with error message if DATABASE_URL not set
 
 **src/construct_trajs_stops.py** - Core Processing Logic (268 lines)
+
 - Implements trajectory and stop detection algorithm from research paper
 - Uses multiprocessing (ProcessPoolExecutor) for parallel MMSI processing
 - Constants (threshold values): STOP_SOG_THRESHOLD=1.0, STOP_DISTANCE_THRESHOLD=250m, etc.
@@ -163,6 +184,7 @@ python3 src/main.py
   - `get_mmsis()` - Queries distinct MMSIs from database
 
 **src/transform_ls_to_cs.py** - Geometry Transformation (126 lines)
+
 - Converts LineString/Polygon geometries to CellString (map tile IDs)
 - Uses Mercantile for MVT tile calculations at zoom level 21
 - Implements Bresenham's line algorithm for tile interpolation
@@ -174,9 +196,10 @@ python3 src/main.py
 
 ### Database Schema
 
-**Schema:** `prototype1` (all tables/views in this schema)
+**Schema:** `prototype2` (all tables/views in this schema)
 
 **Tables Created:**
+
 - `trajectory_ls` - LineString trajectories (geometry column: LINESTRINGM)
 - `stop_poly` - Stop polygons (geometry column: POLYGON)
 - `trajectory_cs` - CellString trajectories (cellstring: bigint ARRAY)
@@ -188,11 +211,13 @@ python3 src/main.py
 ### GitHub Actions CI Pipeline
 
 **Workflow:** `.github/workflows/python-app.yml`
+
 - **Trigger:** Pull requests to `main` branch
 - **Runner:** ubuntu-latest
 - **Python Version:** 3.11 (specific version)
 
 **CI Steps (in order):**
+
 1. Checkout code
 2. Set up Python 3.11
 3. Install dependencies: `pip install --upgrade pip && pip install flake8 && pip install -r requirements.txt`
@@ -201,6 +226,7 @@ python3 src/main.py
 6. Run tests: `python -m unittest discover -s tests || exit 1`
 
 **CI Success Criteria:**
+
 - No syntax errors (E9,F63,F7,F82)
 - All 11 unit tests pass
 - Warnings are informational only (exit-zero)
@@ -227,7 +253,7 @@ python3 src/main.py
 - **Never run** the application in CI - it requires a real PostgreSQL database
 - Tests use `unittest.mock` to mock database connections
 - When modifying database queries, update corresponding mocks in tests
-- The application requires the `prototype1` schema to exist in PostgreSQL
+- The application requires the `prototype2` schema to exist in PostgreSQL
 
 ### File Naming & Import Conventions
 
@@ -245,6 +271,7 @@ python3 src/main.py
 ## Validation Checklist
 
 Before submitting a PR, ensure:
+
 - [ ] `pip install -r requirements.txt` completes successfully
 - [ ] `pip install flake8` completes successfully
 - [ ] `flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics` returns 0 errors

@@ -17,8 +17,11 @@ MERGE_TIME_THRESHOLD = 3600         # seconds, Δt (original = 1 h)
 
 # Threshold constants for removing AIS outlier points
 KNOT_AS_MPS = 0.514444  # 1 knot = 0.514444 m/s
-MAX_VESSEL_SPEED = 70.0 # knots, used to filter out false AIS points (e.g. > 70 knots)
-MAX_AIS_POINT_GAP = 5400 # seconds (1.5 h), max time gap between two AIS points to be considered valid
+MAX_VESSEL_SPEED = 50.0 # knots, used to filter out false AIS points (e.g. > 50 knots)
+MAX_AIS_POINT_GAP = 3600 # seconds (1h), max time gap between two AIS points to be considered valid
+
+# Remove trajectories with only small number of AIS points
+MIN_AIS_POINTS_IN_TRAJ = 10  # Minimum AIS messages required to record a trajectory
 
 AISPoint = tuple[int, bytes, float | None]  # (mmsi, geom as WKB, sog)
 ProcessResult = tuple[int, int, int, int, list[int]]  # (mmsi, num_points, num_trajs, num_stops, merge_case_count)
@@ -129,22 +132,37 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
                 insert_or_merge_with_trajectories(trajs, merged_stop, merge_case_count)
 
         # Insert trajectories
+        num_inserted_trajs = 0
         for trajectory in trajs:
             ts_start = trajectory[0].coords[0][2]
             ts_end = trajectory[-1].coords[0][2]
-            if len(trajectory) > 1 and ts_end > ts_start:
+            
+            total_distance = sum(
+                distance_m(trajectory[i], trajectory[i+1])
+                for i in range(len(trajectory) - 1)
+            )
+            avg_traj_speed = total_distance / (ts_end - ts_start) if (ts_end - ts_start) > 0 else 0
+
+            if len(trajectory) > MIN_AIS_POINTS_IN_TRAJ and ts_end > ts_start and avg_traj_speed > 1:
                 insert_trajectory(cur, mmsi, ts_start, ts_end, LineString(trajectory))
+                num_inserted_trajs += 1
+            else:
+                stop_geom = MultiPoint(trajectory).convex_hull
+                if(stop_geom.geom_type == 'Polygon'):
+                    insert_stop(cur, mmsi, ts_start, ts_end, cast(Polygon, stop_geom)) # Insert as stoop if not valid trajectory
+                    num_stops += 1
 
         conn.commit()
         cur.close()
-        return (mmsi, len(points), len(trajs), num_stops, merge_case_count)
+        return (mmsi, len(points), num_inserted_trajs, num_stops, merge_case_count)
 
 # ----------------------------------------------------------------------
 
 def construct_trajectories_and_stops(conn: Connection, db_conn_str: str, max_workers: int = 4):
     """Parallel version of the main loop."""
     cur = conn.cursor()
-    mmsis = get_mmsis(cur)
+    #mmsis = get_mmsis(cur)
+    mmsis = [219019094] # For testing with a single MMSI
     
     cur.close()
     
@@ -245,13 +263,13 @@ def insert_or_merge_with_trajectories(trajs: list[list[Point]], stop: list[Point
 
 def insert_trajectory(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, line: LineString):
     cur.execute("""
-            INSERT INTO prototype1.trajectory_ls (mmsi, ts_start, ts_end, geom)
+            INSERT INTO prototype2.trajectory_ls_testing (mmsi, ts_start, ts_end, geom)
             VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_Force2D(ST_GeomFromWKB(%s, 4326)))
         """, (mmsi, ts_start, ts_end, line.wkb))
 
 def insert_stop(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, poly: Polygon):
     cur.execute("""
-            INSERT INTO prototype1.stop_poly (mmsi, ts_start, ts_end, geom)
+            INSERT INTO prototype2.stop_poly_testing (mmsi, ts_start, ts_end, geom)
             VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_GeomFromWKB(%s, 4326))
         """, (mmsi, ts_start, ts_end, poly.wkb))
 
@@ -263,9 +281,9 @@ def get_mmsis(cur: Cursor) -> list[int]:
             WHERE LENGTH(mmsi::text) = 9
                 AND LEFT(mmsi::text, 1) BETWEEN '2' AND '7'
                 AND mmsi NOT IN (
-                    SELECT DISTINCT mmsi FROM prototype1.stop_poly
+                    SELECT DISTINCT mmsi FROM prototype2.stop_poly_testing
                     UNION
-                    SELECT DISTINCT mmsi FROM prototype1.trajectory_ls
+                    SELECT DISTINCT mmsi FROM prototype2.trajectory_ls_testing
                 )
             GROUP BY mmsi
             HAVING COUNT(*) > 1
