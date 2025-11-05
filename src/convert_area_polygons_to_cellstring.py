@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 from shapely import Polygon, from_wkb
 from transform_ls_to_cs import convert_polygon_to_cellstring
 from connect import connect_to_db
+from tables.create_area_tables import create_area_tables
 
 def convert_area_polygons_to_cs():
     """
@@ -10,6 +11,10 @@ def convert_area_polygons_to_cs():
     load_dotenv()
     conn = connect_to_db()
     cur = conn.cursor()
+    
+    # Create benchmark schema and area tables if not exist
+    cur.execute("DROP TABLE IF EXISTS benchmark.area_cs;")
+    create_area_tables(conn)
     
     # Fetch all area polygons from benchmark.area_poly (not already converted)
     cur.execute("""
