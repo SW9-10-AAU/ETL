@@ -6,7 +6,7 @@ def drop_all_tables(conn: Connection):
 
     # Drop tables if they exist
     # cur.execute("DROP TABLE IF EXISTS benchmark.area_poly;")
-    cur.execute("DROP TABLE IF EXISTS benchmark.area_cs;")
+    # cur.execute("DROP TABLE IF EXISTS benchmark.area_cs;")
     # cur.execute("DROP TABLE IF EXISTS prototype2.trajectory_ls;")
     # cur.execute("DROP TABLE IF EXISTS prototype2.stop_poly;")
     cur.execute("DROP TABLE IF EXISTS prototype2.trajectory_cs;")

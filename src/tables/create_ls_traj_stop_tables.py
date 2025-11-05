@@ -55,7 +55,7 @@ def create_ls_traj_stop_tables(conn: Connection):
         """)
     cur.execute("""
             CREATE INDEX IF NOT EXISTS stop_geom_idx
-            ON prototype2.stop_poly 
+            ON prototype2.stop_poly
             USING GIST (geom);
         """)
     print("Created LS stop table if not exists")

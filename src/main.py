@@ -19,11 +19,11 @@ def main():
     # Drop existing tables and views
     drop_all_tables(connection)
 
-    # Create all necessary tables and views
+    # Create all necessary tables and Materialized view
     create_all_tables(connection)
     
     # Construct Trajectories and Stops from the Points Materialized View 
-    # construct_trajectories_and_stops(connection, db_url, min(os.cpu_count() or 4, 12))
+    construct_trajectories_and_stops(connection, db_url, min(os.cpu_count() or 4, 12))
 
     # Transform LS Trajectories to CS Trajectories
     transform_ls_trajectories_to_cs(connection, min(os.cpu_count() or 4, 12), batch_size=5000)
