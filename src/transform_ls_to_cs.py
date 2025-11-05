@@ -98,11 +98,12 @@ def convert_polygon_to_cellstring(poly: Polygon, zoom: int = DEFAULT_ZOOM) -> li
 def process_trajectory_row(row: Row) -> ProcessResultTraj:
     trajectory_id, mmsi, ts_start, ts_end, geom_wkb = row
     linestring = cast(LineString, from_wkb(geom_wkb))
-    cellstring_z13 = convert_linestring_to_cellstring(linestring, 13)
-    cellstring_z21 = convert_linestring_to_cellstring(linestring, 21)
-    is_unique = len(cellstring_z21) == len(set(cellstring_z21))
+    raw_cellstring_z13 = convert_linestring_to_cellstring(linestring, 13)
+    raw_cellstring_z21 = convert_linestring_to_cellstring(linestring, 21)
+    cellstring_z13 = list(set(raw_cellstring_z13)) # Deduplicate
+    cellstring_z21 = list(set(raw_cellstring_z21)) # Deduplicate
+    is_unique : bool = True
     return (trajectory_id, mmsi, ts_start, ts_end, is_unique, cellstring_z13, cellstring_z21)
-
 
 def process_stop_row(row: Row) -> ProcessResultStop:
     stop_id, mmsi, ts_start, ts_end, geom_wkb = row
