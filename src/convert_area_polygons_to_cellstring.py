@@ -15,8 +15,8 @@ def convert_area_polygons_to_cs():
     cur.execute("""
             SELECT area_poly.name, ST_AsBinary(area_poly.geom)
             FROM benchmark.area_poly as area_poly
-            LEFT JOIN benchmark.area_cs_extrazoom AS area_cs_extrazoom ON area_poly.area_id = area_cs_extrazoom.area_id
-            WHERE area_cs_extrazoom.area_id IS NULL
+            LEFT JOIN benchmark.area_cs AS area_cs ON area_poly.area_id = area_cs.area_id
+            WHERE area_cs.area_id IS NULL
             ORDER BY area_poly.area_id;
         """)
     rows = cur.fetchall()
@@ -33,7 +33,7 @@ def convert_area_polygons_to_cs():
         print(f"Conversion of {name} succeeded with {len(cellstring_z13)} cells (zoom 13) and {len(cellstring_z21)} cells (zoom 21).")
         
         cur.execute("""
-                INSERT INTO benchmark.area_cs_extrazoom (name, cellstring_z13, cellstring_z21)
+                INSERT INTO benchmark.area_cs (name, cellstring_z13, cellstring_z21)
                 VALUES (%s, %s, %s)
             """, (name, cellstring_z13, cellstring_z21))
         conn.commit()

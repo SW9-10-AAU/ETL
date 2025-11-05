@@ -16,7 +16,7 @@ def create_area_tables(conn: Connection):
             );
         """)
     cur.execute("""
-            CREATE TABLE IF NOT EXISTS benchmark.area_cs_extrazoom
+            CREATE TABLE IF NOT EXISTS benchmark.area_cs
             (
                 area_id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -32,13 +32,13 @@ def create_area_tables(conn: Connection):
             USING GIST (geom);
         """)
     cur.execute("""
-            CREATE INDEX IF NOT EXISTS area_cs_extrazoom_gin_idx
-            ON benchmark.area_cs_extrazoom
+            CREATE INDEX IF NOT EXISTS area_cs_z13_gin_idx
+            ON benchmark.area_cs
             USING GIN (cellstring_z13);
         """)
     cur.execute("""
             CREATE INDEX IF NOT EXISTS area_cs_z21_gin_idx
-            ON benchmark.area_cs_extrazoom 
+            ON benchmark.area_cs 
             USING GIN (cellstring_z21);
         """)
     conn.commit()

@@ -24,7 +24,7 @@ def convert_area_polygon_to_cs(polygon: Polygon, name: str):
             );
         """)
     cur.execute("""
-            CREATE TABLE IF NOT EXISTS benchmark.area_cs_extrazoom
+            CREATE TABLE IF NOT EXISTS benchmark.area_cs
             (
                 area_id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -40,13 +40,13 @@ def convert_area_polygon_to_cs(polygon: Polygon, name: str):
             USING GIST (geom);
         """)
     cur.execute("""
-            CREATE INDEX IF NOT EXISTS area_cs_extrazoom_gin_idx
-            ON benchmark.area_cs_extrazoom
+            CREATE INDEX IF NOT EXISTS area_cs_z13_gin_idx
+            ON benchmark.area_cs
             USING GIN (cellstring_z13);
         """)
     cur.execute("""
             CREATE INDEX IF NOT EXISTS area_cs_z21_gin_idx
-            ON benchmark.area_cs_extrazoom 
+            ON benchmark.area_cs 
             USING GIN (cellstring_z21);
         """)
     
@@ -65,7 +65,7 @@ def convert_area_polygon_to_cs(polygon: Polygon, name: str):
     print(f"Conversion succeeded with {len(cellstring_z13)} cells (zoom 13) and {len(cellstring_z21)} cells (zoom 21).")
     
     cur.execute("""
-            INSERT INTO benchmark.area_cs_extrazoom (name, cellstring_z13, cellstring_z21)
+            INSERT INTO benchmark.area_cs (name, cellstring_z13, cellstring_z21)
             VALUES (%s, %s, %s)
         """, (name, cellstring_z13, cellstring_z21))
     print("Inserted area cellstrings into PostGIS table")
