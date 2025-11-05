@@ -5,33 +5,36 @@ from psycopg import Connection, Cursor
 from shapely import from_wkb, LineString, Polygon, box
 
 Row = tuple[int, int, int, int, bytes]  # (trajectory_id/stop_id, mmsi, ts_start, ts_end, geom_wkb)
-ProcessResultTraj = tuple[
-    int, int, int, int, bool, list[int]]  # trajectory_id, mmsi, ts_start, ts_end, is_unique, cellstring
-ProcessResultStop = tuple[int, int, int, int, list[int]]  # stop_id, mmsi, ts_start, ts_end, cellstring
+ProcessResultTraj = tuple[int, int, int, int, bool, list[int], list[int]]  # trajectory_id, mmsi, ts_start, ts_end, is_unique, cellstring_z13, cellstring_z21
+ProcessResultStop = tuple[int, int, int, int, list[int], list[int]]  # stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z21
 FutureResultTraj = Future[ProcessResultTraj]
 FutureResultStop = Future[ProcessResultStop]
 
 # --- Constants ---
 
-ZOOM = 21
-ENCODE_OFFSET = 100_000_000_000_000
-ENCODE_MULT = 10_000_000
+DEFAULT_ZOOM = 21 # Default zoom level
+ENCODE_OFFSET_Z21 = 100_000_000_000_000
+ENCODE_OFFSET_Z13 = 100_000_000
+ENCODE_MULT_Z21 = 10_000_000
+ENCODE_MULT_Z13 = 10_000
 BATCH_SIZE = 5_000
 MAX_WORKERS = 4
 
 
 # --- Encoding Utilities ---
 
-def encode_tile_xy_to_cellid(x: int, y: int) -> int:
-    return ENCODE_OFFSET + (x * ENCODE_MULT) + y
+def encode_tile_xy_to_cellid(x: int, y: int, zoom: int = DEFAULT_ZOOM) -> int:
+    if (zoom == 13):
+        return ENCODE_OFFSET_Z13 + (x * ENCODE_MULT_Z13) + y
+    
+    return ENCODE_OFFSET_Z21 + (x * ENCODE_MULT_Z21) + y
+
+def get_tile_xy(lon: float, lat: float, zoom: int = DEFAULT_ZOOM) -> tuple[int, int]:
+    tile = mercantile.tile(lon, lat, zoom)
+    return tile.x, tile.y
 
 
-def get_tile_xy(lon: float, lat: float, zoom: int = ZOOM) -> tuple[int, int]:
-    time = mercantile.tile(lon, lat, zoom)
-    return time.x, time.y
-
-
-def encode_lonlat_to_cellid(lon: float, lat: float, zoom: int = ZOOM) -> int:
+def encode_lonlat_to_cellid(lon: float, lat: float, zoom: int = DEFAULT_ZOOM) -> int:
     x, y = get_tile_xy(lon, lat, zoom)
     return encode_tile_xy_to_cellid(x, y)
 
@@ -60,7 +63,7 @@ def bresenham(x0: int, y0: int, x1: int, y1: int) -> list[tuple[int, int]]:
 
 # --- Conversion Utilities ---
 
-def convert_linestring_to_cellstring(ls: LineString) -> list[int]:
+def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -> list[int]:
     if ls.is_empty:
         return []
     coords = ls.coords
@@ -68,25 +71,25 @@ def convert_linestring_to_cellstring(ls: LineString) -> list[int]:
     for c0, c1 in zip(coords[:-1], coords[1:]):
         lon0, lat0 = c0[:2]
         lon1, lat1 = c1[:2]
-        x0, y0 = get_tile_xy(lon0, lat0)
-        x1, y1 = get_tile_xy(lon1, lat1)
+        x0, y0 = get_tile_xy(lon0, lat0, zoom)
+        x1, y1 = get_tile_xy(lon1, lat1, zoom)
         for x, y in bresenham(x0, y0, x1, y1):
-            cellstring.append(encode_tile_xy_to_cellid(x, y))
+            cellstring.append(encode_tile_xy_to_cellid(x, y, zoom))
     return cellstring
 
 
-def convert_polygon_to_cellstring(poly: Polygon) -> list[int]:
+def convert_polygon_to_cellstring(poly: Polygon, zoom: int = DEFAULT_ZOOM) -> list[int]:
     if poly.is_empty:
         return []
     minx, miny, maxx, maxy = poly.bounds
-    tiles = mercantile.tiles(minx, miny, maxx, maxy, ZOOM)
+    tiles = mercantile.tiles(minx, miny, maxx, maxy, zoom)
     cellstring: list[int] = []
 
     for tile in tiles:
         bounds = mercantile.bounds(tile)
-        tile_poly = box(bounds.west, bounds.south, bounds.east, bounds.north)
+        tile_poly  = box(bounds.west, bounds.south, bounds.east, bounds.north)
         if poly.intersects(tile_poly):
-            cellstring.append(encode_tile_xy_to_cellid(tile.x, tile.y))
+            cellstring.append(encode_tile_xy_to_cellid(tile.x, tile.y, zoom))
     return cellstring
 
 
@@ -95,19 +98,20 @@ def convert_polygon_to_cellstring(poly: Polygon) -> list[int]:
 def process_trajectory_row(row: Row) -> ProcessResultTraj:
     trajectory_id, mmsi, ts_start, ts_end, geom_wkb = row
     linestring = cast(LineString, from_wkb(geom_wkb))
-    raw_cellstring = convert_linestring_to_cellstring(linestring)
-    cellstring: set = set(raw_cellstring)
-    list_cellstring: list = list(cellstring)
-    is_unique: bool = True
-    return trajectory_id, mmsi, ts_start, ts_end, is_unique, list_cellstring
-
+    raw_cellstring_z13 = convert_linestring_to_cellstring(linestring, 13)
+    raw_cellstring_z21 = convert_linestring_to_cellstring(linestring, 21)
+    cellstring_z13 = list(set(raw_cellstring_z13)) # Deduplicate
+    cellstring_z21 = list(set(raw_cellstring_z21)) # Deduplicate
+    is_unique : bool = True
+    return (trajectory_id, mmsi, ts_start, ts_end, is_unique, cellstring_z13, cellstring_z21)
 
 def process_stop_row(row: Row) -> ProcessResultStop:
     stop_id, mmsi, ts_start, ts_end, geom_wkb = row
     polygon = cast(Polygon, from_wkb(geom_wkb))
 
-    cellstring = convert_polygon_to_cellstring(polygon)
-    return stop_id, mmsi, ts_start, ts_end, cellstring
+    cellstring_z13 = convert_polygon_to_cellstring(polygon, 13)
+    cellstring_z21 = convert_polygon_to_cellstring(polygon, 21)
+    return stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z21
 
 
 # --- Batch Helper ---
@@ -129,8 +133,8 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
     print(f"Processing trajectories using {max_workers} workers.")
     total_processed = 0
     insert_query = """
-                   INSERT INTO prototype2.trajectory_cs (trajectory_id, mmsi, ts_start, ts_end, unique_cells, cellstring)
-                   VALUES (%s, %s, %s, %s, %s, %s)
+                   INSERT INTO prototype2.trajectory_cs (trajectory_id, mmsi, ts_start, ts_end, unique_cells, cellstring_z13, cellstring_z21)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)
                    """
 
     with connection.cursor() as cur:
@@ -152,8 +156,8 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
 
             with connection.cursor() as insert_cur:
                 insert_cur.executemany(insert_query,
-                                       [(trajectory_id, mmsi, start_time, end_time, is_unique, cellstring) for
-                                        (trajectory_id, mmsi, start_time, end_time, is_unique, cellstring) in
+                                       [(trajectory_id, mmsi, start_time, end_time, is_unique, cellstring_z13, cellstring_z21) for
+                                        (trajectory_id, mmsi, start_time, end_time, is_unique, cellstring_z13, cellstring_z21) in
                                         results])
             connection.commit()
 
@@ -167,15 +171,14 @@ def transform_ls_stops_to_cs(connection: Connection, max_workers: int = MAX_WORK
     print(f"Processing stops using {max_workers} workers.")
     total_processed = 0
     insert_query = """
-                   INSERT INTO prototype2.stop_cs (stop_id, mmsi, ts_start, ts_end, cellstring)
-                   VALUES (%s, %s, %s, %s, %s)
+                   INSERT INTO prototype2.stop_cs (stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z21)
+                   VALUES (%s, %s, %s, %s, %s, %s)
                    """
 
     with connection.cursor() as cur:
         query = """
                 SELECT stop_id, mmsi, ts_start, ts_end, ST_AsBinary(geom)
                 FROM prototype2.stop_poly
-                WHERE stop_id <> 2444 -- Temporary filter to skip "long" stop
                 ORDER BY stop_id;
                 """
 
@@ -190,8 +193,8 @@ def transform_ls_stops_to_cs(connection: Connection, max_workers: int = MAX_WORK
                         print(f"Worker error: {e}")
 
             with connection.cursor() as insert_cur:
-                insert_cur.executemany(insert_query, [(stop_id, mmsi, start_time, end_time, cellstring) for
-                                                      (stop_id, mmsi, start_time, end_time, cellstring) in results])
+                insert_cur.executemany(insert_query, [(stop_id, mmsi, start_time, end_time, cellstring_z13, cellstring_z21) for
+                                                      (stop_id, mmsi, start_time, end_time, cellstring_z13, cellstring_z21) in results])
             connection.commit()
 
             total_processed += len(results)

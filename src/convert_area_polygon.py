@@ -2,14 +2,18 @@ from dotenv import load_dotenv
 from shapely import Polygon
 from transform_ls_to_cs import convert_polygon_to_cellstring
 from connect import connect_to_db
+from tables.create_area_tables import create_area_tables
 
 def convert_area_polygon_to_cs(polygon: Polygon, name: str):
     """
-    Converts a polygon to a CellString and writes the result to a file.
+    Converts a Polygon to a CellString and inserts both into PostGIS tables.
     """
     load_dotenv()
     conn = connect_to_db()
     cur = conn.cursor()
+    
+    # Create benchmark schema and area tables if not exist
+    create_area_tables(conn)
     
     # Insert area as polygon into table
     cur.execute("""
@@ -17,22 +21,23 @@ def convert_area_polygon_to_cs(polygon: Polygon, name: str):
             VALUES (%s, ST_GeomFromWKB(%s, 4326))
         """, (name, polygon.wkb))    
     conn.commit()
-    print("Inserted area polygon into PostGIS table...")
+    print("Inserted area polygon into PostGIS table")
     
     # Convert polygon to cellstring and insert into table 
-    print("Converting polygon to cellstring...")
-    cellstring = convert_polygon_to_cellstring(polygon)
-    print(f"Conversion succeeded with {len(cellstring)} cells")
+    print("Converting polygon to cellstrings")
+    cellstring_z13 = convert_polygon_to_cellstring(polygon, 13)
+    cellstring_z21 = convert_polygon_to_cellstring(polygon, 21)
+    print(f"Conversion succeeded with {len(cellstring_z13)} cells (zoom 13) and {len(cellstring_z21)} cells (zoom 21).")
     
     cur.execute("""
-            INSERT INTO benchmark.area_cs (name, cellstring)
-            VALUES (%s, %s)
-        """, (name, cellstring))
-    print("Inserted area cellstring into PostGIS table...")
+            INSERT INTO benchmark.area_cs (name, cellstring_z13, cellstring_z21)
+            VALUES (%s, %s, %s)
+        """, (name, cellstring_z13, cellstring_z21))
+    print("Inserted area cellstrings into PostGIS table")
     conn.commit()
     cur.close()
-    
-    print("Area uploaded to benchmark schema in database")
+
+    print(f"Area ({name}) uploaded to benchmark schema in database")
 
 def main():
     """
@@ -40,6 +45,7 @@ def main():
     Replace with your own coordinates as needed.
     Draw polygon using this tool: https://www.keene.edu/campus/maps/tool/
     """
+    
     name = "Hals-Egense"
     polygon = Polygon([
         [
