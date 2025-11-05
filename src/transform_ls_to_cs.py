@@ -179,7 +179,6 @@ def transform_ls_stops_to_cs(connection: Connection, max_workers: int = MAX_WORK
         query = """
                 SELECT stop_id, mmsi, ts_start, ts_end, ST_AsBinary(geom)
                 FROM prototype2.stop_poly
-                WHERE stop_id <> 2444 -- Temporary filter to skip "long" stop
                 ORDER BY stop_id;
                 """
 
