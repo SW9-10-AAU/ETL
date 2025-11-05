@@ -3,7 +3,7 @@ import time
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from typing import cast
 from psycopg import Connection, Cursor, connect
-from shapely import Polygon, from_wkb, Point, LineString, MultiPoint
+from shapely import Polygon, from_wkb, Point, LineString, MultiPoint, transform
 from geopy.distance import geodesic
 
 # Threshold constants matching the paper but with ADJUSTMENTS
@@ -22,6 +22,10 @@ MAX_AIS_POINT_GAP = 3600 # seconds (1h), max time gap between two AIS points to 
 
 # Remove trajectories with only small number of AIS points
 MIN_AIS_POINTS_IN_TRAJ = 10  # Minimum AIS messages required to record a trajectory
+
+#  Maximum area of the Minimum Bounding Rectangle (MBR) for a valid stop polygon
+MAX_MBR_AREA = 5_000_000  # 5 km²
+
 
 AISPoint = tuple[int, bytes, float | None]  # (mmsi, geom as WKB, sog)
 ProcessResult = tuple[int, int, int, int, list[int]]  # (mmsi, num_points, num_trajs, num_stops, merge_case_count)
@@ -58,9 +62,10 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
                 prev_point = point
                 continue
             
-            # Skip duplicate points
-            if (point.coords[0] == prev_point.coords[0]):
+            # Skip points that have identical timestamp
+            if (point.coords[0][2] == prev_point.coords[0][2]):
                 continue
+            
             time_diff = current_time - prev_point.coords[0][2]
             dist_diff = distance_m(prev_point, point)
             avg_vessel_speed = dist_diff / time_diff / KNOT_AS_MPS if time_diff > 0 else inf
@@ -127,7 +132,15 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
                 num_stops += 1
                 stop_geom = MultiPoint(merged_stop).convex_hull
                 if(stop_geom.geom_type == 'Polygon'):
-                    insert_stop(cur, mmsi, ts_start, ts_end, cast(Polygon, stop_geom)) # Only insert if valid polygon
+                    minx, miny, maxx, maxy = stop_geom.bounds
+                    # Approximate area of the bounding box in meters^2
+                    width_m = geodesic((miny, minx), (miny, maxx)).meters
+                    height_m = geodesic((miny, minx), (maxy, minx)).meters
+                    mmr_area = width_m * height_m
+                    if mmr_area <= MAX_MBR_AREA:
+                        insert_stop(cur, mmsi, ts_start, ts_end, cast(Polygon, stop_geom)) # Only insert if valid polygon
+                    else:
+                        insert_or_merge_with_trajectories(trajs, merged_stop, merge_case_count) # Fallback to merging as trajectory if MBR too large
                 else:
                     insert_or_merge_with_trajectories(trajs, merged_stop, merge_case_count) # Fallback to merging as trajectory if POLYGON EMPTY
             else:
@@ -139,22 +152,10 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
         for trajectory in trajs:
             ts_start = trajectory[0].coords[0][2]
             ts_end = trajectory[-1].coords[0][2]
-            
-            total_distance = sum(
-                distance_m(trajectory[i], trajectory[i+1])
-                for i in range(len(trajectory) - 1)
-            )
-            avg_traj_speed = total_distance / (ts_end - ts_start) if (ts_end - ts_start) > 0 else 0
-
-            if len(trajectory) > MIN_AIS_POINTS_IN_TRAJ and ts_end > ts_start and avg_traj_speed > 1:
+            if len(trajectory) >= MIN_AIS_POINTS_IN_TRAJ and ts_end > ts_start:  # and avg_traj_speed > 1
                 insert_trajectory(cur, mmsi, ts_start, ts_end, LineString(trajectory))
                 num_inserted_trajs += 1
-            elif ts_end - ts_start >= MIN_STOP_DURATION:
-                stop_geom = MultiPoint(trajectory).convex_hull
-                if(stop_geom.geom_type == 'Polygon'):
-                    insert_stop(cur, mmsi, ts_start, ts_end, cast(Polygon, stop_geom)) # Insert as stop if not valid trajectory
-                    num_stops += 1
-
+                
         conn.commit()
         cur.close()
         return (mmsi, len(points), num_inserted_trajs, num_stops, merge_case_count)
@@ -164,8 +165,8 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
 def construct_trajectories_and_stops(conn: Connection, db_conn_str: str, max_workers: int = 4):
     """Parallel version of the main loop."""
     cur = conn.cursor()
-    #mmsis = get_mmsis(cur)
-    mmsis = [219019094] # For testing with a single MMSI
+    mmsis = get_mmsis(cur)
+    #mmsis = [219019094] # For testing with a single MMSI
     
     cur.close()
     
@@ -212,15 +213,23 @@ def construct_trajectories_and_stops(conn: Connection, db_conn_str: str, max_wor
     
 # ----------------------------------------------------------------------
 
-def insert_or_merge_with_trajectories(trajs: list[list[Point]], stop: list[Point], case_count: list[int]):
+def insert_or_merge_with_trajectories(trajs: list[list[Point]], invalid_stop: list[Point], case_count: list[int]):
     """Insert or merge a non-valid stop with existing trajectories."""
-    if not stop or not trajs:
-        trajs.append(stop)
-        return
-
+    for i in range(len(invalid_stop) - 1):
+        p1 = invalid_stop[i]
+        p2 = invalid_stop[i + 1]
+        if (p1.coords[0] == p2.coords[0]):
+            continue
+        time_diff = p2.coords[0][2] - p1.coords[0][2]
+        dist_diff = distance_m(p1, p2)
+        avg_vessel_speed = dist_diff / time_diff / KNOT_AS_MPS if time_diff > 0 else inf
+        if (avg_vessel_speed > MAX_VESSEL_SPEED) or (time_diff > MAX_AIS_POINT_GAP):
+            # If any pair of points violate the conditions, discard the points
+            return
+    
     # Used to compare start/end points between stop and trajectories
-    first_stop_pt = stop[0]
-    last_stop_pt = stop[-1]
+    first_stop_pt = invalid_stop[0]
+    last_stop_pt = invalid_stop[-1]
 
     merge_before_idx = None
     merge_after_idx = None
@@ -240,7 +249,7 @@ def insert_or_merge_with_trajectories(trajs: list[list[Point]], stop: list[Point
     if merge_before_idx is not None and merge_after_idx is not None and merge_before_idx != merge_after_idx:
         before_traj = trajs[merge_before_idx]
         after_traj = trajs[merge_after_idx]
-        merged_traj = before_traj + stop + after_traj
+        merged_traj = before_traj + invalid_stop + after_traj
         # replace both in list
         trajs[merge_before_idx] = merged_traj
         # remove the later one (index may shift if before < after)
@@ -250,18 +259,18 @@ def insert_or_merge_with_trajectories(trajs: list[list[Point]], stop: list[Point
 
     # Case 2: Stop continues an existing trajectory
     if merge_before_idx is not None:
-        trajs[merge_before_idx].extend(stop)
+        trajs[merge_before_idx].extend(invalid_stop)
         case_count[1] += 1
         return
 
     # Case 3: Stop precedes an existing trajectory
     if merge_after_idx is not None:
-        trajs[merge_after_idx] = stop + trajs[merge_after_idx]
+        trajs[merge_after_idx] = invalid_stop + trajs[merge_after_idx]
         case_count[2] += 1
         return
 
     # Case 4: No merge possible = treat as new trajectory
-    trajs.append(stop)
+    trajs.append(invalid_stop)
     case_count[3] += 1
 
 def insert_trajectory(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, line: LineString):
