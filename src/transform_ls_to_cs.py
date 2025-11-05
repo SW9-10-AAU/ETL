@@ -2,10 +2,11 @@ from typing import LiteralString, cast
 import mercantile
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from psycopg import Connection, Cursor
-from shapely import from_wkb, LineString, Polygon, Point
+from shapely import from_wkb, LineString, Polygon, box
 
 Row = tuple[int, int, int, int, bytes]  # (trajectory_id/stop_id, mmsi, ts_start, ts_end, geom_wkb)
-ProcessResultTraj = tuple[int, int, int, int, bool, list[int]]  # trajectory_id, mmsi, ts_start, ts_end, is_unique, cellstring
+ProcessResultTraj = tuple[
+    int, int, int, int, bool, list[int]]  # trajectory_id, mmsi, ts_start, ts_end, is_unique, cellstring
 ProcessResultStop = tuple[int, int, int, int, list[int]]  # stop_id, mmsi, ts_start, ts_end, cellstring
 FutureResultTraj = Future[ProcessResultTraj]
 FutureResultStop = Future[ProcessResultStop]
@@ -83,8 +84,8 @@ def convert_polygon_to_cellstring(poly: Polygon) -> list[int]:
 
     for tile in tiles:
         bounds = mercantile.bounds(tile)
-        center = Point((bounds.west + bounds.east) / 2, (bounds.north + bounds.south) / 2)
-        if poly.contains(center):
+        tile_poly = box(bounds.west, bounds.south, bounds.east, bounds.north)
+        if poly.intersects(tile_poly):
             cellstring.append(encode_tile_xy_to_cellid(tile.x, tile.y))
     return cellstring
 
@@ -94,9 +95,11 @@ def convert_polygon_to_cellstring(poly: Polygon) -> list[int]:
 def process_trajectory_row(row: Row) -> ProcessResultTraj:
     trajectory_id, mmsi, ts_start, ts_end, geom_wkb = row
     linestring = cast(LineString, from_wkb(geom_wkb))
-    cellstring = convert_linestring_to_cellstring(linestring)
-    is_unique = len(cellstring) == len(set(cellstring))
-    return trajectory_id, mmsi, ts_start, ts_end, is_unique, cellstring
+    raw_cellstring = convert_linestring_to_cellstring(linestring)
+    cellstring: set = set(raw_cellstring)
+    list_cellstring: list = list(cellstring)
+    is_unique: bool = True
+    return trajectory_id, mmsi, ts_start, ts_end, is_unique, list_cellstring
 
 
 def process_stop_row(row: Row) -> ProcessResultStop:

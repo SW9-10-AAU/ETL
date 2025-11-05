@@ -1,11 +1,12 @@
 from psycopg import Connection
 
+
 def drop_all_tables(conn: Connection):
     cur = conn.cursor()
 
     # Drop tables if they exist
-    #cur.execute("DROP TABLE IF EXISTS prototype2.trajectory_ls;")
-    #cur.execute("DROP TABLE IF EXISTS prototype2.stop_poly;")
+    cur.execute("DROP TABLE IF EXISTS prototype2.trajectory_ls;")
+    cur.execute("DROP TABLE IF EXISTS prototype2.stop_poly;")
     #cur.execute("DROP TABLE IF EXISTS prototype2.trajectory_cs;")
     #cur.execute("DROP TABLE IF EXISTS prototype2.stop_cs;")
     # cur.execute("DROP MATERIALIZED VIEW IF EXISTS prototype1.points;")
