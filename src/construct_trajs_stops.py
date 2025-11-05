@@ -136,8 +136,8 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
                     # Approximate area of the bounding box in meters^2
                     width_m = geodesic((miny, minx), (miny, maxx)).meters
                     height_m = geodesic((miny, minx), (maxy, minx)).meters
-                    mmr_area = width_m * height_m
-                    if mmr_area <= MAX_MBR_AREA:
+                    mbr_area = width_m * height_m
+                    if mbr_area <= MAX_MBR_AREA:
                         insert_stop(cur, mmsi, ts_start, ts_end, cast(Polygon, stop_geom)) # Only insert if valid polygon
                     else:
                         insert_or_merge_with_trajectories(trajs, merged_stop, merge_case_count) # Fallback to merging as trajectory if MBR too large
@@ -152,7 +152,7 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
         for trajectory in trajs:
             ts_start = trajectory[0].coords[0][2]
             ts_end = trajectory[-1].coords[0][2]
-            if len(trajectory) >= MIN_AIS_POINTS_IN_TRAJ and ts_end > ts_start:  # and avg_traj_speed > 1
+            if len(trajectory) >= MIN_AIS_POINTS_IN_TRAJ and ts_end > ts_start:
                 insert_trajectory(cur, mmsi, ts_start, ts_end, LineString(trajectory))
                 num_inserted_trajs += 1
                 
@@ -166,7 +166,6 @@ def construct_trajectories_and_stops(conn: Connection, db_conn_str: str, max_wor
     """Parallel version of the main loop."""
     cur = conn.cursor()
     mmsis = get_mmsis(cur)
-    #mmsis = [219019094] # For testing with a single MMSI
     
     cur.close()
     
@@ -215,6 +214,8 @@ def construct_trajectories_and_stops(conn: Connection, db_conn_str: str, max_wor
 
 def insert_or_merge_with_trajectories(trajs: list[list[Point]], invalid_stop: list[Point], case_count: list[int]):
     """Insert or merge a non-valid stop with existing trajectories."""
+    
+    # First, validate the invalid_stop points to ensure no traj with unrealistic speeds/time gaps is created
     for i in range(len(invalid_stop) - 1):
         p1 = invalid_stop[i]
         p2 = invalid_stop[i + 1]
@@ -224,7 +225,7 @@ def insert_or_merge_with_trajectories(trajs: list[list[Point]], invalid_stop: li
         dist_diff = distance_m(p1, p2)
         avg_vessel_speed = dist_diff / time_diff / KNOT_AS_MPS if time_diff > 0 else inf
         if (avg_vessel_speed > MAX_VESSEL_SPEED) or (time_diff > MAX_AIS_POINT_GAP):
-            # If any pair of points violate the conditions, discard the points
+            # If any pair of points violate the conditions, discard the invalid stop
             return
     
     # Used to compare start/end points between stop and trajectories
