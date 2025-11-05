@@ -3,7 +3,7 @@ import time
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from typing import cast
 from psycopg import Connection, Cursor, connect
-from shapely import Polygon, from_wkb, Point, LineString, MultiPoint, transform
+from shapely import Polygon, from_wkb, Point, LineString, MultiPoint
 from geopy.distance import geodesic
 
 # Threshold constants matching the paper but with ADJUSTMENTS
