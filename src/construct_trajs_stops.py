@@ -275,13 +275,13 @@ def insert_or_merge_with_trajectories(trajs: list[list[Point]], invalid_stop: li
 
 def insert_trajectory(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, line: LineString):
     cur.execute("""
-            INSERT INTO prototype2.trajectory_ls_testing (mmsi, ts_start, ts_end, geom)
+            INSERT INTO prototype2.trajectory_ls (mmsi, ts_start, ts_end, geom)
             VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_Force2D(ST_GeomFromWKB(%s, 4326)))
         """, (mmsi, ts_start, ts_end, line.wkb))
 
 def insert_stop(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, poly: Polygon):
     cur.execute("""
-            INSERT INTO prototype2.stop_poly_testing (mmsi, ts_start, ts_end, geom)
+            INSERT INTO prototype2.stop_poly (mmsi, ts_start, ts_end, geom)
             VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_GeomFromWKB(%s, 4326))
         """, (mmsi, ts_start, ts_end, poly.wkb))
 
@@ -293,9 +293,9 @@ def get_mmsis(cur: Cursor) -> list[int]:
             WHERE LENGTH(mmsi::text) = 9
                 AND LEFT(mmsi::text, 1) BETWEEN '2' AND '7'
                 AND mmsi NOT IN (
-                    SELECT DISTINCT mmsi FROM prototype2.stop_poly_testing
+                    SELECT DISTINCT mmsi FROM prototype2.stop_poly
                     UNION
-                    SELECT DISTINCT mmsi FROM prototype2.trajectory_ls_testing
+                    SELECT DISTINCT mmsi FROM prototype2.trajectory_ls
                 )
             GROUP BY mmsi
             HAVING COUNT(*) > 1
