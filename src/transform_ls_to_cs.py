@@ -136,7 +136,7 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
     with connection.cursor() as cur:
         query = """
                 SELECT trajectory_id, mmsi, ts_start, ts_end, ST_AsBinary(geom)
-                FROM prototype1.trajectory_ls
+                FROM prototype2.trajectory_ls
                 ORDER BY trajectory_id;
                 """
 
@@ -174,7 +174,7 @@ def transform_ls_stops_to_cs(connection: Connection, max_workers: int = MAX_WORK
     with connection.cursor() as cur:
         query = """
                 SELECT stop_id, mmsi, ts_start, ts_end, ST_AsBinary(geom)
-                FROM prototype1.stop_poly
+                FROM prototype2.stop_poly
                 WHERE stop_id <> 2444 -- Temporary filter to skip "long" stop
                 ORDER BY stop_id;
                 """
