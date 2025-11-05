@@ -133,7 +133,7 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
     print(f"Processing trajectories using {max_workers} workers.")
     total_processed = 0
     insert_query = """
-                   INSERT INTO prototype2.trajectory_cs_extrazoom (trajectory_id, mmsi, ts_start, ts_end, unique_cells, cellstring_z13, cellstring_z21)
+                   INSERT INTO prototype2.trajectory_cs_extrazoom_deduplicated (trajectory_id, mmsi, ts_start, ts_end, unique_cells, cellstring_z13, cellstring_z21)
                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                    """
 

@@ -27,7 +27,7 @@ def main():
 
     # Transform LS Trajectories to CS Trajectories
     transform_ls_trajectories_to_cs(connection, min(os.cpu_count() or 4, 12), batch_size=1000)
-    transform_ls_stops_to_cs(connection, min(os.cpu_count() or 4, 12), batch_size=1000)
+    # transform_ls_stops_to_cs(connection, min(os.cpu_count() or 4, 12), batch_size=1000)
     
     connection.close()
      
