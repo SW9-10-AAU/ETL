@@ -16,6 +16,6 @@ def create_all_tables(conn: Connection):
     # mat_points_view(connection)
     
     # Create Area Polygon/CellString tables
-    # create_area_tables(conn)
+    create_area_tables(conn)
     
     print("Created all tables and materialized views if not exist.")
