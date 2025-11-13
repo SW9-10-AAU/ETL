@@ -10,10 +10,10 @@ def create_all_tables(conn: Connection):
     create_ls_traj_stop_tables(conn)
 
     # Create CellString tables Trajectory and Stop
-    create_cs_traj_stop_tables(conn)
+    # create_cs_traj_stop_tables(conn)
 
     # Create Materialized View POINTS
-    # mat_points_view(connection)
+    # mat_points_view(conn)
     
     # Create Area Polygon/CellString tables
     # create_area_tables(conn)
