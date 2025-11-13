@@ -233,13 +233,15 @@ def construct_trajectories_and_stops(conn: Connection, db_conn_str: str, max_wor
         return
     
     start_time = time.perf_counter()
-    print(f"{start_time}: Processing {num_mmsis} MMSIs in batches of {batch_size} MMSIs using {max_workers} workers.")
+    print(f"Processing {num_mmsis} MMSIs in batches of {batch_size} MMSIs using {max_workers} workers.")
 
     # Iterate in batches
     for batch_start in range(0, num_mmsis, batch_size):
         mmsis_in_batch = all_mmsis[batch_start : batch_start + batch_size]
         batch_num = batch_start//batch_size+1
-        print(f"\n--- Processing batch {batch_num} (MMSIs: {mmsis_in_batch[0]} to {mmsis_in_batch[-1]}) ---")
+        num_batches = (num_mmsis//batch_size)
+        batch_start_time = time.perf_counter()
+        print(f"\n--- Processing batch {batch_num} of {num_batches} (MMSIs: {mmsis_in_batch[0]} to {mmsis_in_batch[-1]}) ---")
 
         trajs_to_insert: list[Traj] = []
         stops_to_insert: list[Stop] = []
@@ -276,7 +278,8 @@ def construct_trajectories_and_stops(conn: Connection, db_conn_str: str, max_wor
 
         print(f"Batch {batch_num} inserted: {len(trajs_to_insert)} trajectories, {len(stops_to_insert)} stops.")
         elapsed_time = time.perf_counter() - start_time
-        print(f"Elapsed time: {elapsed_time:.2f} seconds | Avg per MMSI: {elapsed_time/batch_size:.2f}s")
+        batch_time = time.perf_counter() - batch_start_time
+        print(f"Elapsed time: {elapsed_time:.2f}s | Batch time: {batch_time:.2f}s | Avg per MMSI: {batch_time/batch_size:.2f}s")
             
     total_time = time.perf_counter() - start_time
     print(f"\nAll MMSIs processed.")
