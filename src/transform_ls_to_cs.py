@@ -38,11 +38,10 @@ def encode_lonlat_to_cellid(lon: float, lat: float, zoom: int = DEFAULT_ZOOM) ->
     x, y = get_tile_xy(lon, lat, zoom)
     return encode_tile_xy_to_cellid(x, y)
 
-
 # --- Bresenham ---
 
 def bresenham(x0: int, y0: int, x1: int, y1: int) -> list[tuple[int, int]]:
-    tiles = []
+    tiles: list[tuple[int, int]] = []
     dx, dy = abs(x1 - x0), abs(y1 - y0)
     sx, sy = (1, -1)[x0 > x1], (1, -1)[y0 > y1]
     err = dx - dy
@@ -60,6 +59,57 @@ def bresenham(x0: int, y0: int, x1: int, y1: int) -> list[tuple[int, int]]:
             y0 += sy
     return tiles
 
+# ---- supercover bresenham ----   from https://dedu.fr/projects/bresenham/ 
+
+def supercover_bresenham(x1: int, y1: int, x2: int, y2: int) -> list[tuple[int, int]]:
+    cells: list[tuple[int, int]] = []
+    dx, dy = x2 - x1, y2 - y1
+    x, y = x1, y1
+
+    xstep = 1 if dx >= 0 else -1
+    ystep = 1 if dy >= 0 else -1
+    dx, dy = abs(dx), abs(dy)
+    ddx, ddy = 2 * dx, 2 * dy
+
+    cells.append((x, y))
+
+    if ddx >= ddy:
+        errorprev = error = dx
+        for _ in range(dx):
+            x += xstep
+            error += ddy
+            if error > ddx:
+                y += ystep
+                error -= ddx
+                # check for extra cells
+                if error + errorprev < ddx:
+                    cells.append((x, y - ystep))
+                elif error + errorprev > ddx:
+                    cells.append((x - xstep, y))
+                else:
+                    cells.append((x, y - ystep))
+                    cells.append((x - xstep, y))
+            cells.append((x, y))
+            errorprev = error
+    else:
+        errorprev = error = dy
+        for _ in range(dy):
+            y += ystep
+            error += ddx
+            if error > ddy:
+                x += xstep
+                error -= ddy
+                if error + errorprev < ddy:
+                    cells.append((x - xstep, y))
+                elif error + errorprev > ddy:
+                    cells.append((x, y - ystep))
+                else:
+                    cells.append((x - xstep, y))
+                    cells.append((x, y - ystep))
+            cells.append((x, y))
+            errorprev = error
+
+    return cells
 
 # --- Conversion Utilities ---
 
@@ -73,7 +123,7 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -
         lon1, lat1 = c1[:2]
         x0, y0 = get_tile_xy(lon0, lat0, zoom)
         x1, y1 = get_tile_xy(lon1, lat1, zoom)
-        for x, y in bresenham(x0, y0, x1, y1):
+        for x, y in supercover_bresenham(x0, y0, x1, y1):
             cellstring.append(encode_tile_xy_to_cellid(x, y, zoom))
     return cellstring
 
@@ -133,7 +183,7 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
     print(f"Processing trajectories using {max_workers} workers.")
     total_processed = 0
     insert_query = """
-                   INSERT INTO prototype2.trajectory_cs (trajectory_id, mmsi, ts_start, ts_end, unique_cells, cellstring_z13, cellstring_z21)
+                   INSERT INTO prototype2.trajectory_supercover_cs (trajectory_id, mmsi, ts_start, ts_end, unique_cells, cellstring_z13, cellstring_z21)
                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                    """
 
@@ -171,7 +221,7 @@ def transform_ls_stops_to_cs(connection: Connection, max_workers: int = MAX_WORK
     print(f"Processing stops using {max_workers} workers.")
     total_processed = 0
     insert_query = """
-                   INSERT INTO prototype2.stop_cs (stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z21)
+                   INSERT INTO prototype2.stop_supercover_cs (stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z21)
                    VALUES (%s, %s, %s, %s, %s, %s)
                    """
 
