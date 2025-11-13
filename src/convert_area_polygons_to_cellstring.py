@@ -40,7 +40,7 @@ def convert_area_polygons_to_cs():
         
         cur.execute("""
                 INSERT INTO benchmark.area_cs (name, cellstring_z13, cellstring_z17, cellstring_z21)
-                VALUES (%s, %s %s, %s)
+                VALUES (%s, %s, %s, %s)
             """, (name, cellstring_z13, cellstring_z17, cellstring_z21))
         conn.commit()
         print(f"Inserted area cellstrings for {name} into PostGIS table")
