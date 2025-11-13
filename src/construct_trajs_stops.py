@@ -287,7 +287,7 @@ def insert_stop(cur: Cursor, mmsi: int, ts_start: float, ts_end: float, poly: Po
         """, (mmsi, ts_start, ts_end, poly.wkb))
 
 def get_mmsis(cur: Cursor) -> list[int]:
-    """Fetch distinct MMSIs with at least 2 AIS points from the database."""
+    """Fetch distinct MMSIs with at least 10 AIS points from the database."""
     cur.execute("""
             SELECT mmsi
             FROM prototype1.points
@@ -299,7 +299,7 @@ def get_mmsis(cur: Cursor) -> list[int]:
                     SELECT DISTINCT mmsi FROM prototype2.trajectory_ls
                 )
             GROUP BY mmsi
-            HAVING COUNT(*) > 1
+            HAVING COUNT(*) >= 10
             ORDER BY mmsi;
         """)
     rows = cur.fetchall()
