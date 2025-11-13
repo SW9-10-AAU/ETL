@@ -221,7 +221,7 @@ def transform_ls_stops_to_cs(connection: Connection, max_workers: int = MAX_WORK
     print(f"Processing stops using {max_workers} workers.")
     total_processed = 0
     insert_query = """
-                   INSERT INTO prototype2.stop_supercover_cs (stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z21)
+                   INSERT INTO prototype2.stop_cs (stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z21)
                    VALUES (%s, %s, %s, %s, %s, %s)
                    """
 
