@@ -158,9 +158,7 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
                         # Cut trajectory due to large time gap
                         if len(current_traj) > 1:
                             candidate_trajs.append(current_traj)
-                            current_traj = [current_point]
-                            prev_point = current_point
-                            continue
+                            current_traj = []
                 else: 
                     continue # Important to not update prev_point to the skewed AIS point
                 
@@ -197,17 +195,14 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
                         stops_to_insert.append((mmsi, ts_start, ts_end, stop_poly))
                         continue  # success = skip fallback
 
-            # If Stop does not meet criteriary to merge with trajectories
+            # Fallback: try to merge invalid stop with trajectories
             try_merge_invalid_stop_with_trajectories(candidate_trajs, merged_stop)
             
-        # Insert trajectories
+        # Validate and insert trajectories
         for trajectory in candidate_trajs:
             ts_start, ts_end = extract_start_end_time_s(trajectory)
             if len(trajectory) >= MIN_AIS_POINTS_IN_TRAJ and ts_end > ts_start:
                 trajs_to_insert.append((mmsi, ts_start, ts_end, LineString(trajectory)))
-                
-        conn.commit()
-        cur.close()
         
         return (mmsi, trajs_to_insert, stops_to_insert)
 
