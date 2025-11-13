@@ -132,7 +132,7 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
                 if sog is not None and sog < STOP_SOG_THRESHOLD:
                     current_stop.append(current_point)
                 else:
-                   current_traj.append(current_point) 
+                    current_traj.append(current_point) 
                    
                 prev_point = current_point
                 continue
@@ -145,6 +145,7 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
           
             # Candidate stop condition 
             if is_valid_candidate_stop(sog, avg_vessel_speed, dist_diff, time_diff):
+                current_stop.append(prev_point) # TODO: THIS IS FOR OLD VERSION OF MERGING
                 current_stop.append(current_point)
                 
                 # finish trajectory
@@ -152,6 +153,7 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
                     candidate_trajs.append(current_traj)
                     current_traj = []
             else:
+                current_traj.append(prev_point) # TODO: THIS IS FOR OLD VERSION OF MERGING
                 if (avg_vessel_speed < TRAJ_MAX_SPEED_KN):
                     if time_diff < TRAJ_MAX_GAP_S:
                         current_traj.append(current_point)
@@ -197,7 +199,7 @@ def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
                         continue  # success = skip fallback
 
             # Fallback: try to merge invalid stop with trajectories
-            try_merge_invalid_stop_with_trajectories(candidate_trajs, merged_stop)
+            OLD_try_merge_invalid_stop_with_trajectories(candidate_trajs, merged_stop) #TODO: Currently uses old merge strategy
             
         # Validate and insert trajectories
         for trajectory in candidate_trajs:
@@ -242,7 +244,9 @@ def construct_trajectories_and_stops(conn: Connection, db_conn_str: str, max_wor
         num_batches = (num_mmsis//batch_size)
         batch_start_time = time.perf_counter()
         print(f"\n--- Processing batch {batch_num} of {num_batches} (MMSIs: {mmsis_in_batch[0]} to {mmsis_in_batch[-1]}) ---")
-
+        
+        # TODO: Retrieve points for all MMSIs in batch at once to reduce DB calls
+        
         trajs_to_insert: list[Traj] = []
         stops_to_insert: list[Stop] = []
 
@@ -381,6 +385,63 @@ def try_merge_invalid_stop_with_trajectories(candidate_trajs: list[list[Point]],
     # Case 4: cannot merge - treat as new trajectory (if it has enough points)
     if len(invalid_stop) >= MIN_AIS_POINTS_IN_TRAJ:
         candidate_trajs.append(invalid_stop)
+
+def OLD_try_merge_invalid_stop_with_trajectories(trajs: list[list[Point]], invalid_stop: list[Point]):
+    """Insert or merge a non-valid stop with existing trajectories."""
+    
+    # First, validate the invalid_stop points to ensure no traj with unrealistic speeds/time gaps is created
+    for i in range(len(invalid_stop) - 1):
+        p1 = invalid_stop[i]
+        p2 = invalid_stop[i + 1]
+        if (p1.coords[0] == p2.coords[0]):
+            continue
+        time_diff, _, avg_vessel_speed = compute_motion(p1, p2)
+        if (avg_vessel_speed > TRAJ_MAX_SPEED_KN) or (time_diff > TRAJ_MAX_GAP_S):
+            # If any pair of points violate the conditions, discard the invalid stop
+            return
+    
+    # Used to compare start/end points between stop and trajectories
+    first_stop_pt = invalid_stop[0]
+    last_stop_pt = invalid_stop[-1]
+
+    merge_before_idx = None
+    merge_after_idx = None
+
+    # Find trajectories to merge with
+    for i, traj in enumerate(trajs):
+        first_traj_pt = traj[0]
+        last_traj_pt = traj[-1]
+
+        # Compare full (x, y, z) - exact equality
+        if (last_traj_pt.coords[0] == first_stop_pt.coords[0]):
+            merge_before_idx = i
+        if (first_traj_pt.coords[0] == last_stop_pt.coords[0]):
+            merge_after_idx = i
+
+    # Case 1: Stop connects two existing trajectories (bridge)
+    if merge_before_idx is not None and merge_after_idx is not None and merge_before_idx != merge_after_idx:
+        before_traj = trajs[merge_before_idx]
+        after_traj = trajs[merge_after_idx]
+        merged_traj = before_traj + invalid_stop + after_traj
+        # replace both in list
+        trajs[merge_before_idx] = merged_traj
+        # remove the later one (index may shift if before < after)
+        trajs.pop(merge_after_idx if merge_after_idx > merge_before_idx else merge_before_idx + 1)
+        return
+
+    # Case 2: Stop continues an existing trajectory
+    if merge_before_idx is not None:
+        trajs[merge_before_idx].extend(invalid_stop)
+        return
+
+    # Case 3: Stop precedes an existing trajectory
+    if merge_after_idx is not None:
+        trajs[merge_after_idx] = invalid_stop + trajs[merge_after_idx]
+        return
+
+    # Case 4: No merge possible = treat as new trajectory (if it has enough points)
+    if (len(invalid_stop) >= MIN_AIS_POINTS_IN_TRAJ):
+        trajs.append(invalid_stop)
 
 def get_mmsis(cur: Cursor) -> list[int]:
     """Fetch distinct MMSIs from the database. Exclude those already processed."""
