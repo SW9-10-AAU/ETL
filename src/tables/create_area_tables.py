@@ -21,6 +21,7 @@ def create_area_tables(conn: Connection):
                 area_id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL,
                 cellstring_z13 int ARRAY NOT NULL,
+                cellstring_z17 bigint ARRAY NOT NULL,
                 cellstring_z21 bigint ARRAY NOT NULL
             );
         """)
@@ -34,7 +35,12 @@ def create_area_tables(conn: Connection):
     cur.execute("""
             CREATE INDEX IF NOT EXISTS area_cs_z13_gin_idx
             ON benchmark.area_cs
-            USING GIN (cellstring_z13);
+            USING GIN (cellstring_z13 gin__int_ops);
+        """)
+    cur.execute("""
+            CREATE INDEX IF NOT EXISTS area_cs_z17_gin_idx
+            ON benchmark.area_cs 
+            USING GIN (cellstring_z17);
         """)
     cur.execute("""
             CREATE INDEX IF NOT EXISTS area_cs_z21_gin_idx

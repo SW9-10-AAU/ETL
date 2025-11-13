@@ -26,13 +26,14 @@ def convert_area_polygon_to_cs(polygon: Polygon, name: str):
     # Convert polygon to cellstring and insert into table 
     print("Converting polygon to cellstrings")
     cellstring_z13 = convert_polygon_to_cellstring(polygon, 13)
+    cellstring_z17 = convert_polygon_to_cellstring(polygon, 17)
     cellstring_z21 = convert_polygon_to_cellstring(polygon, 21)
-    print(f"Conversion succeeded with {len(cellstring_z13)} cells (zoom 13) and {len(cellstring_z21)} cells (zoom 21).")
+    print(f"Conversion succeeded with {len(cellstring_z13)} cells (zoom 13), {len(cellstring_z17)} cells (zoom 17), and {len(cellstring_z21)} cells (zoom 21).")
     
     cur.execute("""
-            INSERT INTO benchmark.area_cs (name, cellstring_z13, cellstring_z21)
-            VALUES (%s, %s, %s)
-        """, (name, cellstring_z13, cellstring_z21))
+            INSERT INTO benchmark.area_cs (name, cellstring_z13, cellstring_z17, cellstring_z21)
+            VALUES (%s, %s, %s, %s)
+        """, (name, cellstring_z13, cellstring_z17, cellstring_z21))
     print("Inserted area cellstrings into PostGIS table")
     conn.commit()
     cur.close()

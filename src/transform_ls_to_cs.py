@@ -5,8 +5,8 @@ from psycopg import Connection, Cursor
 from shapely import from_wkb, LineString, Polygon, box
 
 Row = tuple[int, int, int, int, bytes]  # (trajectory_id/stop_id, mmsi, ts_start, ts_end, geom_wkb)
-ProcessResultTraj = tuple[int, int, int, int, bool, list[int], list[int]]  # trajectory_id, mmsi, ts_start, ts_end, is_unique, cellstring_z13, cellstring_z21
-ProcessResultStop = tuple[int, int, int, int, list[int], list[int]]  # stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z21
+ProcessResultTraj = tuple[int, int, int, int, bool, list[int], list[int], list[int]]  # trajectory_id, mmsi, ts_start, ts_end, is_unique, cellstring_z13, cellstring_z17, cellstring_z21
+ProcessResultStop = tuple[int, int, int, int, list[int], list[int], list[int]]  # stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21
 FutureResultTraj = Future[ProcessResultTraj]
 FutureResultStop = Future[ProcessResultStop]
 
@@ -14,8 +14,10 @@ FutureResultStop = Future[ProcessResultStop]
 
 DEFAULT_ZOOM = 21 # Default zoom level
 ENCODE_OFFSET_Z21 = 100_000_000_000_000
+ENCODE_OFFSET_Z17 = 1_000_000_000_000
 ENCODE_OFFSET_Z13 = 100_000_000
 ENCODE_MULT_Z21 = 10_000_000
+ENCODE_MULT_Z17 = 1_000_000
 ENCODE_MULT_Z13 = 10_000
 BATCH_SIZE = 5_000
 MAX_WORKERS = 4
@@ -26,7 +28,10 @@ MAX_WORKERS = 4
 def encode_tile_xy_to_cellid(x: int, y: int, zoom: int = DEFAULT_ZOOM) -> int:
     if (zoom == 13):
         return ENCODE_OFFSET_Z13 + (x * ENCODE_MULT_Z13) + y
-    
+
+    if (zoom == 17):
+        return ENCODE_OFFSET_Z17 + (x * ENCODE_MULT_Z17) + y
+
     return ENCODE_OFFSET_Z21 + (x * ENCODE_MULT_Z21) + y
 
 def get_tile_xy(lon: float, lat: float, zoom: int = DEFAULT_ZOOM) -> tuple[int, int]:
@@ -99,19 +104,22 @@ def process_trajectory_row(row: Row) -> ProcessResultTraj:
     trajectory_id, mmsi, ts_start, ts_end, geom_wkb = row
     linestring = cast(LineString, from_wkb(geom_wkb))
     raw_cellstring_z13 = convert_linestring_to_cellstring(linestring, 13)
+    raw_cellstring_z17 = convert_linestring_to_cellstring(linestring, 17)
     raw_cellstring_z21 = convert_linestring_to_cellstring(linestring, 21)
-    cellstring_z13 = list(set(raw_cellstring_z13)) # Deduplicate
-    cellstring_z21 = list(set(raw_cellstring_z21)) # Deduplicate
+    cellstring_z13 = list(dict.fromkeys(raw_cellstring_z13)) # Deduplicate
+    cellstring_z17 = list(dict.fromkeys(raw_cellstring_z17)) # Deduplicate
+    cellstring_z21 = list(dict.fromkeys(raw_cellstring_z21)) # Deduplicate
     is_unique : bool = True
-    return (trajectory_id, mmsi, ts_start, ts_end, is_unique, cellstring_z13, cellstring_z21)
+    return (trajectory_id, mmsi, ts_start, ts_end, is_unique, cellstring_z13, cellstring_z17, cellstring_z21)
 
 def process_stop_row(row: Row) -> ProcessResultStop:
     stop_id, mmsi, ts_start, ts_end, geom_wkb = row
     polygon = cast(Polygon, from_wkb(geom_wkb))
 
     cellstring_z13 = convert_polygon_to_cellstring(polygon, 13)
+    cellstring_z17 = convert_polygon_to_cellstring(polygon, 17)
     cellstring_z21 = convert_polygon_to_cellstring(polygon, 21)
-    return stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z21
+    return stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21
 
 
 # --- Batch Helper ---
@@ -133,8 +141,8 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
     print(f"Processing trajectories using {max_workers} workers.")
     total_processed = 0
     insert_query = """
-                   INSERT INTO prototype2.trajectory_cs (trajectory_id, mmsi, ts_start, ts_end, unique_cells, cellstring_z13, cellstring_z21)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s)
+                   INSERT INTO prototype2.trajectory_cs (trajectory_id, mmsi, ts_start, ts_end, unique_cells, cellstring_z13, cellstring_z17, cellstring_z21)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                    """
 
     with connection.cursor() as cur:
@@ -156,8 +164,8 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
 
             with connection.cursor() as insert_cur:
                 insert_cur.executemany(insert_query,
-                                       [(trajectory_id, mmsi, start_time, end_time, is_unique, cellstring_z13, cellstring_z21) for
-                                        (trajectory_id, mmsi, start_time, end_time, is_unique, cellstring_z13, cellstring_z21) in
+                                       [(trajectory_id, mmsi, start_time, end_time, is_unique, cellstring_z13, cellstring_z17, cellstring_z21) for
+                                        (trajectory_id, mmsi, start_time, end_time, is_unique, cellstring_z13, cellstring_z17, cellstring_z21) in
                                         results])
             connection.commit()
 
@@ -171,8 +179,8 @@ def transform_ls_stops_to_cs(connection: Connection, max_workers: int = MAX_WORK
     print(f"Processing stops using {max_workers} workers.")
     total_processed = 0
     insert_query = """
-                   INSERT INTO prototype2.stop_cs (stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z21)
-                   VALUES (%s, %s, %s, %s, %s, %s)
+                   INSERT INTO prototype2.stop_cs (stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)
                    """
 
     with connection.cursor() as cur:
@@ -193,8 +201,8 @@ def transform_ls_stops_to_cs(connection: Connection, max_workers: int = MAX_WORK
                         print(f"Worker error: {e}")
 
             with connection.cursor() as insert_cur:
-                insert_cur.executemany(insert_query, [(stop_id, mmsi, start_time, end_time, cellstring_z13, cellstring_z21) for
-                                                      (stop_id, mmsi, start_time, end_time, cellstring_z13, cellstring_z21) in results])
+                insert_cur.executemany(insert_query, [(stop_id, mmsi, start_time, end_time, cellstring_z13, cellstring_z17, cellstring_z21) for
+                                                      (stop_id, mmsi, start_time, end_time, cellstring_z13, cellstring_z17, cellstring_z21) in results])
             connection.commit()
 
             total_processed += len(results)
