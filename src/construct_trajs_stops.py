@@ -1,3 +1,4 @@
+from collections import defaultdict
 from math import dist, inf
 import time
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
@@ -23,7 +24,10 @@ TRAJ_MAX_GAP_S = 3600               # seconds (1h), max time gap between two AIS
 MIN_AIS_POINTS_IN_TRAJ = 10         # Minimum AIS messages required to record a trajectory, Remove trajectories with only small number of AIS points
 
 
-AISPoint = tuple[int, bytes, float | None]  # (mmsi, geom as WKB, sog)
+AISPointRow = tuple[int, bytes, float | None]  # (mmsi, geom as WKB, sog)
+AISPointWKB = tuple[bytes, float | None]  # (geom as WKB, sog)
+DictAISPointWKB = dict[int, list[AISPointWKB]]  # mmsi -> list of (geom as WKB, sog)
+AISPoint = tuple[Point, float | None]  # (geom as Point, sog)
 
 Traj = tuple[int, float, float, LineString]  # (mmsi, ts_start, ts_end, geom)
 Stop = tuple[int, float, float, Polygon]  # (mmsi, ts_start, ts_end, geom)
@@ -106,114 +110,120 @@ def append_point_if_empty_segment(current_segment: list[Point], point: Point):
         current_segment.append(point)
 
 def append_segment_if_valid_segment(candidate_segments: list[list[Point]], current_segment: list[Point]):
-    """Append current segment to list of candidate segments if it has more than 1 point. A segment can be a trajectory or a stop."""
+    """Append current segment to candidate segments if it has more than 1 point, then clear it. A segment can be a trajectory or a stop."""
     if len(current_segment) > 1:
-        candidate_segments.append(current_segment)
-        current_segment = []
-
+        candidate_segments.append(current_segment.copy())  # snapshot
+        current_segment.clear()                            # empties in caller
+        
 # ----------------------------------------------------------------------
 
-def process_single_mmsi(db_conn_str: str, mmsi: int) -> ProcessResult:
+def process_single_mmsi(mmsi: int, wkb_points: list[AISPointWKB]) -> ProcessResult:
     """
-    Process a single MMSI - constructs trajectories and stops.
+    Process the points of a single MMSI - constructs trajectories and stops.
     Returns (mmsi, trajs_to_insert, stops_to_insert).
     """
-    with connect(db_conn_str) as conn:
-        cur = conn.cursor()
-        points: list[tuple[Point, float | None]] = [
-            (cast(Point, from_wkb(geom_wkb)), sog)
-            for (_, geom_wkb, sog) in get_points_for_mmsi(cur, mmsi)
-        ]
-        
-        prev_point = None
-        current_traj : list[Point] = []
-        current_stop : list[Point] = []
-        candidate_trajs : list[list[Point]] = []
-        candidate_stops : list[list[Point]] = []
+    if not wkb_points:
+        return (mmsi, [], [])
+    
+    # Convert WKB to Shapely Points
+    points: list[AISPoint] = [(cast(Point, from_wkb(geom_wkb)), sog) for (geom_wkb, sog) in wkb_points]
+    
+    prev_point = None
+    current_traj: list[Point] = []
+    current_stop: list[Point] = []
+    candidate_trajs: list[list[Point]] = []
+    candidate_stops: list[list[Point]] = []
 
-        # Final trajectories and stops to insert
-        trajs_to_insert : list[Traj] = []
-        stops_to_insert : list[Stop] = []
+    # Final trajectories and stops to insert
+    trajs_to_insert: list[Traj] = []
+    stops_to_insert: list[Stop] = []
+    
+    for current_point, sog in points:
         
-        for current_point, sog in points:
-            current_time = extract_time_s(current_point)
-            
-            # First point initialization
-            if prev_point is None:
-                if sog is not None and sog < STOP_SOG_THRESHOLD:
-                    current_stop.append(current_point)
-                else:
-                    current_traj.append(current_point) 
-                   
-                prev_point = current_point
-                continue
-            
-            # Skip points that have identical timestamps
-            if (current_time == extract_time_s(prev_point)):
-                continue
-            
-            time_diff, dist_diff, avg_vessel_speed = compute_motion(prev_point, current_point)
-          
-            # Candidate stop condition 
-            if is_valid_candidate_stop(sog, avg_vessel_speed, dist_diff, time_diff):
-                append_point_if_empty_segment(current_stop, prev_point)
+        # Initialization of first point
+        if prev_point is None:
+            if sog is not None and sog < STOP_SOG_THRESHOLD:
                 current_stop.append(current_point)
-                
-                # Append trajectory
-                append_segment_if_valid_segment(candidate_trajs, current_traj)
-            
-            # Trajectory condition
             else:
-                append_point_if_empty_segment(current_traj, prev_point)
-                if (avg_vessel_speed < TRAJ_MAX_SPEED_KN):
-                    if time_diff < TRAJ_MAX_GAP_S:
-                        current_traj.append(current_point)
-                    else: 
-                        # Append trajectory (start a new one due to large time gap)
-                        append_segment_if_valid_segment(candidate_trajs, current_traj)
-                else: 
-                    continue # Don't update previous point to the skewed AIS point
+                current_traj.append(current_point) 
                 
-                # Append candidate stop
-                append_segment_if_valid_segment(candidate_stops, current_stop)
-                    
-            # Update previous point
-            prev_point = current_point 
-
-        # Final append (remaining traj or stop)
-        append_segment_if_valid_segment(candidate_trajs, current_traj)
-        append_segment_if_valid_segment(candidate_stops, current_stop)
-
-        # Merge nearby candidate stops
-        merged_stops = merge_candidate_stops(candidate_stops)
-
-        # Validate and insert stops (fallback to merging invalid stops with trajectories)
-        for merged_stop in merged_stops:
-            ts_start, ts_end = extract_start_end_time_s(merged_stop)
-            stop_duration = ts_end - ts_start
-            
-            if len(merged_stop) >= MIN_STOP_POINTS and stop_duration >= MIN_STOP_DURATION:
-                stop_geom = MultiPoint(merged_stop).convex_hull
-
-                if stop_geom.geom_type == "Polygon":
-                    stop_poly = cast(Polygon, stop_geom)
-                    mbr_area = compute_mbr_area(stop_poly)
-
-                    if mbr_area <= MAX_MBR_AREA:
-                        # Fully valid stop
-                        stops_to_insert.append((mmsi, ts_start, ts_end, stop_poly))
-                        continue  # success = skip fallback
-
-            # Fallback: try to merge invalid merged stop with trajectories
-            try_merge_invalid_merged_stop_with_trajectories(trajs=candidate_trajs, invalid_merged_stop=merged_stop)
-            
-        # Validate and insert trajectories
-        for trajectory in candidate_trajs:
-            ts_start, ts_end = extract_start_end_time_s(trajectory)
-            if len(trajectory) >= MIN_AIS_POINTS_IN_TRAJ and ts_end > ts_start:
-                trajs_to_insert.append((mmsi, ts_start, ts_end, LineString(trajectory)))
+            prev_point = current_point
+            continue
         
-        return (mmsi, trajs_to_insert, stops_to_insert)
+        current_time = extract_time_s(current_point)
+        
+        # Skip points that have identical timestamps
+        if (current_time == extract_time_s(prev_point)):
+            continue
+        
+        # Compute differences between previous and current point
+        time_diff, dist_diff, avg_vessel_speed = compute_motion(prev_point, current_point)
+        
+        # Candidate stop condition 
+        if is_valid_candidate_stop(sog, avg_vessel_speed, dist_diff, time_diff):
+            append_point_if_empty_segment(current_stop, prev_point)
+            current_stop.append(current_point)
+            
+            # Append trajectory
+            append_segment_if_valid_segment(candidate_trajs, current_traj)
+        
+        # Trajectory condition
+        else:
+            append_point_if_empty_segment(current_traj, prev_point)
+            if (avg_vessel_speed < TRAJ_MAX_SPEED_KN):
+                if time_diff < TRAJ_MAX_GAP_S:
+                    current_traj.append(current_point)
+                else: 
+                    # Append trajectory (start a new one due to large time gap)
+                    append_segment_if_valid_segment(candidate_trajs, current_traj)
+            else: 
+                continue # Don't update previous point to the skewed AIS point
+            
+            # Append candidate stop
+            append_segment_if_valid_segment(candidate_stops, current_stop)
+                
+        # Update previous point
+        prev_point = current_point 
+
+    # Final append (remaining traj or stop)
+    append_segment_if_valid_segment(candidate_trajs, current_traj)
+    append_segment_if_valid_segment(candidate_stops, current_stop)
+
+    # Merge nearby candidate stops
+    merged_stops = merge_candidate_stops(candidate_stops)
+
+    # Validate and insert stops (fallback to merging invalid stops with trajectories)
+    for merged_stop in merged_stops:
+        ts_start, ts_end = extract_start_end_time_s(merged_stop)
+        stop_duration = ts_end - ts_start
+        
+        if len(merged_stop) >= MIN_STOP_POINTS and stop_duration >= MIN_STOP_DURATION:
+            stop_geom = MultiPoint(merged_stop).convex_hull
+
+            if stop_geom.geom_type == "Polygon":
+                stop_poly = cast(Polygon, stop_geom)
+                mbr_area = compute_mbr_area(stop_poly)
+
+                if mbr_area <= MAX_MBR_AREA:
+                    # Fully valid stop
+                    stops_to_insert.append((mmsi, ts_start, ts_end, stop_poly))
+                    continue  # success = skip fallback
+
+        # Fallback: try to merge invalid merged stop with trajectories
+        try_merge_invalid_merged_stop_with_trajectories(trajs=candidate_trajs, invalid_merged_stop=merged_stop)
+        
+    # Validate and insert trajectories
+    for trajectory in candidate_trajs:
+        ts_start, ts_end = extract_start_end_time_s(trajectory)
+        if len(trajectory) >= MIN_AIS_POINTS_IN_TRAJ and ts_end > ts_start:
+            trajs_to_insert.append((mmsi, ts_start, ts_end, LineString(trajectory)))
+    
+    print(
+        f"[MMSI: {mmsi}] ✅ ({len(points)} points --> {len(trajs_to_insert)} trajectories, {len(stops_to_insert)} stops)",
+        flush=True,
+    )
+    
+    return (mmsi, trajs_to_insert, stops_to_insert)
 
 # ----------------------------------------------------------------------
 
@@ -229,7 +239,7 @@ INSERT_STOP_SQL = """
     VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_GeomFromWKB(%s, 4326))
 """
 
-def construct_trajectories_and_stops(conn: Connection, db_conn_str: str, max_workers: int = 4, batch_size: int = BATCH_SIZE):
+def construct_trajectories_and_stops(conn: Connection, max_workers: int = 4, batch_size: int = BATCH_SIZE):
     """Construct trajectories and stops for all MMSIs in the database. Processes MMSIs in batches."""
     cur = conn.cursor()
     all_mmsis = get_mmsis(cur)
@@ -243,53 +253,57 @@ def construct_trajectories_and_stops(conn: Connection, db_conn_str: str, max_wor
     start_time = time.perf_counter()
     print(f"Processing {num_mmsis} MMSIs in batches of {batch_size} MMSIs using {max_workers} workers.")
 
-    # Iterate in batches
-    for batch_start in range(0, num_mmsis, batch_size):
-        mmsis_in_batch = all_mmsis[batch_start : batch_start + batch_size]
-        batch_num = batch_start//batch_size+1
-        num_batches = (num_mmsis//batch_size)
-        batch_start_time = time.perf_counter()
-        print(f"\n--- Processing batch {batch_num} of {num_batches} (MMSIs: {mmsis_in_batch[0]} to {mmsis_in_batch[-1]}) ---")
-        
-        # TODO: Retrieve points for all MMSIs in batch at once to reduce DB calls
-        
-        trajs_to_insert: list[Traj] = []
-        stops_to_insert: list[Stop] = []
-
-        # Parallel processing of the batch of MMSIs
-        with ProcessPoolExecutor(max_workers=max_workers) as executor:
-            futures: dict[FutureResult, int] = {executor.submit(process_single_mmsi, db_conn_str, mmsi) : mmsi for mmsi in mmsis_in_batch}
+    with conn.cursor() as read_cur: 
+        # Iterate in batches
+        for batch_start in range(0, num_mmsis, batch_size):
+            mmsis_in_batch = all_mmsis[batch_start : batch_start + batch_size]
+            batch_num = batch_start//batch_size + 1
+            num_batches = (num_mmsis + batch_size - 1) // batch_size
+            batch_start_time = time.perf_counter()
+            print(f"\n--- Processing batch {batch_num} of {num_batches} ({batch_size} MMSIs: {mmsis_in_batch[0]} to {mmsis_in_batch[-1]}) ---")
             
-            for future in as_completed(futures):
-                mmsi = futures[future]
-                try:
-                    (mmsi, trajs, stops) = future.result()
-                    trajs_to_insert.extend(trajs)
-                    stops_to_insert.extend(stops)
-                except Exception as e:
-                    print(f"Error processing MMSI {mmsi}: {e}")
-                    continue
+            # Retrieve points for all MMSIs in the batch
+            print("Fetching points for MMSIs in batch...")
+            points: DictAISPointWKB = get_points_for_mmsis_in_batch(read_cur, mmsis_in_batch)
+            print(f"{sum(len(pts) for pts in points.values())} Points fetched. Processing MMSIs in parallel...")
+            
+            trajs_to_insert: list[Traj] = []
+            stops_to_insert: list[Stop] = []
 
-        # Batch insert trajectories and stops into the database
-        with conn.cursor() as insert_cur:
-            if trajs_to_insert:
-                insert_cur.executemany(
-                    INSERT_TRAJ_SQL,
-                    [(mmsi, ts_start, ts_end, geom.wkb) for (mmsi, ts_start, ts_end, geom) in trajs_to_insert]
-                )
+            # Parallel processing of the batch of MMSIs
+            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                futures: dict[FutureResult, int] = {executor.submit(process_single_mmsi, mmsi, points[mmsi]) : mmsi for mmsi in mmsis_in_batch}
+                
+                for future in as_completed(futures):
+                    mmsi = futures[future]
+                    try:
+                        (mmsi, trajs, stops) = future.result()
+                        trajs_to_insert.extend(trajs)
+                        stops_to_insert.extend(stops)
+                    except Exception as e:
+                        print(f"Error processing MMSI {mmsi}: {e}")
+                        continue
 
-            if stops_to_insert:
-                insert_cur.executemany(
-                    INSERT_STOP_SQL,
-                    [(mmsi, ts_start, ts_end, geom.wkb) for (mmsi, ts_start, ts_end, geom) in stops_to_insert]
-                )
+            # Batch insert trajectories and stops into the database
+            with conn.cursor() as insert_cur:
+                if trajs_to_insert:
+                    insert_cur.executemany(
+                        INSERT_TRAJ_SQL,
+                        [(mmsi, ts_start, ts_end, geom.wkb) for (mmsi, ts_start, ts_end, geom) in trajs_to_insert]
+                    )
 
-        conn.commit()
+                if stops_to_insert:
+                    insert_cur.executemany(
+                        INSERT_STOP_SQL,
+                        [(mmsi, ts_start, ts_end, geom.wkb) for (mmsi, ts_start, ts_end, geom) in stops_to_insert]
+                    )
 
-        print(f"Batch {batch_num} inserted: {len(trajs_to_insert)} trajectories, {len(stops_to_insert)} stops.")
-        elapsed_time = time.perf_counter() - start_time
-        batch_time = time.perf_counter() - batch_start_time
-        print(f"Elapsed time: {elapsed_time:.2f}s | Batch time: {batch_time:.2f}s | Avg per MMSI: {batch_time/batch_size:.2f}s")
+            conn.commit()
+
+            print(f"Batch {batch_num} inserted: {len(trajs_to_insert)} trajectories, {len(stops_to_insert)} stops.")
+            elapsed_time = time.perf_counter() - start_time
+            batch_time = time.perf_counter() - batch_start_time
+            print(f"Progress: {batch_num/num_batches} Elapsed time: {elapsed_time:.2f}s | Batch time: {batch_time:.2f}s | Avg per MMSI: {batch_time/batch_size:.2f}s")
             
     total_time = time.perf_counter() - start_time
     print(f"\nAll MMSIs processed.")
@@ -367,21 +381,34 @@ def get_mmsis(cur: Cursor) -> list[int]:
             )
             ORDER BY mmsi;
         """)
-    rows = cur.fetchall()
-    return [row[0] for row in rows]
-
-def get_points_for_mmsi(cur: Cursor, mmsi: int) -> list[AISPoint]:
-    """Fetch all points for a specific MMSI from the database ordered by time."""
-    cur.execute("""
-            SELECT mmsi, ST_AsBinary(geom), sog
-            FROM prototype2.points
-            WHERE mmsi = %s
-            ORDER BY ST_M(geom);
-        """, (mmsi,))
-    rows = cur.fetchall()
+    rows: list[tuple[int]] = cur.fetchall()
     
-    return [
-        (int(row[0]), bytes(row[1]), float(row[2]) if row[2] is not None else None)
-        for row in rows 
-        if row[0] is not None and row[1] is not None
-    ]
+    return [mmsi for mmsi, in rows]
+
+def get_points_for_mmsis_in_batch(cur: Cursor, mmsis: list[int]) -> DictAISPointWKB:
+    """Fetch all points for multiple MMSIs grouped by MMSI, ordered by time."""
+    
+    cur.execute("""
+        SELECT mmsi, ST_AsBinary(geom), sog
+        FROM prototype2.points
+        WHERE mmsi = ANY(%s)
+        ORDER BY mmsi, ST_M(geom);
+    """, (mmsis,))
+
+    rows: list[AISPointRow] = cur.fetchall()
+
+    # Group points by MMSI
+    grouped_points: DictAISPointWKB = defaultdict(list)
+    
+    for mmsi, geom_wkb, sog in rows:
+        if mmsi is None or geom_wkb is None:
+            continue
+
+        grouped_points[mmsi].append(
+            (
+                geom_wkb,
+                sog
+            )
+        )
+
+    return grouped_points
