@@ -219,7 +219,7 @@ def process_single_mmsi(mmsi: int, wkb_points: list[AISPointWKB]) -> ProcessResu
             trajs_to_insert.append((mmsi, ts_start, ts_end, LineString(trajectory)))
     
     print(
-        f"[MMSI: {mmsi}] ✅ ({len(points)} points --> {len(trajs_to_insert)} trajectories, {len(stops_to_insert)} stops)",
+        f"[MMSI: {mmsi}] Processed ({len(points)} points \t--> {len(trajs_to_insert)} trajectories, {len(stops_to_insert)} stops)",
         flush=True,
     )
     
@@ -227,7 +227,7 @@ def process_single_mmsi(mmsi: int, wkb_points: list[AISPointWKB]) -> ProcessResu
 
 # ----------------------------------------------------------------------
 
-BATCH_SIZE = 100 # Number of MMSIs to process in parallel
+BATCH_SIZE = 50 # Number of MMSIs to process in parallel
 
 INSERT_TRAJ_SQL = """
     INSERT INTO prototype2.trajectory_ls_new (mmsi, ts_start, ts_end, geom)
@@ -303,7 +303,7 @@ def construct_trajectories_and_stops(conn: Connection, max_workers: int = 4, bat
             print(f"Batch {batch_num} inserted: {len(trajs_to_insert)} trajectories, {len(stops_to_insert)} stops.")
             elapsed_time = time.perf_counter() - start_time
             batch_time = time.perf_counter() - batch_start_time
-            print(f"Progress: {batch_num/num_batches} Elapsed time: {elapsed_time:.2f}s | Batch time: {batch_time:.2f}s | Avg per MMSI: {batch_time/batch_size:.2f}s")
+            print(f"Progress: {batch_num/num_batches*100:.2f}% | Elapsed time: {elapsed_time:.2f}s | Batch time: {batch_time:.2f}s | Avg per MMSI: {batch_time/batch_size:.2f}s")
             
     total_time = time.perf_counter() - start_time
     print(f"\nAll MMSIs processed.")
@@ -370,20 +370,23 @@ def try_merge_invalid_merged_stop_with_trajectories(trajs: list[list[Point]], in
 
 
 def get_mmsis(cur: Cursor) -> list[int]:
-    """Fetch distinct MMSIs from the database. Exclude those already processed."""
+    """
+    Fetch MMSIs that still need processing, ordered by number of points (descending).
+    """
     cur.execute("""
-            SELECT DISTINCT mmsi
-            FROM prototype2.points
-            WHERE mmsi NOT IN (
-                SELECT DISTINCT mmsi FROM prototype2.stop_poly_new
-                UNION
-                SELECT DISTINCT mmsi FROM prototype2.trajectory_ls_new
-            )
-            ORDER BY mmsi;
-        """)
-    rows: list[tuple[int]] = cur.fetchall()
-    
-    return [mmsi for mmsi, in rows]
+        SELECT p.mmsi, COUNT(*) AS num_points
+        FROM prototype2.points p
+        WHERE p.mmsi NOT IN (
+            SELECT mmsi FROM prototype2.stop_poly_new
+            UNION
+            SELECT mmsi FROM prototype2.trajectory_ls_new
+        )
+        GROUP BY p.mmsi
+        ORDER BY num_points DESC;
+    """)
+
+    rows: list[tuple[int, int]] = cur.fetchall()
+    return [mmsi for mmsi, _ in rows]
 
 def get_points_for_mmsis_in_batch(cur: Cursor, mmsis: list[int]) -> DictAISPointWKB:
     """Fetch all points for multiple MMSIs grouped by MMSI, ordered by time."""
