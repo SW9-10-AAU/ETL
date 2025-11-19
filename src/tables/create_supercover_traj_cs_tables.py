@@ -13,6 +13,7 @@ def create_supercover_traj_cs_table(conn: Connection):
                 ts_end        TIMESTAMP WITHOUT TIME ZONE NOT NULL,
                 unique_cells  boolean DEFAULT FALSE,
                 cellstring_z13    int ARRAY               NOT NULL,
+                cellstring_z17    bigint ARRAY            NOT NULL,
                 cellstring_z21    bigint ARRAY            NOT NULL,
                 CONSTRAINT trajectory_time_check CHECK (ts_start < ts_end)
             );
@@ -29,6 +30,11 @@ def create_supercover_traj_cs_table(conn: Connection):
         CREATE INDEX IF NOT EXISTS trajectory_supercover_cs_z13_gin_idx 
         ON prototype2.trajectory_supercover_cs 
         USING GIN (cellstring_z13 gin__int_ops);
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS trajectory_supercover_cs_z17_gin_idx 
+        ON prototype2.trajectory_supercover_cs 
+        USING GIN (cellstring_z17);
     """)
     cur.execute("""
         CREATE INDEX IF NOT EXISTS trajectory_supercover_cs_z21_gin_idx 

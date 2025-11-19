@@ -118,7 +118,7 @@ def supercover_bresenham(x1: int, y1: int, x2: int, y2: int) -> list[tuple[int, 
 
 # --- Conversion Utilities ---
 
-def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -> list[int]:
+def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM, use_supercover: bool = False) -> list[int]:
     if ls.is_empty:
         return []
     coords = ls.coords
@@ -128,8 +128,12 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -
         lon1, lat1 = c1[:2]
         x0, y0 = get_tile_xy(lon0, lat0, zoom)
         x1, y1 = get_tile_xy(lon1, lat1, zoom)
-        for x, y in supercover_bresenham(x0, y0, x1, y1):
-            cellstring.append(encode_tile_xy_to_cellid(x, y, zoom))
+        if use_supercover:
+            for x, y in supercover_bresenham(x0, y0, x1, y1):
+                cellstring.append(encode_tile_xy_to_cellid(x, y, zoom))
+        else:
+            for x, y in bresenham(x0, y0, x1, y1):
+                cellstring.append(encode_tile_xy_to_cellid(x, y, zoom))
     return cellstring
 
 
@@ -150,12 +154,12 @@ def convert_polygon_to_cellstring(poly: Polygon, zoom: int = DEFAULT_ZOOM) -> li
 
 # --- Worker Functions ---
 
-def process_trajectory_row(row: Row) -> ProcessResultTraj:
+def process_trajectory_row(row: Row, use_supercover: bool) -> ProcessResultTraj:
     trajectory_id, mmsi, ts_start, ts_end, geom_wkb = row
     linestring = cast(LineString, from_wkb(geom_wkb))
-    raw_cellstring_z13 = convert_linestring_to_cellstring(linestring, 13)
-    raw_cellstring_z17 = convert_linestring_to_cellstring(linestring, 17)
-    raw_cellstring_z21 = convert_linestring_to_cellstring(linestring, 21)
+    raw_cellstring_z13 = convert_linestring_to_cellstring(linestring, 13, use_supercover)
+    raw_cellstring_z17 = convert_linestring_to_cellstring(linestring, 17, use_supercover)
+    raw_cellstring_z21 = convert_linestring_to_cellstring(linestring, 21, use_supercover)
     cellstring_z13 = list(dict.fromkeys(raw_cellstring_z13)) # Deduplicate
     cellstring_z17 = list(dict.fromkeys(raw_cellstring_z17)) # Deduplicate
     cellstring_z21 = list(dict.fromkeys(raw_cellstring_z21)) # Deduplicate
@@ -187,13 +191,19 @@ def get_batches(cur: Cursor, query: LiteralString, batch_size: int):
 # --- Main Transformation Functions ---
 
 def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = MAX_WORKERS,
-                                    batch_size: int = BATCH_SIZE):
+                                    batch_size: int = BATCH_SIZE, use_supercover: bool = False):
     print(f"Processing trajectories using {max_workers} workers.")
     total_processed = 0
-    insert_query = """
-                   INSERT INTO prototype2.trajectory_cs (trajectory_id, mmsi, ts_start, ts_end, unique_cells, cellstring_z13, cellstring_z17, cellstring_z21)
+    if use_supercover:
+        insert_query = """
+                   INSERT INTO prototype2.trajectory_supercover_cs (trajectory_id, mmsi, ts_start, ts_end, unique_cells, cellstring_z13, cellstring_z17, cellstring_z21)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                    """
+    else:
+        insert_query = """
+                    INSERT INTO prototype2.trajectory_cs (trajectory_id, mmsi, ts_start, ts_end, unique_cells, cellstring_z13, cellstring_z17, cellstring_z21)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    """
 
     with connection.cursor() as cur:
         query = """
@@ -204,7 +214,7 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
 
         for batch in get_batches(cur, query, batch_size):
             with ProcessPoolExecutor(max_workers=max_workers) as executor:
-                futures: list[FutureResultTraj] = [executor.submit(process_trajectory_row, row) for row in batch]
+                futures: list[FutureResultTraj] = [executor.submit(process_trajectory_row, row, use_supercover) for row in batch]
                 results: list[ProcessResultTraj] = []
                 for future in as_completed(futures):
                     try:
