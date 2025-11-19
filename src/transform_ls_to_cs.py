@@ -128,12 +128,10 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM, u
         lon1, lat1 = c1[:2]
         x0, y0 = get_tile_xy(lon0, lat0, zoom)
         x1, y1 = get_tile_xy(lon1, lat1, zoom)
-        if use_supercover:
-            for x, y in supercover_bresenham(x0, y0, x1, y1):
-                cellstring.append(encode_tile_xy_to_cellid(x, y, zoom))
-        else:
-            for x, y in bresenham(x0, y0, x1, y1):
-                cellstring.append(encode_tile_xy_to_cellid(x, y, zoom))
+        
+        cellstring_tiles = bresenham(x0, y0, x1, y1) if not use_supercover else supercover_bresenham(x0, y0, x1, y1)
+        for x, y in cellstring_tiles:
+            cellstring.append(encode_tile_xy_to_cellid(x, y, zoom))
     return cellstring
 
 
