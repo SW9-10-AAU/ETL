@@ -17,7 +17,7 @@ def main():
     connection = connect_to_db()
 
     # Drop existing tables and views
-    # drop_all_tables(connection)
+    drop_all_tables(connection)
 
     # Create all necessary tables and Materialized view
     create_all_tables(connection)
