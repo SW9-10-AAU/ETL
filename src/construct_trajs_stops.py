@@ -265,7 +265,7 @@ def construct_trajectories_and_stops(conn: Connection, max_workers: int = 4, bat
             # Retrieve points for all MMSIs in the batch
             print(f"Fetching points for MMSIs in batch {batch_num}...")
             points: DictAISPointWKB = get_points_for_mmsis_in_batch(read_cur, mmsis_in_batch)
-            print(f"{sum(len(pts) for pts in points.values())} points fetched.")
+            print(f"{sum(len(pts) for pts in points.values()):,} points fetched.")
             
             trajs_to_insert: list[Traj] = []
             stops_to_insert: list[Stop] = []
