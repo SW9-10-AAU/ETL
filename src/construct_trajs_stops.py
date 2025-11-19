@@ -200,14 +200,14 @@ def process_single_mmsi(mmsi: int, wkb_points: list[AISPointWKB]) -> ProcessResu
             # Use the envelope (MBR) if the convex hull is not Polygon
             stop_geom = hull if hull.geom_type == "Polygon" else envelope 
             
-            # Safe cast after geom_type check (MBR is always a Polygon)
-            stop_poly = cast(Polygon, stop_geom) 
-            mbr_area = compute_mbr_area(stop_poly)
+            if (stop_geom.geom_type == "Polygon"):
+                stop_poly = cast(Polygon, stop_geom) 
+                mbr_area = compute_mbr_area(stop_poly)
             
-            if mbr_area <= MAX_MBR_AREA:
-                # Fully valid stop
-                stops_to_insert.append((mmsi, ts_start, ts_end, stop_poly))
-                continue  # Skip fallback
+                if mbr_area <= MAX_MBR_AREA:
+                    # Fully valid stop
+                    stops_to_insert.append((mmsi, ts_start, ts_end, stop_poly))
+                    continue  # Skip fallback
 
         # Fallback: Try to merge invalid merged stop with trajectories
         try_merge_invalid_merged_stop_with_trajectories(trajs=candidate_trajs, invalid_merged_stop=merged_stop)
