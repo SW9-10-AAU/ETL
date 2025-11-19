@@ -13,7 +13,7 @@ STOP_DISTANCE_THRESHOLD = 250       # meters, disT (original = 2 km)    CHANGED 
 STOP_TIME_THRESHOLD = 5400          # seconds, tT (original = 1.5 h)
 MIN_STOP_POINTS = 10                # Δn (original = 10 points)
 MIN_STOP_DURATION = 5400            # seconds, Δstopt (original = 1.5 h)
-MERGE_DISTANCE_THRESHOLD = 250      # meters, Δd. (original = 2 km)     CHANGED TO 250m
+MERGE_DISTANCE_THRESHOLD = 50       # meters, Δd. (original = 2 km)     CHANGED TO 50m
 MERGE_TIME_THRESHOLD = 3600         # seconds, Δt (original = 1 h)
 MAX_MBR_AREA = 5_000_000            # 5 km², Maximum area of the Minimum Bounding Rectangle (MBR) for a valid stop polygon
 
@@ -242,10 +242,7 @@ INSERT_STOP_SQL = """
 def construct_trajectories_and_stops(conn: Connection, max_workers: int = 4, batch_size: int = BATCH_SIZE):
     """Construct trajectories and stops for all MMSIs in the database. Processes MMSIs in batches."""
     cur = conn.cursor()
-    # all_mmsis = get_mmsis(cur)
-    # all_mmsis = [219028021] # merging invalid stop test
-    # all_mmsis = [220339000] # traj that should be a stop
-    all_mmsis = [219019094] # aflangt stop test
+    all_mmsis = get_mmsis(cur)
     cur.close()
     
     num_mmsis = len(all_mmsis)
@@ -341,7 +338,7 @@ def try_merge_invalid_merged_stop_with_trajectories(trajs: list[list[Point]], in
         if (first_traj_pt.coords[0] == last_stop_pt.coords[0]):
             traj_after_idx = i
 
-    # Case 1: Stop connects two existing trajectories (bridge)
+    # Case 1: Stop connects/bridges two trajectories (stop starts where one trajectory ends and ends where another trajectory starts)
     if traj_before_idx is not None and traj_after_idx is not None and traj_before_idx != traj_after_idx:
         before_traj = trajs[traj_before_idx]
         after_traj = trajs[traj_after_idx]
@@ -351,25 +348,21 @@ def try_merge_invalid_merged_stop_with_trajectories(trajs: list[list[Point]], in
         trajs[traj_before_idx] = merged_traj
         # remove the later one (index may shift if before < after)
         trajs.pop(traj_after_idx if traj_after_idx > traj_before_idx else traj_before_idx + 1)
-        print(f"Merged invalid stop bridging two trajectories. (before {traj_before_idx}, after {traj_after_idx})")
         return
 
-    # Case 2: Stop continues an existing trajectory (stop starts where trajectory ends)
+    # Case 2: Stop continues a trajectory (stop starts where a trajectory ends)
     if traj_before_idx is not None:
         trajs[traj_before_idx].extend(invalid_merged_stop)
-        print("Merged invalid stop continuing an existing trajectory.")
         return
 
-    # Case 3: Stop precedes an existing trajectory (trajectory starts where stop ends)
+    # Case 3: Stop precedes a trajectory (stop ends where a trajectory starts)
     if traj_after_idx is not None:
         trajs[traj_after_idx] = invalid_merged_stop + trajs[traj_after_idx]
-        print("Merged invalid stop preceding an existing trajectory.")
         return
 
     # Case 4: No merge possible = treat as new trajectory (if it has enough points)
     if (len(invalid_merged_stop) >= MIN_AIS_POINTS_IN_TRAJ):
         trajs.append(invalid_merged_stop)
-        print("Added invalid stop as new trajectory.")
 
 
 def get_mmsis(cur: Cursor) -> list[int]:
