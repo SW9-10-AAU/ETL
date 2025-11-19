@@ -69,7 +69,7 @@ def create_cs_traj_stop_tables(conn: Connection):
     cur.execute("""
             CREATE INDEX IF NOT EXISTS stop_cellstring_z13_gin_idx
             ON prototype2.stop_cs
-            USING GIN (cellstring_z13);
+            USING GIN (cellstring_z13 gin__int_ops);
         """)
     cur.execute("""
             CREATE INDEX IF NOT EXISTS stop_cellstring_z17_gin_idx

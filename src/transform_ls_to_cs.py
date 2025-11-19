@@ -43,11 +43,10 @@ def encode_lonlat_to_cellid(lon: float, lat: float, zoom: int = DEFAULT_ZOOM) ->
     x, y = get_tile_xy(lon, lat, zoom)
     return encode_tile_xy_to_cellid(x, y)
 
-
 # --- Bresenham ---
 
 def bresenham(x0: int, y0: int, x1: int, y1: int) -> list[tuple[int, int]]:
-    tiles = []
+    tiles: list[tuple[int, int]] = []
     dx, dy = abs(x1 - x0), abs(y1 - y0)
     sx, sy = (1, -1)[x0 > x1], (1, -1)[y0 > y1]
     err = dx - dy
@@ -65,10 +64,61 @@ def bresenham(x0: int, y0: int, x1: int, y1: int) -> list[tuple[int, int]]:
             y0 += sy
     return tiles
 
+# ---- supercover bresenham ----   from https://dedu.fr/projects/bresenham/ 
+
+def supercover_bresenham(x1: int, y1: int, x2: int, y2: int) -> list[tuple[int, int]]:
+    cells: list[tuple[int, int]] = []
+    dx, dy = x2 - x1, y2 - y1
+    x, y = x1, y1
+
+    xstep = 1 if dx >= 0 else -1
+    ystep = 1 if dy >= 0 else -1
+    dx, dy = abs(dx), abs(dy)
+    ddx, ddy = 2 * dx, 2 * dy
+
+    cells.append((x, y))
+
+    if ddx >= ddy:
+        errorprev = error = dx
+        for _ in range(dx):
+            x += xstep
+            error += ddy
+            if error > ddx:
+                y += ystep
+                error -= ddx
+                # check for extra cells
+                if error + errorprev < ddx:
+                    cells.append((x, y - ystep))
+                elif error + errorprev > ddx:
+                    cells.append((x - xstep, y))
+                else:
+                    cells.append((x, y - ystep))
+                    cells.append((x - xstep, y))
+            cells.append((x, y))
+            errorprev = error
+    else:
+        errorprev = error = dy
+        for _ in range(dy):
+            y += ystep
+            error += ddx
+            if error > ddy:
+                x += xstep
+                error -= ddy
+                if error + errorprev < ddy:
+                    cells.append((x - xstep, y))
+                elif error + errorprev > ddy:
+                    cells.append((x, y - ystep))
+                else:
+                    cells.append((x - xstep, y))
+                    cells.append((x, y - ystep))
+            cells.append((x, y))
+            errorprev = error
+
+    return cells
 
 # --- Conversion Utilities ---
 
-def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -> list[int]:
+def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM, use_supercover: bool = False) -> list[int]:
     if ls.is_empty:
         return []
     coords = ls.coords
@@ -78,7 +128,9 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -
         lon1, lat1 = c1[:2]
         x0, y0 = get_tile_xy(lon0, lat0, zoom)
         x1, y1 = get_tile_xy(lon1, lat1, zoom)
-        for x, y in bresenham(x0, y0, x1, y1):
+        
+        cellstring_tiles = bresenham(x0, y0, x1, y1) if not use_supercover else supercover_bresenham(x0, y0, x1, y1)
+        for x, y in cellstring_tiles:
             cellstring.append(encode_tile_xy_to_cellid(x, y, zoom))
     return cellstring
 
@@ -100,12 +152,12 @@ def convert_polygon_to_cellstring(poly: Polygon, zoom: int = DEFAULT_ZOOM) -> li
 
 # --- Worker Functions ---
 
-def process_trajectory_row(row: Row) -> ProcessResultTraj:
+def process_trajectory_row(row: Row, use_supercover: bool) -> ProcessResultTraj:
     trajectory_id, mmsi, ts_start, ts_end, geom_wkb = row
     linestring = cast(LineString, from_wkb(geom_wkb))
-    raw_cellstring_z13 = convert_linestring_to_cellstring(linestring, 13)
-    raw_cellstring_z17 = convert_linestring_to_cellstring(linestring, 17)
-    raw_cellstring_z21 = convert_linestring_to_cellstring(linestring, 21)
+    raw_cellstring_z13 = convert_linestring_to_cellstring(linestring, 13, use_supercover)
+    raw_cellstring_z17 = convert_linestring_to_cellstring(linestring, 17, use_supercover)
+    raw_cellstring_z21 = convert_linestring_to_cellstring(linestring, 21, use_supercover)
     cellstring_z13 = list(dict.fromkeys(raw_cellstring_z13)) # Deduplicate
     cellstring_z17 = list(dict.fromkeys(raw_cellstring_z17)) # Deduplicate
     cellstring_z21 = list(dict.fromkeys(raw_cellstring_z21)) # Deduplicate
@@ -137,14 +189,15 @@ def get_batches(cur: Cursor, query: LiteralString, batch_size: int):
 # --- Main Transformation Functions ---
 
 def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = MAX_WORKERS,
-                                    batch_size: int = BATCH_SIZE):
+                                    batch_size: int = BATCH_SIZE, use_supercover: bool = False):
     print(f"Processing trajectories using {max_workers} workers.")
     total_processed = 0
-    insert_query = """
-                   INSERT INTO prototype2.trajectory_cs (trajectory_id, mmsi, ts_start, ts_end, unique_cells, cellstring_z13, cellstring_z17, cellstring_z21)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                   """
-
+    table_name = "trajectory_supercover_cs" if use_supercover else "trajectory_cs"
+    insert_query = f"""
+                INSERT INTO prototype2.{table_name} (trajectory_id, mmsi, ts_start, ts_end, unique_cells, cellstring_z13, cellstring_z17, cellstring_z21)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """
+                
     with connection.cursor() as cur:
         query = """
                 SELECT trajectory_id, mmsi, ts_start, ts_end, ST_AsBinary(geom)
@@ -154,7 +207,7 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
 
         for batch in get_batches(cur, query, batch_size):
             with ProcessPoolExecutor(max_workers=max_workers) as executor:
-                futures: list[FutureResultTraj] = [executor.submit(process_trajectory_row, row) for row in batch]
+                futures: list[FutureResultTraj] = [executor.submit(process_trajectory_row, row, use_supercover) for row in batch]
                 results: list[ProcessResultTraj] = []
                 for future in as_completed(futures):
                     try:
