@@ -13,6 +13,7 @@ def create_all_tables(conn: Connection):
     # Create CellString tables Trajectory and Stop
     create_cs_traj_stop_tables(conn)
     create_supercover_traj_cs_table(conn)
+    
     # Create Materialized View POINTS
     # mat_points_view(conn)
     

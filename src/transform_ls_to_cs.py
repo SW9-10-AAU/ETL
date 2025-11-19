@@ -178,7 +178,9 @@ def process_stop_row(row: Row) -> ProcessResultStop:
 
 def get_batches(cur: Cursor, query: LiteralString, batch_size: int):
     """Generator that yields rows in batches."""
+    print(f"Fetching rows...")
     cur.execute(query)
+    print(f"Fetched rows, processing in batches of {batch_size}...")
     while True:
         rows = cur.fetchmany(batch_size)
         if not rows:
@@ -190,7 +192,7 @@ def get_batches(cur: Cursor, query: LiteralString, batch_size: int):
 
 def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = MAX_WORKERS,
                                     batch_size: int = BATCH_SIZE, use_supercover: bool = False):
-    print(f"Processing trajectories using {max_workers} workers.")
+    print(f"--- Processing trajectories with {'Supercover' if use_supercover else 'Bresenham'} (using {max_workers} workers) ---")
     total_processed = 0
     table_name = "trajectory_supercover_cs" if use_supercover else "trajectory_cs"
     insert_query = f"""
@@ -229,7 +231,7 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
 
 
 def transform_ls_stops_to_cs(connection: Connection, max_workers: int = MAX_WORKERS, batch_size: int = BATCH_SIZE):
-    print(f"Processing stops using {max_workers} workers.")
+    print(f"--- Processing stops (using {max_workers} workers) ---")
     total_processed = 0
     insert_query = """
                    INSERT INTO prototype2.stop_cs (stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21)
