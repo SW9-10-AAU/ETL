@@ -192,17 +192,12 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
                                     batch_size: int = BATCH_SIZE, use_supercover: bool = False):
     print(f"Processing trajectories using {max_workers} workers.")
     total_processed = 0
-    if use_supercover:
-        insert_query = """
-                   INSERT INTO prototype2.trajectory_supercover_cs (trajectory_id, mmsi, ts_start, ts_end, unique_cells, cellstring_z13, cellstring_z17, cellstring_z21)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                   """
-    else:
-        insert_query = """
-                    INSERT INTO prototype2.trajectory_cs (trajectory_id, mmsi, ts_start, ts_end, unique_cells, cellstring_z13, cellstring_z17, cellstring_z21)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                    """
-
+    table_name = "trajectory_supercover_cs" if use_supercover else "trajectory_cs"
+    insert_query = f"""
+                INSERT INTO prototype2.{table_name} (trajectory_id, mmsi, ts_start, ts_end, unique_cells, cellstring_z13, cellstring_z17, cellstring_z21)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """
+                
     with connection.cursor() as cur:
         query = """
                 SELECT trajectory_id, mmsi, ts_start, ts_end, ST_AsBinary(geom)
