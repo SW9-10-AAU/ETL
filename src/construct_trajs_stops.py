@@ -230,12 +230,12 @@ def process_single_mmsi(mmsi: int, wkb_points: list[AISPointWKB]) -> ProcessResu
 BATCH_SIZE = 50 # Number of MMSIs to process in parallel
 
 INSERT_TRAJ_SQL = """
-    INSERT INTO prototype2.trajectory_ls_testing (mmsi, ts_start, ts_end, geom)
+    INSERT INTO prototype2.trajectory_ls (mmsi, ts_start, ts_end, geom)
     VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_Force2D(ST_GeomFromWKB(%s, 4326)))
 """
 
 INSERT_STOP_SQL = """
-    INSERT INTO prototype2.stop_poly_testing (mmsi, ts_start, ts_end, geom)
+    INSERT INTO prototype2.stop_poly (mmsi, ts_start, ts_end, geom)
     VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_GeomFromWKB(%s, 4326))
 """
 
@@ -373,9 +373,9 @@ def get_mmsis(cur: Cursor) -> list[int]:
         SELECT p.mmsi, COUNT(*) AS num_points
         FROM prototype2.points p
         WHERE p.mmsi NOT IN (
-            SELECT mmsi FROM prototype2.stop_poly_testing
+            SELECT mmsi FROM prototype2.stop_poly
             UNION
-            SELECT mmsi FROM prototype2.trajectory_ls_testing
+            SELECT mmsi FROM prototype2.trajectory_ls
         )
         GROUP BY p.mmsi
         ORDER BY num_points DESC;
