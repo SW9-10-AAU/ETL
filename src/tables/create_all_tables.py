@@ -1,4 +1,5 @@
 from psycopg import Connection
+from tables.create_crossing_tables import create_crossing_tables
 from tables.create_ls_traj_stop_tables import create_ls_traj_stop_tables
 from tables.create_cs_traj_stop_tables import create_cs_traj_stop_tables
 from tables.create_supercover_traj_cs_tables import create_supercover_traj_cs_table
@@ -17,7 +18,8 @@ def create_all_tables(conn: Connection):
     # Create Materialized View POINTS
     # mat_points_view(conn)
     
-    # Create Area Polygon/CellString tables
+    # Create benchmarking (area and crossing) tables
     create_area_tables(conn)
+    create_crossing_tables(conn)
     
     print("Created all tables and materialized views if not exist.")

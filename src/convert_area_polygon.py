@@ -44,7 +44,9 @@ def main():
     """
     Example polygon — Læsø region.
     Replace with your own coordinates as needed.
-    Draw polygon using this tool: https://www.keene.edu/campus/maps/tool/
+    You can draw Polygons on a map using these tools: 
+    - https://geojson.io/#map=6.47/55.777/10.723 
+    - https://www.keene.edu/campus/maps/tool/
     """
     
     name = "Hals-Egense"
