@@ -42,9 +42,10 @@ def convert_area_polygon_to_cs(polygon: Polygon, name: str):
 
 def main():
     """
-    Example polygon — Læsø region.
-    Replace with your own coordinates as needed.
-    Draw polygon using this tool: https://www.keene.edu/campus/maps/tool/
+    Add a name for the area, and replace the coordinates.
+    You can draw on a map using these tools: 
+    - https://geojson.io/#map=6.47/55.777/10.723 
+    - https://www.keene.edu/campus/maps/tool/
     """
     
     name = "Hals-Egense"

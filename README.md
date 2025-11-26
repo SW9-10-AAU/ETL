@@ -51,7 +51,14 @@ This prepares points that can then be used for trajectory generation with stops.
 
 Creates one table for trajectory and one table for stops in the PostgreSQL database (dw/prototype2/trajectory_cs).
 
+
+## Draw areas and crossings
+Use this tool to draw an area (Polygon) or a crossing (LineString): https://geojson.io/#map=6.47/55.777/10.723
+
 ### [`convert_area_polygon_to_cs.py`](/src/tables/convert_area_polygon_to_cs.py)
 
-Converts a polygon area to a cellstring and uploads both polygon and cellstring to the PostgreSQL database (benchmark.area_poly, benchmark.area_cs).
-Use this tool to draw a polygon: https://www.keene.edu/campus/maps/tool/
+Converts an area (Polygon) to a CellString and uploads both Polygon and CellString to the PostgreSQL database (benchmark.area_poly, benchmark.area_cs).
+
+### [`convert_crossing_linestring.py`](/src/convert_crossing_linestring.py)
+
+Converts a crossing (LineString) to a CellString and uploads both LineString and CellString to the PostgreSQL database (benchmark.crossing_ls, benchmark.crossing_cs).
