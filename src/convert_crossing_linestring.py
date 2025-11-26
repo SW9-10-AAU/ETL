@@ -43,9 +43,8 @@ def convert_crossing_linestring_to_cs(linestring: LineString, name: str):
 
 def main():
     """
-    Example crossing (LineString) - Bornholm.
-    Replace with your own coordinates as needed.
-    You can draw Polygons on a map using these tools: 
+    Add a name for the crossing, and replace the coordinates.
+    You can draw on a map using these tools: 
     - https://geojson.io/#map=6.47/55.777/10.723 
     - https://www.keene.edu/campus/maps/tool/
     """
