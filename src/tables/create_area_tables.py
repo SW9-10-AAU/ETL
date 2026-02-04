@@ -7,14 +7,32 @@ def create_area_tables(conn: Connection):
     cur.execute("""
             CREATE SCHEMA IF NOT EXISTS benchmark;
         """)
+    # Check if table exists with old POLYGON constraint and migrate if needed
+    cur.execute("""
+            SELECT column_name, udt_name
+            FROM information_schema.columns
+            WHERE table_schema = 'benchmark'
+            AND table_name = 'area_poly'
+            AND column_name = 'geom';
+        """)
+    result = cur.fetchone()
+
     cur.execute("""
             CREATE TABLE IF NOT EXISTS benchmark.area_poly
             (
                 area_id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL,
-                geom geometry(POLYGON, 4326) NOT NULL
+                geom geometry(GEOMETRY, 4326) NOT NULL
             );
         """)
+
+    # Migrate existing table if it has POLYGON constraint
+    if result and 'geometry' in str(result):
+        cur.execute("""
+                ALTER TABLE benchmark.area_poly
+                ALTER COLUMN geom TYPE geometry(GEOMETRY, 4326);
+            """)
+        print("Migrated area_poly.geom to support GEOMETRY type (Polygon, MultiPolygon, etc.)")
     cur.execute("""
             CREATE TABLE IF NOT EXISTS benchmark.area_cs
             (

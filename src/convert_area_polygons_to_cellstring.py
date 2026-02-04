@@ -1,5 +1,5 @@
 from dotenv import load_dotenv
-from shapely import Polygon, from_wkb
+from shapely import Polygon, MultiPolygon, from_wkb
 from transform_ls_to_cs import convert_polygon_to_cellstring
 from connect import connect_to_db
 from tables.create_area_tables import create_area_tables
@@ -29,7 +29,8 @@ def convert_area_polygons_to_cs():
     
     for row in rows:
         name, geom_wkb = row
-        polygon = Polygon(from_wkb(geom_wkb))
+        # from_wkb returns the correct type (Polygon or MultiPolygon)
+        polygon = from_wkb(geom_wkb)
         
         # Convert polygon to cellstring and insert into table 
         print("Converting polygon to cellstrings")

@@ -2,7 +2,7 @@ from typing import LiteralString, cast
 import mercantile
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from psycopg import Connection, Cursor
-from shapely import from_wkb, LineString, Polygon, box
+from shapely import from_wkb, LineString, Polygon, MultiPolygon, box
 
 Row = tuple[int, int, int, int, bytes]  # (trajectory_id/stop_id, mmsi, ts_start, ts_end, geom_wkb)
 ProcessResultTraj = tuple[int, int, int, int, bool, list[int], list[int], list[int]]  # trajectory_id, mmsi, ts_start, ts_end, is_unique, cellstring_z13, cellstring_z17, cellstring_z21
@@ -135,7 +135,20 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM, u
     return cellstring
 
 
-def convert_polygon_to_cellstring(poly: Polygon, zoom: int = DEFAULT_ZOOM) -> list[int]:
+def convert_polygon_to_cellstring(poly: Polygon | MultiPolygon, zoom: int = DEFAULT_ZOOM) -> list[int]:
+    """
+    Converts a Polygon or MultiPolygon to a cellstring (list of tile IDs).
+
+    Uses tile-based intersection testing: generates all tiles covering the bounding box,
+    then filters to only tiles that actually intersect the geometry.
+
+    Args:
+        poly: A Shapely Polygon or MultiPolygon to convert
+        zoom: Zoom level for tiles (default: 21)
+
+    Returns:
+        List of integer cell IDs representing tiles that intersect the geometry
+    """
     if poly.is_empty:
         return []
     minx, miny, maxx, maxy = poly.bounds

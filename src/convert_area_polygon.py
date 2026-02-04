@@ -1,12 +1,16 @@
 from dotenv import load_dotenv
-from shapely import Polygon
+from shapely import Polygon, MultiPolygon
 from transform_ls_to_cs import convert_polygon_to_cellstring
 from connect import connect_to_db
 from tables.create_area_tables import create_area_tables
 
-def convert_area_polygon_to_cs(polygon: Polygon, name: str):
+def convert_area_polygon_to_cs(polygon: Polygon | MultiPolygon, name: str):
     """
-    Converts a Polygon to a CellString and inserts both into PostGIS tables.
+    Converts a Polygon or MultiPolygon to CellStrings and inserts both into PostGIS tables.
+
+    Args:
+        polygon: A Shapely Polygon or MultiPolygon representing the area
+        name: A unique identifier for this area
     """
     load_dotenv()
     conn = connect_to_db()
@@ -26,14 +30,15 @@ def convert_area_polygon_to_cs(polygon: Polygon, name: str):
     # Convert polygon to cellstring and insert into table 
     print("Converting polygon to cellstrings")
     cellstring_z13 = convert_polygon_to_cellstring(polygon, 13)
-    cellstring_z17 = convert_polygon_to_cellstring(polygon, 17)
-    cellstring_z21 = convert_polygon_to_cellstring(polygon, 21)
-    print(f"Conversion succeeded with {len(cellstring_z13)} cells (zoom 13), {len(cellstring_z17)} cells (zoom 17), and {len(cellstring_z21)} cells (zoom 21).")
+    # cellstring_z17 = convert_polygon_to_cellstring(polygon, 17)
+    # cellstring_z21 = convert_polygon_to_cellstring(polygon, 21)
+    # print(f"Conversion succeeded with {len(cellstring_z13)} cells (zoom 13), {len(cellstring_z17)} cells (zoom 17), and {len(cellstring_z21)} cells (zoom 21).")
+    print(f"Conversion succeeded with {len(cellstring_z13)} cells (zoom 13)")
     
     cur.execute("""
             INSERT INTO benchmark.area_cs (name, cellstring_z13, cellstring_z17, cellstring_z21)
             VALUES (%s, %s, %s, %s)
-        """, (name, cellstring_z13, cellstring_z17, cellstring_z21))
+        """, (name, cellstring_z13, [], []))
     print("Inserted area cellstrings into PostGIS table")
     conn.commit()
     cur.close()
