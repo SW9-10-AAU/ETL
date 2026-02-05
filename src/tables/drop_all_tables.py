@@ -13,7 +13,13 @@ def drop_all_tables(conn: Connection):
     # cur.execute("DROP TABLE IF EXISTS prototype2.trajectory_supercover_cs;")
     # cur.execute("DROP TABLE IF EXISTS prototype2.stop_cs;")
     # cur.execute("DROP MATERIALIZED VIEW IF EXISTS prototype2.points;")
-
+    cur.execute("DROP TABLE IF EXISTS prototype2.concave_stop_poly;")
+    cur.execute("DROP TABLE IF EXISTS prototype2.concave_stop_cs;")
+    cur.execute("DROP TABLE IF EXISTS prototype2.concave_trajectory_cs;")
+    cur.execute("DROP TABLE IF EXISTS prototype2.concave_stop_cs;")
+    
+    
+                
     print("Dropped all tables and materialized view if they existed.")
 
     conn.commit()
