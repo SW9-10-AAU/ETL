@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 from shapely import Polygon, MultiPolygon
-from transform_ls_to_cs import convert_polygon_to_cellstring
+from transform_ls_to_cs import convert_polygon_to_cellstring_hierarchical
 from connect import connect_to_db
 from tables.create_area_tables import create_area_tables
 
@@ -27,11 +27,9 @@ def convert_area_polygon_to_cs(polygon: Polygon | MultiPolygon, name: str):
     conn.commit()
     print("Inserted area polygon into PostGIS table")
     
-    # Convert polygon to cellstring and insert into table 
-    print("Converting polygon to cellstrings")
-    cellstring_z13 = convert_polygon_to_cellstring(polygon, 13)
-    cellstring_z17 = convert_polygon_to_cellstring(polygon, 17)
-    cellstring_z21 = convert_polygon_to_cellstring(polygon, 21)
+    # Convert polygon to cellstring and insert into table
+    print("Converting polygon to cellstrings using hierarchical algorithm")
+    cellstring_z13, cellstring_z17, cellstring_z21 = convert_polygon_to_cellstring_hierarchical(polygon)
     print(f"Conversion succeeded with {len(cellstring_z13)} cells (zoom 13), {len(cellstring_z17)} cells (zoom 17), and {len(cellstring_z21)} cells (zoom 21).")
     
     cur.execute("""

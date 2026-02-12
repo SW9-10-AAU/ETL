@@ -1,3 +1,4 @@
+from enum import Enum
 from typing import LiteralString, cast
 import mercantile
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
@@ -161,6 +162,150 @@ def convert_polygon_to_cellstring(poly: Polygon | MultiPolygon, zoom: int = DEFA
         if poly.intersects(tile_poly):
             cellstring.append(encode_tile_xy_to_cellid(tile.x, tile.y, zoom))
     return cellstring
+
+class Classification(Enum):
+    FULLY_CONTAINED = 1
+    PARTIALLY_CONTAINED = 2
+    NO_INTERSECTION = 3
+
+def classify_tile_containment(poly: Polygon | MultiPolygon, tile: mercantile.Tile) -> Classification:
+    """
+    Classify a tile's relationship to the polygon.
+
+    Args:
+        poly: A Shapely Polygon or MultiPolygon
+        tile: A mercantile Tile
+
+    Returns:
+        Classification.FULLY_CONTAINED if the polygon completely contains the tile
+        Classification.PARTIALLY_CONTAINED if the tile intersects but is not fully contained
+        Classification.NO_INTERSECTION if there is no overlap
+    """
+    bounds = mercantile.bounds(tile)
+    tile_poly = box(bounds.west, bounds.south, bounds.east, bounds.north)
+
+    if poly.contains(tile_poly):
+        return Classification.FULLY_CONTAINED
+    elif poly.intersects(tile_poly):
+        return Classification.PARTIALLY_CONTAINED
+    else:
+        return Classification.NO_INTERSECTION
+
+def get_all_children_at_zoom(tile: mercantile.Tile, target_zoom: int) -> list[mercantile.Tile]:
+    """
+    Get all descendant tiles at target_zoom from the given tile.
+
+    Args:
+        tile: Parent tile
+        target_zoom: Target zoom level (must be > tile.z)
+
+    Returns:
+        List of all descendant tiles at target_zoom
+    """
+    if tile.z >= target_zoom:
+        return [tile]
+
+    # Get direct children
+    children = list(mercantile.children(tile))
+
+    # If children are at target zoom, return them
+    if children[0].z == target_zoom:
+        return children
+
+    # Otherwise, recursively get children of children
+    all_descendants = []
+    for child in children:
+        all_descendants.extend(get_all_children_at_zoom(child, target_zoom))
+
+    return all_descendants
+
+
+def convert_polygon_to_cellstring_hierarchical(poly: Polygon | MultiPolygon) -> tuple[list[int], list[int], list[int]]:
+    """
+    Convert polygon to cellstrings at Z13, Z17, and Z21 using hierarchical subdivision.
+
+    This algorithm optimizes polygon-to-cellstring conversion by leveraging the tile hierarchy:
+    - Tiles fully contained at a coarse zoom level have all their children included at finer levels
+    - Only tiles partially intersecting the polygon boundary require testing at finer levels
+
+    Args:
+        poly: A Shapely Polygon or MultiPolygon to convert
+
+    Returns:
+        Tuple of (cellstring_z13, cellstring_z17, cellstring_z21)
+    """
+    if poly.is_empty:
+        return ([], [], [])
+
+    # --- Phase 1: Z13 Processing (Base Level) ---
+    minx, miny, maxx, maxy = poly.bounds
+    z13_tiles = mercantile.tiles(minx, miny, maxx, maxy, 13)
+
+    cellstring_z13: list[int] = []
+    fully_contained_z13: list[mercantile.Tile] = []
+    partially_contained_z13: list[mercantile.Tile] = []
+
+    for tile in z13_tiles:
+        classification = classify_tile_containment(poly, tile)
+
+        if classification == Classification.FULLY_CONTAINED:
+            cellstring_z13.append(encode_tile_xy_to_cellid(tile.x, tile.y, 13))
+            fully_contained_z13.append(tile)
+        elif classification == Classification.PARTIALLY_CONTAINED:
+            cellstring_z13.append(encode_tile_xy_to_cellid(tile.x, tile.y, 13))
+            partially_contained_z13.append(tile)
+        # no_intersection tiles are skipped
+
+    print(f"Z13: {len(fully_contained_z13)} fully contained tiles, {len(partially_contained_z13)} partially contained tiles, total {len(cellstring_z13)} tiles")
+    
+    # --- Phase 2: Z17 Processing (Hierarchical Subdivision) ---
+    cellstring_z17: list[int] = []
+    fully_contained_z17: list[mercantile.Tile] = []
+    partially_contained_z17: list[mercantile.Tile] = []
+
+    # Process fully-contained Z13 tiles
+    for tile in fully_contained_z13:
+        children_z17 = get_all_children_at_zoom(tile, 17)
+        for child in children_z17:
+            cellstring_z17.append(encode_tile_xy_to_cellid(child.x, child.y, 17))
+            fully_contained_z17.append(child)
+
+    # Process partially-contained Z13 tiles
+    for tile in partially_contained_z13:
+        children_z17 = get_all_children_at_zoom(tile, 17)
+        for child in children_z17:
+            classification = classify_tile_containment(poly, child)
+
+            if classification == Classification.FULLY_CONTAINED:
+                cellstring_z17.append(encode_tile_xy_to_cellid(child.x, child.y, 17))
+                fully_contained_z17.append(child)
+            elif classification == Classification.PARTIALLY_CONTAINED:
+                cellstring_z17.append(encode_tile_xy_to_cellid(child.x, child.y, 17))
+                partially_contained_z17.append(child)
+
+    print(f"Z17: {len(fully_contained_z17)} fully contained tiles, {len(partially_contained_z17)} partially contained tiles, total {len(cellstring_z17)} tiles")
+
+    # --- Phase 3: Z21 Processing (Final Subdivision) ---
+    cellstring_z21: list[int] = []
+
+    # Process fully-contained Z17 tiles
+    for tile in fully_contained_z17:
+        children_z21 = get_all_children_at_zoom(tile, 21)
+        for child in children_z21:
+            cellstring_z21.append(encode_tile_xy_to_cellid(child.x, child.y, 21))
+
+    # Process partially-contained Z17 tiles
+    for tile in partially_contained_z17:
+        children_z21 = get_all_children_at_zoom(tile, 21)
+        for child in children_z21:
+            classification = classify_tile_containment(poly, child)
+
+            if classification in (Classification.FULLY_CONTAINED, Classification.PARTIALLY_CONTAINED):
+                cellstring_z21.append(encode_tile_xy_to_cellid(child.x, child.y, 21))
+
+    print(f"Z21: Total {len(cellstring_z21)} tiles")
+
+    return (cellstring_z13, cellstring_z17, cellstring_z21)
 
 
 # --- Worker Functions ---
