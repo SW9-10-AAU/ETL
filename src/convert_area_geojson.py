@@ -65,7 +65,7 @@ def main():
     """
     Load Denmark EEZ from GeoJSON and convert to cellstrings.
     """
-    geojson_path = r"c:\CODE\ETL\src\Denmark_EEZ_gml.geojson"
+    geojson_path = './geojson/Denmark_EEZ_gml.geojson'
     name = "Denmark-EEZ"
 
     convert_area_geojson_to_cs(geojson_path, name)
