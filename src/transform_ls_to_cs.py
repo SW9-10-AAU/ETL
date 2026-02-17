@@ -179,13 +179,13 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM, u
         while non_covered and iteration < max_iterations:
             iteration += 1
             if iteration == 10:
-                raise RuntimeError(f"Exceeded max iterations for segment {i} - possible infinite loop in coverage filling")
+                raise Exception(f"Exceeded max iterations for segment {i} - possible infinite loop in coverage filling")
             
             for segment in non_covered:
                 seg_coords = list(segment.coords)
                 
                 for sc0, sc1 in zip(seg_coords[:-1], seg_coords[1:]):
-                    tol = 0.5 * 360 / (2**zoom)
+                    tol = 0.005 * 360 / (2**zoom)
                     
                     # Get all candidate tiles for both endpoints
                     tiles_c0 = [
