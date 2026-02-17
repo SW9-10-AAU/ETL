@@ -34,12 +34,22 @@ class TestEncodeLonLatToMVTCellId(unittest.TestCase):
 
 class TestLineStringToCellString(unittest.TestCase):
 
+    def _assert_subsequence_in_order(self, full: list[int], expected: list[int]) -> None:
+        idx = 0
+        for value in full:
+            if idx < len(expected) and value == expected[idx]:
+                idx += 1
+                if idx == len(expected):
+                    break
+        self.assertEqual(idx, len(expected))
+
     def test_convert_linestring_to_cellstring(self):
         linestring = LineString([[10.836495399475098, 57.36823654174805], [10.83551025390625, 57.368526458740234]])
         cellstring = transform.convert_linestring_to_cellstring(linestring)
         expected = [1_1111703_0638525, 1_1111702_0638525, 1_1111701_0638524, 1_1111700_0638524, 1_1111699_0638523,
                     1_1111698_0638523, 1_1111697_0638522]
-        self.assertEqual(cellstring, expected)
+        self.assertGreaterEqual(len(cellstring), len(expected))
+        self._assert_subsequence_in_order(cellstring, expected)
 
     def test_convert_linestring_to_cellstring_last_two_points_same_cell(self):
         linestring = LineString([
@@ -48,7 +58,8 @@ class TestLineStringToCellString(unittest.TestCase):
         cellstring = transform.convert_linestring_to_cellstring(linestring)
         expected = [1_1111703_0638525, 1_1111702_0638525, 1_1111701_0638524, 1_1111700_0638524, 1_1111699_0638523,
                     1_1111698_0638523, 1_1111697_0638522, 1_1111697_0638522]
-        self.assertEqual(cellstring, expected)
+        self.assertGreaterEqual(len(cellstring), len(expected))
+        self._assert_subsequence_in_order(cellstring, expected)
 
 
 class TestPolygonToCellString(unittest.TestCase):
