@@ -2,7 +2,7 @@ from typing import LiteralString, cast
 import mercantile
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from psycopg import Connection, Cursor
-from shapely import from_wkb, LineString, Polygon, MultiPolygon, box
+from shapely import MultiLineString, from_wkb, LineString, Polygon, MultiPolygon, box, unary_union
 
 Row = tuple[int, int, int, int, bytes]  # (trajectory_id/stop_id, mmsi, ts_start, ts_end, geom_wkb)
 ProcessResultTraj = tuple[int, int, int, int, bool, list[int], list[int], list[int]]  # trajectory_id, mmsi, ts_start, ts_end, is_unique, cellstring_z13, cellstring_z17, cellstring_z21
@@ -116,21 +116,78 @@ def supercover_bresenham(x1: int, y1: int, x2: int, y2: int) -> list[tuple[int, 
 
     return cells
 
+
+def create_cellstring_multipoly(cell_tiles: list[tuple[int, int]], zoom: int = DEFAULT_ZOOM) -> MultiPolygon:
+    unique_tiles = set(cell_tiles)
+    return unary_union([
+        box(*mercantile.bounds(x, y, zoom))
+        for x, y in unique_tiles
+    ])
+    
+def find_noncontained_ls_segments(ls: LineString, tile_multipolygon: MultiPolygon) -> list[LineString]:
+    noncovered_linestring = ls.difference(tile_multipolygon)
+
+    if noncovered_linestring.is_empty:
+        return []
+
+    if isinstance(noncovered_linestring, LineString):
+        return [noncovered_linestring]
+
+    if isinstance(noncovered_linestring, MultiLineString):
+        return list(noncovered_linestring.geoms)
+
+    return []
+    
 # --- Conversion Utilities ---
 
 def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM, use_supercover: bool = False) -> list[int]:
+    
     if ls.is_empty:
         return []
+    
     coords = ls.coords
+    cell_tiles: list[tuple[int, int]] = []
     cellstring: list[int] = []
+    
     for c0, c1 in zip(coords[:-1], coords[1:]):
         lon0, lat0 = c0[:2]
         lon1, lat1 = c1[:2]
         x0, y0 = get_tile_xy(lon0, lat0, zoom)
         x1, y1 = get_tile_xy(lon1, lat1, zoom)
         
-        cellstring_tiles = bresenham(x0, y0, x1, y1) if not use_supercover else supercover_bresenham(x0, y0, x1, y1)
-        for x, y in cellstring_tiles:
+        tiles = bresenham(x0, y0, x1, y1) if not use_supercover else supercover_bresenham(x0, y0, x1, y1)
+        cell_tiles.extend(tiles)
+        
+    # --- 2. build tile footprint ---
+    tile_multipolygon = create_cellstring_multipoly(cell_tiles, zoom)
+
+    # --- 3. find uncovered line segments ---
+    non_covered_segments = find_noncontained_ls_segments(ls, tile_multipolygon)
+    
+    # --- 4. for each uncovered segment, find additional tiles ---
+    while non_covered_segments != []:
+        for segment in non_covered_segments:
+            seg_coords = segment.coords
+
+            for c0, c1 in zip(seg_coords[:-1], seg_coords[1:]):
+                x0, y0 = get_tile_xy(c0[:2], zoom)
+                x1, y1 = get_tile_xy(c1[:2], zoom)
+
+                tiles = (
+                    supercover_bresenham(x0, y0, x1, y1)
+                    if use_supercover
+                    else bresenham(x0, y0, x1, y1)
+                )
+                ##add uncovered tiles to the main list
+                print(f"Found uncovered segment, adding {len(tiles)} tiles to cover it")
+                cell_tiles.extend(tiles)
+                
+        # rebuild tile footprint
+        tile_multipolygon = create_cellstring_multipoly(cell_tiles, zoom)
+        # find any remaining uncovered segments
+        non_covered_segments = find_noncontained_ls_segments(ls, tile_multipolygon)
+    
+    for x, y in cell_tiles:
             cellstring.append(encode_tile_xy_to_cellid(x, y, zoom))
     return cellstring
 
@@ -207,7 +264,7 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
                                     batch_size: int = BATCH_SIZE, use_supercover: bool = False):
     print(f"--- Processing trajectories with {'Supercover' if use_supercover else 'Bresenham'} (using {max_workers} workers) ---")
     total_processed = 0
-    table_name = "trajectory_supercover_cs" if use_supercover else "trajectory_cs"
+    table_name = "trajectory_contained_supercover_cs" if use_supercover else "trajectory_cs"
     insert_query = f"""
                 INSERT INTO prototype2.{table_name} (trajectory_id, mmsi, ts_start, ts_end, unique_cells, cellstring_z13, cellstring_z17, cellstring_z21)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
@@ -217,6 +274,7 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
         query = """
                 SELECT trajectory_id, mmsi, ts_start, ts_end, ST_AsBinary(geom)
                 FROM prototype2.trajectory_ls
+                WHERE trajectory_id = 8403
                 ORDER BY trajectory_id;
                 """
 
