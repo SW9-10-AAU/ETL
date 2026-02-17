@@ -153,56 +153,66 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM, u
     if ls.is_empty:
         return []
     
-    coords = ls.coords
-    cell_tiles: list[tuple[int, int]] = []
+    coords = list(ls.coords)
     cellstring: list[int] = []
     
-    for c0, c1 in zip(coords[:-1], coords[1:]):
+    # Process each segment independently to preserve temporal order
+    for i in range(len(coords) - 1):
+        c0, c1 = coords[i], coords[i + 1]
         lon0, lat0 = c0[:2]
         lon1, lat1 = c1[:2]
         x0, y0 = get_tile_xy(lon0, lat0, zoom)
         x1, y1 = get_tile_xy(lon1, lat1, zoom)
         
+        # Get initial tiles for this segment
         tiles = bresenham(x0, y0, x1, y1) if not use_supercover else supercover_bresenham(x0, y0, x1, y1)
-        cell_tiles.extend(tiles)
+        segment_tiles = set(tiles)  # Use set to avoid duplicates within segment
         
-    tile_multipolygon = create_cellstring_multipoly(cell_tiles, zoom)
-    non_covered_segments = find_noncontained_ls_segments(ls, tile_multipolygon)
-    
-    while non_covered_segments:
-        new_tiles: list[tuple[int, int]] = []
-
-        for segment in non_covered_segments:
-            seg_coords = segment.coords
+        # Create this segment's LineString and check coverage
+        segment_ls = LineString([c0, c1])
+        tile_multipolygon = create_cellstring_multipoly(list(segment_tiles), zoom)
+        non_covered = find_noncontained_ls_segments(segment_ls, tile_multipolygon)
+        
+        # Iterative gap-filling for THIS segment only
+        max_iterations = 10  # Safety limit
+        iteration = 0
+        while non_covered and iteration < max_iterations:
+            iteration += 1
+            if iteration == 10:
+                raise RuntimeError(f"Exceeded max iterations for segment {i} - possible infinite loop in coverage filling")
             
-            for c0, c1 in zip(seg_coords[:-1], seg_coords[1:]):
-                tol = 0.5 * 360 / (2**zoom)  # tinys buffer for point-to-tile ambiguity
-
-                # Get all candidate tiles for c0
-                tiles_c0 = [
-                    (x, y)
-                    for x, y in point_to_all_candidate_tiles(c0[0], c0[1], zoom, tol)
-                    if box(*mercantile.bounds(x, y, zoom)).intersects(Point(c0[:2]).buffer(tol).envelope)
-                ]
-
-                # Get all candidate tiles for c1
-                tiles_c1 = [
-                    (x, y)
-                    for x, y in point_to_all_candidate_tiles(c1[0], c1[1], zoom, tol)
-                    if box(*mercantile.bounds(x, y, zoom)).intersects(Point(c1[:2]).buffer(tol).envelope)
-                ]
-
-                for x0, y0 in tiles_c0:
-                    for x1, y1 in tiles_c1:
-                        new_tiles.extend(supercover_bresenham(x0, y0, x1, y1))
-
-        cell_tiles.extend(new_tiles)
-       
-        tile_multipolygon = create_cellstring_multipoly(cell_tiles, zoom)
-        non_covered_segments = find_noncontained_ls_segments(ls, tile_multipolygon)
-    
-    for x, y in cell_tiles:
+            for segment in non_covered:
+                seg_coords = list(segment.coords)
+                
+                for sc0, sc1 in zip(seg_coords[:-1], seg_coords[1:]):
+                    tol = 0.5 * 360 / (2**zoom)
+                    
+                    # Get all candidate tiles for both endpoints
+                    tiles_c0 = [
+                        (x, y)
+                        for x, y in point_to_all_candidate_tiles(sc0[0], sc0[1], zoom, tol)
+                        if box(*mercantile.bounds(x, y, zoom)).intersects(Point(sc0[:2]).buffer(tol).envelope)
+                    ]
+                    
+                    tiles_c1 = [
+                        (x, y)
+                        for x, y in point_to_all_candidate_tiles(sc1[0], sc1[1], zoom, tol)
+                        if box(*mercantile.bounds(x, y, zoom)).intersects(Point(sc1[:2]).buffer(tol).envelope)
+                    ]
+                    
+                    # Add supercover tiles between all candidate pairs
+                    for x0_c, y0_c in tiles_c0:
+                        for x1_c, y1_c in tiles_c1:
+                            segment_tiles.update(supercover_bresenham(x0_c, y0_c, x1_c, y1_c))
+            
+            # Re-check coverage with updated tiles
+            tile_multipolygon = create_cellstring_multipoly(list(segment_tiles), zoom)
+            non_covered = find_noncontained_ls_segments(segment_ls, tile_multipolygon)
+        
+        # Convert segment tiles to cell IDs and append to cellstring
+        for x, y in segment_tiles:
             cellstring.append(encode_tile_xy_to_cellid(x, y, zoom))
+    
     return cellstring
 
 
@@ -287,6 +297,7 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
         query = """
                 SELECT trajectory_id, mmsi, ts_start, ts_end, ST_AsBinary(geom)
                 FROM prototype2.trajectory_ls
+                WHERE trajectory_id <= 4000
                 ORDER BY trajectory_id;
                 """
 
