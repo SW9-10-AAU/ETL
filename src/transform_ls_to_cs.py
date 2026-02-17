@@ -2,7 +2,7 @@ from typing import LiteralString, cast
 import mercantile
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from psycopg import Connection, Cursor
-from shapely import MultiLineString, from_wkb, LineString, Polygon, MultiPolygon, box, unary_union
+from shapely import MultiLineString, Point, from_wkb, LineString, Polygon, MultiPolygon, box, unary_union
 
 Row = tuple[int, int, int, int, bytes]  # (trajectory_id/stop_id, mmsi, ts_start, ts_end, geom_wkb)
 ProcessResultTraj = tuple[int, int, int, int, bool, list[int], list[int], list[int]]  # trajectory_id, mmsi, ts_start, ts_end, is_unique, cellstring_z13, cellstring_z17, cellstring_z21
@@ -123,20 +123,28 @@ def create_cellstring_multipoly(cell_tiles: list[tuple[int, int]], zoom: int = D
         box(*mercantile.bounds(x, y, zoom))
         for x, y in unique_tiles
     ])
-    
-def find_noncontained_ls_segments(ls: LineString, tile_multipolygon: MultiPolygon) -> list[LineString]:
-    noncovered_linestring = ls.difference(tile_multipolygon)
 
-    if noncovered_linestring.is_empty:
+def find_noncontained_ls_segments(ls: LineString,tile_multipolygon: MultiPolygon) -> list[LineString]:
+    # shrink the multipolygon slightly to avoid edge cases where the line just touches the tile boundary but isn't actually covered by it
+    eps = 1e-9
+    shrunk_poly = tile_multipolygon.buffer(-eps)
+    noncovered = ls.difference(shrunk_poly)
+    if noncovered.is_empty:
         return []
 
-    if isinstance(noncovered_linestring, LineString):
-        return [noncovered_linestring]
+    if isinstance(noncovered, LineString):
+        return [noncovered]
 
-    if isinstance(noncovered_linestring, MultiLineString):
-        return list(noncovered_linestring.geoms)
+    if isinstance(noncovered, MultiLineString):
+        return list(noncovered.geoms)
 
     return []
+
+def point_to_all_candidate_tiles(lon: float, lat: float, zoom: int, tol: float) -> list[tuple[int, int]]:
+    """Return all tiles a point could touch, handling edges/corners."""
+    minx, miny, maxx, maxy = Point(lon, lat).buffer(tol).envelope.bounds
+    return [(t.x, t.y) for t in mercantile.tiles(minx, miny, maxx, maxy, zoom)]
+
     
 # --- Conversion Utilities ---
 
@@ -158,33 +166,39 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM, u
         tiles = bresenham(x0, y0, x1, y1) if not use_supercover else supercover_bresenham(x0, y0, x1, y1)
         cell_tiles.extend(tiles)
         
-    # --- 2. build tile footprint ---
     tile_multipolygon = create_cellstring_multipoly(cell_tiles, zoom)
-
-    # --- 3. find uncovered line segments ---
     non_covered_segments = find_noncontained_ls_segments(ls, tile_multipolygon)
     
-    # --- 4. for each uncovered segment, find additional tiles ---
-    while non_covered_segments != []:
+    while non_covered_segments:
+        new_tiles: list[tuple[int, int]] = []
+
         for segment in non_covered_segments:
             seg_coords = segment.coords
-
+            
             for c0, c1 in zip(seg_coords[:-1], seg_coords[1:]):
-                x0, y0 = get_tile_xy(c0[:2], zoom)
-                x1, y1 = get_tile_xy(c1[:2], zoom)
+                tol = 0.5 * 360 / (2**zoom)  # tinys buffer for point-to-tile ambiguity
 
-                tiles = (
-                    supercover_bresenham(x0, y0, x1, y1)
-                    if use_supercover
-                    else bresenham(x0, y0, x1, y1)
-                )
-                ##add uncovered tiles to the main list
-                print(f"Found uncovered segment, adding {len(tiles)} tiles to cover it")
-                cell_tiles.extend(tiles)
-                
-        # rebuild tile footprint
+                # Get all candidate tiles for c0
+                tiles_c0 = [
+                    (x, y)
+                    for x, y in point_to_all_candidate_tiles(c0[0], c0[1], zoom, tol)
+                    if box(*mercantile.bounds(x, y, zoom)).intersects(Point(c0[:2]).buffer(tol).envelope)
+                ]
+
+                # Get all candidate tiles for c1
+                tiles_c1 = [
+                    (x, y)
+                    for x, y in point_to_all_candidate_tiles(c1[0], c1[1], zoom, tol)
+                    if box(*mercantile.bounds(x, y, zoom)).intersects(Point(c1[:2]).buffer(tol).envelope)
+                ]
+
+                for x0, y0 in tiles_c0:
+                    for x1, y1 in tiles_c1:
+                        new_tiles.extend(supercover_bresenham(x0, y0, x1, y1))
+
+        cell_tiles.extend(new_tiles)
+       
         tile_multipolygon = create_cellstring_multipoly(cell_tiles, zoom)
-        # find any remaining uncovered segments
         non_covered_segments = find_noncontained_ls_segments(ls, tile_multipolygon)
     
     for x, y in cell_tiles:
@@ -257,7 +271,6 @@ def get_batches(cur: Cursor, query: LiteralString, batch_size: int):
             break
         yield rows
 
-
 # --- Main Transformation Functions ---
 
 def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = MAX_WORKERS,
@@ -274,7 +287,6 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
         query = """
                 SELECT trajectory_id, mmsi, ts_start, ts_end, ST_AsBinary(geom)
                 FROM prototype2.trajectory_ls
-                WHERE trajectory_id = 8403
                 ORDER BY trajectory_id;
                 """
 
@@ -299,7 +311,6 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
             print(f"Processed total: {total_processed:,} trajectories")
 
     print(f"Finished processing all trajectories ({total_processed:,} total)")
-
 
 def transform_ls_stops_to_cs(connection: Connection, max_workers: int = MAX_WORKERS, batch_size: int = BATCH_SIZE):
     print(f"--- Processing stops (using {max_workers} workers) ---")
