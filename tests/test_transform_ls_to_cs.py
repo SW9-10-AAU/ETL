@@ -1,6 +1,6 @@
 import unittest
-import mercantile
 from shapely import LineString, Polygon
+from shapely.wkb import dumps
 import src.transform_ls_to_cs as transform
 
 
@@ -61,12 +61,15 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
         ])
         cellstring = transform.convert_linestring_to_cellstring(linestring, zoom=13)
 
-        # Should have cells
         self.assertGreater(len(cellstring), 0, "Should produce cells for trajectory")
 
-        # Cells should be valid (decodable)
+        # All cells should be decodable
         tile_coords = [self._decode_cellid_to_tile(cell, 13) for cell in cellstring]
         self.assertEqual(len(tile_coords), len(cellstring))
+
+        # Verify no duplicates (deduplication at end of function)
+        self.assertEqual(len(cellstring), len(set(cellstring)),
+                         "Cellstring should have no duplicates after deduplication")
 
     def test_linestring_coverage_simple_north(self):
         """Test: simple north-moving trajectory produces coverage."""
@@ -82,6 +85,9 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
         tile_coords = [self._decode_cellid_to_tile(cell, 13) for cell in cellstring]
         self.assertEqual(len(tile_coords), len(cellstring))
 
+        # Verify no duplicates
+        self.assertEqual(len(cellstring), len(set(cellstring)))
+
     def test_linestring_two_segments_produces_cells(self):
         """Test: two-segment trajectory produces cells for both segments."""
         linestring = LineString([
@@ -90,7 +96,6 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
         ])
         cellstring = transform.convert_linestring_to_cellstring(linestring)
 
-        # Should produce multiple cells
         self.assertGreater(len(cellstring), 0, "Two-segment trajectory should produce cells")
 
         # All cells should be decodable
@@ -99,22 +104,27 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
             self.assertIsInstance(tile_coords, tuple)
             self.assertEqual(len(tile_coords), 2)
 
+        # No duplicates
+        self.assertEqual(len(cellstring), len(set(cellstring)))
+
     def test_linestring_three_segments_with_duplicate_endpoint(self):
         """Test: three-segment trajectory with duplicate endpoint produces cells."""
         linestring = LineString([
             [10.836495399475098, 57.36823654174805],
             [10.83551025390625, 57.368526458740234],
-            [10.835510777, 57.368526435]  # Very close to previous point
+            [10.835510777, 57.368526435]
         ])
         cellstring = transform.convert_linestring_to_cellstring(linestring)
 
-        # Should produce cells even with duplicate endpoint
         self.assertGreater(len(cellstring), 0)
 
         # All cells should be valid
         for cell in cellstring:
             self.assertIsInstance(cell, int)
             self.assertGreater(cell, 0)
+
+        # No duplicates after deduplication
+        self.assertEqual(len(cellstring), len(set(cellstring)))
 
     def test_linestring_empty_returns_empty(self):
         """Test: empty LineString returns empty cellstring."""
@@ -134,20 +144,34 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
         cs_z17 = transform.convert_linestring_to_cellstring(linestring, zoom=17)
         cs_z21 = transform.convert_linestring_to_cellstring(linestring, zoom=21)
 
-        # Higher zoom levels should generally produce more cells (more granular)
         self.assertGreater(len(cs_z21), 0)
         self.assertGreater(len(cs_z17), 0)
         self.assertGreater(len(cs_z13), 0)
 
-        # z21 should have more or equal cells than z17, which should have more than z13
-        # (higher zoom = smaller tiles = more tiles needed)
+        # Higher zoom = more granular = more cells
         self.assertGreaterEqual(len(cs_z21), len(cs_z17))
         self.assertGreaterEqual(len(cs_z17), len(cs_z13))
 
+    def test_linestring_temporal_order_preserved(self):
+        """Test: cells progress in trajectory direction (temporal order)."""
+        linestring = LineString([
+            (10.0, 55.0),
+            (10.1, 55.1),
+        ])
+        cellstring = transform.convert_linestring_to_cellstring(linestring, zoom=13)
+
+        self.assertGreater(len(cellstring), 0)
+
+        tile_coords = [self._decode_cellid_to_tile(cell, 13) for cell in cellstring]
+        first_x, first_y = tile_coords[0]
+        last_x, last_y = tile_coords[-1]
+
+        # Should progress northeast
+        self.assertLess(first_x, last_x, "Should progress eastward")
+        self.assertGreater(first_y, last_y, "Should progress northward (Web Mercator)")
+
     def test_process_trajectory_row_deduplicates(self):
         """Test: process_trajectory_row returns deduplicated cellstrings for all zoom levels."""
-        from shapely.wkb import dumps
-
         linestring = LineString([
             (10.0, 55.0),
             (10.05, 55.05),
@@ -160,19 +184,17 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
 
         trajectory_id, mmsi, ts_start, ts_end, is_unique, cs_z13, cs_z17, cs_z21 = result
 
-        # Verify structure
         self.assertEqual(trajectory_id, 1)
         self.assertEqual(mmsi, 12345)
         self.assertEqual(ts_start, 1000)
         self.assertEqual(ts_end, 2000)
         self.assertIsInstance(is_unique, bool)
 
-        # Verify all zoom levels produce cells
         self.assertGreater(len(cs_z13), 0)
         self.assertGreater(len(cs_z17), 0)
         self.assertGreater(len(cs_z21), 0)
 
-        # Verify deduplication: no duplicates in any cellstring
+        # Critical: verify deduplication works at all zoom levels
         self.assertEqual(len(cs_z13), len(set(cs_z13)),
                          "z13 cellstring should have no duplicates")
         self.assertEqual(len(cs_z17), len(set(cs_z17)),
@@ -182,8 +204,6 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
 
     def test_process_trajectory_row_with_supercover(self):
         """Test: process_trajectory_row works with supercover=True."""
-        from shapely.wkb import dumps
-
         linestring = LineString([
             (10.0, 55.0),
             (10.05, 55.05),
@@ -215,14 +235,15 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
 
         self.assertGreater(len(cellstring), 0)
 
-        # Verify cells are decodable
         tile_coords = [self._decode_cellid_to_tile(cell, 13) for cell in cellstring]
         first_x, first_y = tile_coords[0]
         last_x, last_y = tile_coords[-1]
 
-        # Overall progression should be northeast
         self.assertLess(first_x, last_x, "Should progress eastward")
         self.assertGreater(first_y, last_y, "Should progress northward (Web Mercator)")
+
+        # No duplicates
+        self.assertEqual(len(cellstring), len(set(cellstring)))
 
 
 class TestPolygonToCellString(unittest.TestCase):

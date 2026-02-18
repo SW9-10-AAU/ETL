@@ -22,7 +22,6 @@ ENCODE_MULT_Z13 = 10_000
 BATCH_SIZE = 5_000
 MAX_WORKERS = 4
 
-
 # --- Encoding Utilities ---
 
 def encode_tile_xy_to_cellid(x: int, y: int, zoom: int = DEFAULT_ZOOM) -> int:
@@ -38,12 +37,11 @@ def get_tile_xy(lon: float, lat: float, zoom: int = DEFAULT_ZOOM) -> tuple[int, 
     tile = mercantile.tile(lon, lat, zoom)
     return tile.x, tile.y
 
-
 def encode_lonlat_to_cellid(lon: float, lat: float, zoom: int = DEFAULT_ZOOM) -> int:
     x, y = get_tile_xy(lon, lat, zoom)
     return encode_tile_xy_to_cellid(x, y)
 
-# --- Bresenham ---
+# --- Bresenham --- TODO: remove bresenham
 
 def bresenham(x0: int, y0: int, x1: int, y1: int) -> list[tuple[int, int]]:
     tiles: list[tuple[int, int]] = []
@@ -116,9 +114,8 @@ def supercover_bresenham(x1: int, y1: int, x2: int, y2: int) -> list[tuple[int, 
 
     return cells
 
-
 def create_cellstring_multipoly(cell_tiles: list[tuple[int, int]], zoom: int = DEFAULT_ZOOM) -> MultiPolygon:
-    unique_tiles = set(cell_tiles)
+    unique_tiles = set(cell_tiles)  # Remove duplicates to avoid redundant geometry creation
     return unary_union([
         box(*mercantile.bounds(x, y, zoom))
         for x, y in unique_tiles
@@ -140,16 +137,19 @@ def find_noncontained_ls_segments(ls: LineString,tile_multipolygon: MultiPolygon
 
     return []
 
-def point_to_all_candidate_tiles(lon: float, lat: float, zoom: int, tol: float) -> list[tuple[int, int]]:
+def buffer_point_for_tile_edge_cases(point: Point) -> Polygon:
+    """Buffer a point by a small amount to ensure we capture edge cases where the line just touches the tile boundary."""
+    point_buf = 1e-9
+    return point.buffer(point_buf).envelope
+
+def point_to_all_candidate_tiles(lon: float, lat: float, zoom: int) -> list[tuple[int, int]]:
     """Return all tiles a point could touch, handling edges/corners."""
-    minx, miny, maxx, maxy = Point(lon, lat).buffer(tol).envelope.bounds
+    minx, miny, maxx, maxy = buffer_point_for_tile_edge_cases(Point(lon, lat)).bounds
     return [(t.x, t.y) for t in mercantile.tiles(minx, miny, maxx, maxy, zoom)]
 
-    
 # --- Conversion Utilities ---
 
 def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM, use_supercover: bool = False) -> list[int]:
-    
     if ls.is_empty:
         return []
     
@@ -166,55 +166,53 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM, u
         
         # Get initial tiles for this segment
         tiles = bresenham(x0, y0, x1, y1) if not use_supercover else supercover_bresenham(x0, y0, x1, y1)
-        segment_tiles = set(tiles)  # Use set to avoid duplicates within segment
         
         # Create this segment's LineString and check coverage
         segment_ls = LineString([c0, c1])
-        tile_multipolygon = create_cellstring_multipoly(list(segment_tiles), zoom)
-        non_covered = find_noncontained_ls_segments(segment_ls, tile_multipolygon)
+        tile_multipolygon = create_cellstring_multipoly(tiles, zoom)
+        non_covere_ls_segments = find_noncontained_ls_segments(segment_ls, tile_multipolygon)
         
         # Iterative gap-filling for THIS segment only
         max_iterations = 10  # Safety limit
         iteration = 0
-        while non_covered and iteration < max_iterations:
+        while non_covere_ls_segments and iteration < max_iterations:
             iteration += 1
             if iteration == 10:
                 raise Exception(f"Exceeded max iterations for segment {i} - possible infinite loop in coverage filling")
             
-            for segment in non_covered:
+            for segment in non_covere_ls_segments:
                 seg_coords = list(segment.coords)
                 
                 for sc0, sc1 in zip(seg_coords[:-1], seg_coords[1:]):
-                    tol = 0.005 * 360 / (2**zoom)
                     
                     # Get all candidate tiles for both endpoints
                     tiles_c0 = [
                         (x, y)
-                        for x, y in point_to_all_candidate_tiles(sc0[0], sc0[1], zoom, tol)
-                        if box(*mercantile.bounds(x, y, zoom)).intersects(Point(sc0[:2]).buffer(tol).envelope)
+                        for x, y in point_to_all_candidate_tiles(sc0[0], sc0[1], zoom)
+                        if box(*mercantile.bounds(x, y, zoom)).intersects(buffer_point_for_tile_edge_cases(Point(sc0[:2])))
                     ]
                     
                     tiles_c1 = [
                         (x, y)
-                        for x, y in point_to_all_candidate_tiles(sc1[0], sc1[1], zoom, tol)
-                        if box(*mercantile.bounds(x, y, zoom)).intersects(Point(sc1[:2]).buffer(tol).envelope)
+                        for x, y in point_to_all_candidate_tiles(sc1[0], sc1[1], zoom)
+                        if box(*mercantile.bounds(x, y, zoom)).intersects(buffer_point_for_tile_edge_cases(Point(sc1[:2])))
                     ]
                     
-                    # Add supercover tiles between all candidate pairs
+                    # Add supercover tiles between all candidate pairs.
                     for x0_c, y0_c in tiles_c0:
                         for x1_c, y1_c in tiles_c1:
-                            segment_tiles.update(supercover_bresenham(x0_c, y0_c, x1_c, y1_c))
+                            tiles.extend(supercover_bresenham(x0_c, y0_c, x1_c, y1_c))
             
             # Re-check coverage with updated tiles
-            tile_multipolygon = create_cellstring_multipoly(list(segment_tiles), zoom)
-            non_covered = find_noncontained_ls_segments(segment_ls, tile_multipolygon)
+            tile_multipolygon = create_cellstring_multipoly(tiles, zoom)
+            non_covere_ls_segments = find_noncontained_ls_segments(segment_ls, tile_multipolygon)
         
         # Convert segment tiles to cell IDs and append to cellstring
-        for x, y in segment_tiles:
+        for x, y in tiles:
             cellstring.append(encode_tile_xy_to_cellid(x, y, zoom))
     
-    return cellstring
-
+    deduplicated_cellstring = list(dict.fromkeys(cellstring))
+    return deduplicated_cellstring
 
 def convert_polygon_to_cellstring(poly: Polygon | MultiPolygon, zoom: int = DEFAULT_ZOOM) -> list[int]:
     """
@@ -243,19 +241,15 @@ def convert_polygon_to_cellstring(poly: Polygon | MultiPolygon, zoom: int = DEFA
             cellstring.append(encode_tile_xy_to_cellid(tile.x, tile.y, zoom))
     return cellstring
 
-
 # --- Worker Functions ---
 
 def process_trajectory_row(row: Row, use_supercover: bool) -> ProcessResultTraj:
     trajectory_id, mmsi, ts_start, ts_end, geom_wkb = row
     linestring = cast(LineString, from_wkb(geom_wkb))
-    raw_cellstring_z13 = convert_linestring_to_cellstring(linestring, 13, use_supercover)
-    raw_cellstring_z17 = convert_linestring_to_cellstring(linestring, 17, use_supercover)
-    raw_cellstring_z21 = convert_linestring_to_cellstring(linestring, 21, use_supercover)
-    cellstring_z13 = list(dict.fromkeys(raw_cellstring_z13)) # Deduplicate
-    cellstring_z17 = list(dict.fromkeys(raw_cellstring_z17)) # Deduplicate
-    cellstring_z21 = list(dict.fromkeys(raw_cellstring_z21)) # Deduplicate
-    is_unique : bool = True
+    cellstring_z13 = convert_linestring_to_cellstring(linestring, 13, use_supercover)
+    cellstring_z17 = convert_linestring_to_cellstring(linestring, 17, use_supercover)
+    cellstring_z21 = convert_linestring_to_cellstring(linestring, 21, use_supercover)
+    is_unique : bool = True #TODO: remove unique
     return (trajectory_id, mmsi, ts_start, ts_end, is_unique, cellstring_z13, cellstring_z17, cellstring_z21)
 
 def process_stop_row(row: Row) -> ProcessResultStop:
@@ -266,7 +260,6 @@ def process_stop_row(row: Row) -> ProcessResultStop:
     cellstring_z17 = convert_polygon_to_cellstring(polygon, 17)
     cellstring_z21 = convert_polygon_to_cellstring(polygon, 21)
     return stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21
-
 
 # --- Batch Helper ---
 
@@ -297,7 +290,7 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
         query = """
                 SELECT trajectory_id, mmsi, ts_start, ts_end, ST_AsBinary(geom)
                 FROM prototype2.trajectory_ls
-                WHERE trajectory_id <= 4000
+                WHERE trajectory_id
                 ORDER BY trajectory_id;
                 """
 
