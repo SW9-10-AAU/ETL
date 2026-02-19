@@ -1,5 +1,7 @@
 from enum import Enum
+from re import match
 from typing import LiteralString, cast
+from unittest import case
 import mercantile
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from psycopg import Connection, Cursor
@@ -310,14 +312,16 @@ def process_z13_tiles(poly: Polygon | MultiPolygon) -> tuple[list[int], list[mer
     for tile in z13_tiles:
         classification = classify_tile_containment(poly, tile)
 
-        if classification == Classification.FULLY_CONTAINED:
-            fully_contained_z13.append(tile)
-        elif classification == Classification.PARTIALLY_CONTAINED:
-            partially_contained_z13.append(tile)
-
+        match classification:
+            case Classification.FULLY_CONTAINED:
+                fully_contained_z13.append(tile)
+            case Classification.PARTIALLY_CONTAINED:
+                partially_contained_z13.append(tile)
+            case Classification.NO_INTERSECTION:
+                continue
+            
         cellstring_z13.append(encode_tile_xy_to_cellid(tile.x, tile.y, 13))
 
-    print(f"Z13: {len(fully_contained_z13)} fully contained tiles, {len(partially_contained_z13)} partially contained tiles, total {len(cellstring_z13)} tiles")
     return cellstring_z13, fully_contained_z13, partially_contained_z13
 
 
@@ -341,14 +345,16 @@ def process_z17_tiles(
         for child in children_z17:
             classification = classify_tile_containment(poly, child)
 
-            if classification == Classification.FULLY_CONTAINED:
-                cellstring_z17.append(encode_tile_xy_to_cellid(child.x, child.y, 17))
-                fully_contained_z17.append(child)
-            elif classification == Classification.PARTIALLY_CONTAINED:
-                cellstring_z17.append(encode_tile_xy_to_cellid(child.x, child.y, 17))
-                partially_contained_z17.append(child)
+            match classification:
+                case Classification.FULLY_CONTAINED:
+                    fully_contained_z17.append(child)
+                case Classification.PARTIALLY_CONTAINED:
+                    partially_contained_z17.append(child)
+                case Classification.NO_INTERSECTION:
+                    continue
 
-    print(f"Z17: {len(fully_contained_z17)} fully contained tiles, {len(partially_contained_z17)} partially contained tiles, total {len(cellstring_z17)} tiles")
+            cellstring_z17.append(encode_tile_xy_to_cellid(child.x, child.y, 17))
+            
     return cellstring_z17, fully_contained_z17, partially_contained_z17
 
 
@@ -369,10 +375,12 @@ def process_z21_tiles(
         for child in children_z21:
             classification = classify_tile_containment(poly, child)
 
-            if classification in (Classification.FULLY_CONTAINED, Classification.PARTIALLY_CONTAINED):
-                cellstring_z21.append(encode_tile_xy_to_cellid(child.x, child.y, 21))
+            match classification:
+                case Classification.FULLY_CONTAINED | Classification.PARTIALLY_CONTAINED:
+                    cellstring_z21.append(encode_tile_xy_to_cellid(child.x, child.y, 21))
+                case Classification.NO_INTERSECTION:
+                    continue
 
-    print(f"Z21: Total {len(cellstring_z21)} tiles")
     return cellstring_z21
 
 
