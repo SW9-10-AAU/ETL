@@ -1,4 +1,7 @@
+from enum import Enum
+from re import match
 from typing import LiteralString, cast
+from unittest import case
 import mercantile
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from psycopg import Connection, Cursor
@@ -116,12 +119,12 @@ def supercover_bresenham(x1: int, y1: int, x2: int, y2: int) -> list[tuple[int, 
 
 def create_cellstring_multipoly(cell_tiles: list[tuple[int, int]], zoom: int = DEFAULT_ZOOM) -> MultiPolygon:
     unique_tiles = set(cell_tiles)  # Remove duplicates to avoid redundant geometry creation
-    return unary_union([
+    return cast(MultiPolygon, unary_union([
         box(*mercantile.bounds(x, y, zoom))
         for x, y in unique_tiles
-    ])
+    ]))
 
-def find_noncontained_ls_segments(ls: LineString,tile_multipolygon: MultiPolygon) -> list[LineString]:
+def find_noncontained_ls_segments(ls: LineString, tile_multipolygon: MultiPolygon) -> list[LineString]:
     # shrink the multipolygon slightly to avoid edge cases where the line just touches the tile boundary but isn't actually covered by it
     eps = 1e-9
     shrunk_poly = tile_multipolygon.buffer(-eps)
@@ -140,7 +143,7 @@ def find_noncontained_ls_segments(ls: LineString,tile_multipolygon: MultiPolygon
 def buffer_point_for_tile_edge_cases(point: Point) -> Polygon:
     """Buffer a point by a small amount to ensure we capture edge cases where the line just touches the tile boundary."""
     point_buf = 1e-9
-    return point.buffer(point_buf).envelope
+    return cast(Polygon, point.buffer(point_buf).envelope)
 
 def point_to_all_candidate_tiles(lon: float, lat: float, zoom: int) -> list[tuple[int, int]]:
     """Return all tiles a point could touch, handling edges/corners."""
@@ -240,6 +243,166 @@ def convert_polygon_to_cellstring(poly: Polygon | MultiPolygon, zoom: int = DEFA
         if poly.intersects(tile_poly):
             cellstring.append(encode_tile_xy_to_cellid(tile.x, tile.y, zoom))
     return cellstring
+
+class Classification(Enum):
+    FULLY_CONTAINED = 1
+    PARTIALLY_CONTAINED = 2
+    NO_INTERSECTION = 3
+
+def classify_tile_containment(poly: Polygon | MultiPolygon, tile: mercantile.Tile) -> Classification:
+    """
+    Classify a tile's relationship to the polygon.
+
+    Args:
+        poly: A Shapely Polygon or MultiPolygon
+        tile: A mercantile Tile
+
+    Returns:
+        Classification.FULLY_CONTAINED if the polygon completely contains the tile
+        Classification.PARTIALLY_CONTAINED if the tile intersects but is not fully contained
+        Classification.NO_INTERSECTION if there is no overlap
+    """
+    bounds = mercantile.bounds(tile)
+    tile_poly = box(bounds.west, bounds.south, bounds.east, bounds.north)
+
+    if poly.contains(tile_poly):
+        return Classification.FULLY_CONTAINED
+    elif poly.intersects(tile_poly):
+        return Classification.PARTIALLY_CONTAINED
+    else:
+        return Classification.NO_INTERSECTION
+
+def get_all_children_at_zoom(tile: mercantile.Tile, target_zoom: int) -> list[mercantile.Tile]:
+    """
+    Get all descendant tiles at target_zoom from the given tile.
+
+    Args:
+        tile: Parent tile
+        target_zoom: Target zoom level (must be > tile.z)
+
+    Returns:
+        List of all descendant tiles at target_zoom
+    """
+    if tile.z >= target_zoom:
+        return [tile]
+
+    # Get direct children
+    children = list(mercantile.children(tile))
+
+    # If children are at target zoom, return them
+    if children[0].z == target_zoom:
+        return children
+
+    # Otherwise, recursively get children of children
+    all_descendants = []
+    for child in children:
+        all_descendants.extend(get_all_children_at_zoom(child, target_zoom))
+
+    return all_descendants
+
+
+def process_z13_tiles(poly: Polygon | MultiPolygon) -> tuple[list[int], list[mercantile.Tile], list[mercantile.Tile]]:
+    minx, miny, maxx, maxy = poly.bounds
+    z13_tiles = mercantile.tiles(minx, miny, maxx, maxy, 13)
+
+    cellstring_z13: list[int] = []
+    fully_contained_z13: list[mercantile.Tile] = []
+    partially_contained_z13: list[mercantile.Tile] = []
+
+    for tile in z13_tiles:
+        classification = classify_tile_containment(poly, tile)
+
+        match classification:
+            case Classification.FULLY_CONTAINED:
+                fully_contained_z13.append(tile)
+            case Classification.PARTIALLY_CONTAINED:
+                partially_contained_z13.append(tile)
+            case Classification.NO_INTERSECTION:
+                continue
+            
+        cellstring_z13.append(encode_tile_xy_to_cellid(tile.x, tile.y, 13))
+
+    return cellstring_z13, fully_contained_z13, partially_contained_z13
+
+
+def process_z17_tiles(
+    poly: Polygon | MultiPolygon,
+    fully_contained_z13: list[mercantile.Tile],
+    partially_contained_z13: list[mercantile.Tile],
+) -> tuple[list[int], list[mercantile.Tile], list[mercantile.Tile]]:
+    cellstring_z17: list[int] = []
+    fully_contained_z17: list[mercantile.Tile] = []
+    partially_contained_z17: list[mercantile.Tile] = []
+
+    for tile in fully_contained_z13:
+        children_z17 = get_all_children_at_zoom(tile, 17)
+        for child in children_z17:
+            cellstring_z17.append(encode_tile_xy_to_cellid(child.x, child.y, 17))
+            fully_contained_z17.append(child)
+
+    for tile in partially_contained_z13:
+        children_z17 = get_all_children_at_zoom(tile, 17)
+        for child in children_z17:
+            classification = classify_tile_containment(poly, child)
+
+            match classification:
+                case Classification.FULLY_CONTAINED:
+                    fully_contained_z17.append(child)
+                case Classification.PARTIALLY_CONTAINED:
+                    partially_contained_z17.append(child)
+                case Classification.NO_INTERSECTION:
+                    continue
+
+            cellstring_z17.append(encode_tile_xy_to_cellid(child.x, child.y, 17))
+            
+    return cellstring_z17, fully_contained_z17, partially_contained_z17
+
+
+def process_z21_tiles(
+    poly: Polygon | MultiPolygon,
+    fully_contained_z17: list[mercantile.Tile],
+    partially_contained_z17: list[mercantile.Tile],
+) -> list[int]:
+    cellstring_z21: list[int] = []
+
+    for tile in fully_contained_z17:
+        children_z21 = get_all_children_at_zoom(tile, 21)
+        for child in children_z21:
+            cellstring_z21.append(encode_tile_xy_to_cellid(child.x, child.y, 21))
+
+    for tile in partially_contained_z17:
+        children_z21 = get_all_children_at_zoom(tile, 21)
+        for child in children_z21:
+            classification = classify_tile_containment(poly, child)
+
+            match classification:
+                case Classification.FULLY_CONTAINED | Classification.PARTIALLY_CONTAINED:
+                    cellstring_z21.append(encode_tile_xy_to_cellid(child.x, child.y, 21))
+                case Classification.NO_INTERSECTION:
+                    continue
+
+    return cellstring_z21
+
+
+def convert_polygon_to_cellstring_hierarchical(poly: Polygon | MultiPolygon) -> tuple[list[int], list[int], list[int]]:
+    """
+    Convert polygon to cellstrings at Z13, Z17, and Z21.
+
+    Args:
+        poly: A Shapely Polygon or MultiPolygon to convert
+
+    Returns:
+        Tuple of (cellstring_z13, cellstring_z17, cellstring_z21)
+    """
+    if poly.is_empty:
+        return ([], [], [])
+
+    cellstring_z13, fully_contained_z13, partially_contained_z13 = process_z13_tiles(poly)
+    cellstring_z17, fully_contained_z17, partially_contained_z17 = process_z17_tiles(poly, fully_contained_z13, partially_contained_z13)
+    cellstring_z21 = process_z21_tiles(poly, fully_contained_z17, partially_contained_z17)
+
+    return (cellstring_z13, cellstring_z17, cellstring_z21)
+
 
 # --- Worker Functions ---
 

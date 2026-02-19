@@ -1,4 +1,5 @@
 import unittest
+import mercantile
 from shapely import LineString, Polygon
 from shapely.wkb import dumps
 import src.transform_ls_to_cs as transform
@@ -286,6 +287,117 @@ class TestPolygonToCellString(unittest.TestCase):
         ]
 
         self.assertEqual(cellstring, expected)
+
+
+class TestHierarchicalPolygonToCellString(unittest.TestCase):
+
+    def test_hierarchical_vs_original_same_results(self):
+        """Verify hierarchical algorithm produces same cellstrings as original algorithm."""
+        polygon = Polygon([
+            [
+              10.314142022338359,
+              56.989841283038544
+            ],
+            [
+              10.308192009866758,
+              56.96758619876718
+            ],
+            [
+              10.32171476548396,
+              56.97466210465393
+            ],
+            [
+              10.339564802898877,
+              56.97525170280585
+            ],
+            [
+              10.343892084696563,
+              56.969650143499706
+            ],
+            [
+              10.324419316607646,
+              56.9565274047078
+            ],
+            [
+              10.341457988686244,
+              56.94753049842973
+            ],
+            [
+              10.36390576301099,
+              56.96729134018483
+            ],
+            [
+              10.378510339077962,
+              56.99617639075896
+            ],
+            [
+              10.353087558517444,
+              56.99882797615109
+            ],
+            [
+              10.347137546045786,
+              56.99043064087442
+            ],
+            [
+              10.336860251775192,
+              56.97878909571352
+            ],
+            [
+              10.32766477795559,
+              56.97937862853158
+            ],
+            [
+              10.327935233067706,
+              56.98880988437111
+            ],
+            [
+              10.314142022338359,
+              56.989841283038544
+            ]
+        ])
+
+        # Original algorithm
+        z13_old = transform.convert_polygon_to_cellstring(polygon, 13)
+        z17_old = transform.convert_polygon_to_cellstring(polygon, 17)
+        z21_old = transform.convert_polygon_to_cellstring(polygon, 21)
+
+        # Hierarchical algorithm
+        z13_new, z17_new, z21_new = transform.convert_polygon_to_cellstring_hierarchical(polygon)
+
+        # Should produce identical results (using sets since order may differ)
+        self.assertEqual(set(z13_old), set(z13_new), "Z13 cellstrings should match")
+        self.assertEqual(set(z17_old), set(z17_new), "Z17 cellstrings should match")
+        self.assertEqual(set(z21_old), set(z21_new), "Z21 cellstrings should match")
+
+    def test_hierarchical_empty_polygon(self):
+        """Verify hierarchical algorithm handles empty polygons correctly."""
+        polygon = Polygon()
+        z13, z17, z21 = transform.convert_polygon_to_cellstring_hierarchical(polygon)
+
+        self.assertEqual(z13, [])
+        self.assertEqual(z17, [])
+        self.assertEqual(z21, [])
+
+    def test_classify_tile_containment(self):
+        """Test the classify_tile_containment helper function."""
+        # Create a simple polygon
+        polygon = Polygon([
+            [10.0, 57.0],
+            [10.0, 58.0],
+            [11.0, 58.0],
+            [11.0, 57.0],
+            [10.0, 57.0]
+        ])
+
+        # Get a tile inside the polygon
+        tile_inside = mercantile.tile(10.5, 57.5, 13)
+        classification_inside = transform.classify_tile_containment(polygon, tile_inside)
+        self.assertEqual(classification_inside, transform.Classification.FULLY_CONTAINED)
+
+        # Get a tile outside the polygon
+        tile_outside = mercantile.tile(15.0, 60.0, 13)
+        classification_outside = transform.classify_tile_containment(polygon, tile_outside)
+        self.assertEqual(classification_outside, transform.Classification.NO_INTERSECTION)
 
 
 if __name__ == "__main__":
