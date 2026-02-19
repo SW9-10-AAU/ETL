@@ -290,7 +290,6 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
         query = """
                 SELECT trajectory_id, mmsi, ts_start, ts_end, ST_AsBinary(geom)
                 FROM prototype2.trajectory_ls
-                WHERE trajectory_id
                 ORDER BY trajectory_id;
                 """
 
