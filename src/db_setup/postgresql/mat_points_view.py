@@ -1,11 +1,11 @@
 from psycopg import Connection
 
-def mat_points_view(conn: Connection):
+def mat_points_view(conn: Connection, db_schema: str):
     cur = conn.cursor()
     
     cur.execute(f"""
             -- POINTM's with MMSI
-            CREATE MATERIALIZED VIEW IF NOT EXISTS prototype2.points AS
+            CREATE MATERIALIZED VIEW IF NOT EXISTS {db_schema}.points AS
             WITH valid_mmsi AS (
                 SELECT
                     V.mmsi
@@ -58,18 +58,18 @@ def mat_points_view(conn: Connection):
         """)
 
      # Create index for lookup
-    cur.execute("""
+    cur.execute(f"""
             CREATE INDEX IF NOT EXISTS POINTS_IDX
-            ON prototype2.POINTS USING HASH (mmsi);
+            ON {db_schema}.POINTS USING HASH (mmsi);
         """)
     
     # Create spatial index
-    cur.execute("""
+    cur.execute(f"""
             CREATE INDEX IF NOT EXISTS POINTS_GEOM_IDX
-            ON prototype2.POINTS USING GIST (geom) INCLUDE (mmsi);
+            ON {db_schema}.POINTS USING GIST (geom) INCLUDE (mmsi);
         """)
 
-    print("Created materialized view POINTS if not exists.")
+    print(f"Created materialized view POINTS if not exists in database schema {db_schema}.")
 
     conn.commit()
     cur.close()

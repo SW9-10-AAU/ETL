@@ -1,8 +1,8 @@
 import duckdb
 
-def create_duckdb_points(conn: duckdb.DuckDBPyConnection):
-    conn.execute("""
-        CREATE OR REPLACE TABLE points AS
+def create_duckdb_points(conn: duckdb.DuckDBPyConnection, db_schema: str):
+    conn.execute(f"""
+        CREATE OR REPLACE TABLE {db_schema}.points AS
         WITH valid_mmsi AS (
             SELECT mmsi
             FROM ais_data
@@ -28,14 +28,4 @@ def create_duckdb_points(conn: duckdb.DuckDBPyConnection):
         SELECT * FROM dedup;
     """)
 
-    print("Created table 'points' in DuckDB.")
-
-if __name__ == "__main__":
-    conn = duckdb.connect(database='./ais_data/ais_db.duckdb')
-    create_duckdb_points(conn)
-    
-    # Verify
-    print('Points count:', conn.execute('SELECT COUNT(*) FROM points').fetchone())
-    print('Distinct MMSIs:', conn.execute('SELECT COUNT(DISTINCT mmsi) FROM points').fetchone())
-    
-    conn.close()
+    print(f"Created table 'points' in DuckDB schema '{db_schema}'.")

@@ -171,40 +171,8 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
         self.assertLess(first_x, last_x, "Should progress eastward")
         self.assertGreater(first_y, last_y, "Should progress northward (Web Mercator)")
 
-    def test_process_trajectory_row_deduplicates(self):
-        """Test: process_trajectory_row returns deduplicated cellstrings for all zoom levels."""
-        linestring = LineString([
-            (10.0, 55.0),
-            (10.05, 55.05),
-            (10.1, 55.1),
-        ])
-        geom_wkb = dumps(linestring)
-
-        row: transform.Row = (1, 12345, 1000, 2000, geom_wkb)
-        result = transform.process_trajectory_row(row, use_supercover=False)
-
-        trajectory_id, mmsi, ts_start, ts_end, is_unique, cs_z13, cs_z17, cs_z21 = result
-
-        self.assertEqual(trajectory_id, 1)
-        self.assertEqual(mmsi, 12345)
-        self.assertEqual(ts_start, 1000)
-        self.assertEqual(ts_end, 2000)
-        self.assertIsInstance(is_unique, bool)
-
-        self.assertGreater(len(cs_z13), 0)
-        self.assertGreater(len(cs_z17), 0)
-        self.assertGreater(len(cs_z21), 0)
-
-        # Critical: verify deduplication works at all zoom levels
-        self.assertEqual(len(cs_z13), len(set(cs_z13)),
-                         "z13 cellstring should have no duplicates")
-        self.assertEqual(len(cs_z17), len(set(cs_z17)),
-                         "z17 cellstring should have no duplicates")
-        self.assertEqual(len(cs_z21), len(set(cs_z21)),
-                         "z21 cellstring should have no duplicates")
-
-    def test_process_trajectory_row_with_supercover(self):
-        """Test: process_trajectory_row works with supercover=True."""
+    def test_process_trajectory_row(self):
+        """Test: process_trajectory_row works and produces unique cells."""
         linestring = LineString([
             (10.0, 55.0),
             (10.05, 55.05),
@@ -213,9 +181,9 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
         geom_wkb = dumps(linestring)
 
         row: transform.Row = (2, 54321, 2000, 3000, geom_wkb)
-        result = transform.process_trajectory_row(row, use_supercover=True)
+        result = transform.process_trajectory_row(row)
 
-        trajectory_id, mmsi, ts_start, ts_end, is_unique, cs_z13, cs_z17, cs_z21 = result
+        trajectory_id, mmsi, ts_start, ts_end, cs_z13, cs_z17, cs_z21 = result
 
         self.assertEqual(trajectory_id, 2)
         self.assertEqual(mmsi, 54321)

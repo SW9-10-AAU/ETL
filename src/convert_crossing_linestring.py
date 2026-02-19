@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 from shapely import LineString
-from tables.create_crossing_tables import create_crossing_tables
+from db_setup.postgresql.create_crossing_tables import create_crossing_tables
 from transform_ls_to_cs import convert_linestring_to_cellstring
 from connect import connect_to_db
 
@@ -25,10 +25,9 @@ def convert_crossing_linestring_to_cs(linestring: LineString, name: str):
     
     # Convert crossing to cellstring and insert into table 
     print("Converting crossing to cellstrings")
-    use_supercover = True
-    cellstring_z13 = convert_linestring_to_cellstring(linestring, 13, use_supercover)
-    cellstring_z17 = convert_linestring_to_cellstring(linestring, 17, use_supercover)
-    cellstring_z21 = convert_linestring_to_cellstring(linestring, 21, use_supercover)
+    cellstring_z13 = convert_linestring_to_cellstring(linestring, 13)
+    cellstring_z17 = convert_linestring_to_cellstring(linestring, 17)
+    cellstring_z21 = convert_linestring_to_cellstring(linestring, 21)
     print(f"Conversion succeeded with {len(cellstring_z13)} cells (zoom 13), {len(cellstring_z17)} cells (zoom 17), and {len(cellstring_z21)} cells (zoom 21).")
     
     cur.execute("""

@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 from shapely import Polygon, MultiPolygon
 from transform_ls_to_cs import convert_polygon_to_cellstring_hierarchical
 from connect import connect_to_db
-from tables.create_area_tables import create_area_tables
+from db_setup.postgresql.create_area_tables import create_area_tables
 
 def convert_area_polygon_to_cs(polygon: Polygon | MultiPolygon, name: str):
     """

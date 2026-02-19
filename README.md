@@ -39,20 +39,20 @@ Main script to run all steps in order: drop tables, create materialized view, cr
 
 ### [`drop_all_tables.py`](/src/tables/drop_all_tables.py)
 
-Drops all tables in the PostgreSQL database (dw/prototype2/trajectory_cs, dw/prototype2/stop_cs, dw/prototype2/trajectory_ls, dw/prototype2/stop_poly, dw/prototype2/points).
+Drops all tables in the PostgreSQL database (dw/{schema_name}/trajectory_cs, dw/{schema_name}/stop_cs, dw/{schema_name}/trajectory_ls, dw/{schema_name}/stop_poly, dw/{schema_name}/points).
 
 ### [`mat_points_view.py`](/src/tables/mat_points_view.py)
 
-Creates a materialized view named `points` in the PostgreSQL database (dw/prototype2/points). This view aggregates AIS points from a single MMSI taken from the `dw.fact.ais_point_fact` table. The resulting view contains six columns: `mmsi`, `geom` containing x, y, timestamp, `sog`, `cog`, `delta_sog`, `delta_depth_draught`.
+Creates a materialized view named `points` in the PostgreSQL database (dw/{schema_name}/points). This view aggregates AIS points from a single MMSI taken from the `dw.fact.ais_point_fact` table. The resulting view contains six columns: `mmsi`, `geom` containing x, y, timestamp, `sog`, `cog`, `delta_sog`, `delta_depth_draught`.
 
 This prepares points that can then be used for trajectory generation with stops.
 
 ### [`create_cs_traj_stop_tables.py`](/src/tables/create_cs_traj_stop_tables.py)
 
-Creates one table for trajectory and one table for stops in the PostgreSQL database (dw/prototype2/trajectory_cs).
-
+Creates one table for trajectory and one table for stops in the PostgreSQL database (dw/{schema_name}/trajectory_cs).
 
 ## Draw areas and crossings
+
 Use this tool to draw an area (Polygon) or a crossing (LineString): https://geojson.io/#map=6.47/55.777/10.723
 
 ### [`convert_area_polygon_to_cs.py`](/src/tables/convert_area_polygon_to_cs.py)

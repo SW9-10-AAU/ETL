@@ -43,23 +43,20 @@ def convert_area_geojson_to_cs(geojson_path: str, name: str):
     geometry = shape(geometry_data)
     print(f"Geometry type: {geometry.geom_type}")
 
-    # Validate geometry type
     if geometry.geom_type not in ['Polygon', 'MultiPolygon']:
         raise ValueError(f"Expected Polygon or MultiPolygon, got {geometry.geom_type}")
 
-    # Handle MultiPolygon
     if geometry.geom_type == 'MultiPolygon':
-        multiPolygon : MultiPolygon = cast(MultiPolygon, geometry)
+        multiPolygon: MultiPolygon = cast(MultiPolygon, geometry)
         num_polygons = len(multiPolygon.geoms)
         total_points = sum(len(poly.exterior.coords) for poly in multiPolygon.geoms)
         print(f"MultiPolygon contains {num_polygons} polygon(s) with {total_points} total points")
         convert_area_polygon_to_cs(multiPolygon, name)
     else:
-        poly : Polygon = cast(Polygon, geometry)
+        poly: Polygon = cast(Polygon, geometry)
         print(f"Polygon contains {len(poly.exterior.coords)} points")
         convert_area_polygon_to_cs(poly, name)
 
-    # Convert to cellstrings
 
 def main():
     """

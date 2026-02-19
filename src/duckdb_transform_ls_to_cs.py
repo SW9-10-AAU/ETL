@@ -16,17 +16,15 @@ from transform_ls_to_cs import (
 
 
 def transform_ls_trajectories_to_cs_duckdb(conn: duckdb.DuckDBPyConnection, max_workers: int = MAX_WORKERS,
-                                            batch_size: int = BATCH_SIZE, use_supercover: bool = True):
-    print(f"--- Processing trajectories with {'Supercover' if use_supercover else 'Bresenham'} (using {max_workers} workers) ---")
+                                            batch_size: int = BATCH_SIZE):
+    print(f"--- Processing trajectories with (using {max_workers} workers) ---")
     total_processed = 0
-    table_name = "trajectory_supercover_cs" if use_supercover else "trajectory_cs"
-    insert_query = f"""
-        INSERT INTO {table_name} (trajectory_id, mmsi, ts_start, ts_end, unique_cells, cellstring_z13, cellstring_z17, cellstring_z21)
+    insert_query = """
+        INSERT INTO trajectory_cs (trajectory_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """
 
     conn.execute("LOAD spatial")
-    conn.execute(f"DELETE FROM {table_name}")
     print("Fetching all trajectory rows...")
     all_rows : list[Row] = [
         (int(tid), int(mmsi), ts_start, ts_end, bytes(geom_wkb))
@@ -42,7 +40,7 @@ def transform_ls_trajectories_to_cs_duckdb(conn: duckdb.DuckDBPyConnection, max_
         batch = all_rows[i:i + batch_size]
 
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
-            futures: list[FutureResultTraj] = [executor.submit(process_trajectory_row, row, use_supercover) for row in batch]
+            futures: list[FutureResultTraj] = [executor.submit(process_trajectory_row, row) for row in batch]
             results: list[ProcessResultTraj] = []
             for future in as_completed(futures):
                 try:
@@ -51,8 +49,8 @@ def transform_ls_trajectories_to_cs_duckdb(conn: duckdb.DuckDBPyConnection, max_
                     print(f"Worker error: {e}")
 
         conn.executemany(insert_query,
-                         [(trajectory_id, mmsi, start_time, end_time, is_unique, cellstring_z13, cellstring_z17, cellstring_z21)
-                          for (trajectory_id, mmsi, start_time, end_time, is_unique, cellstring_z13, cellstring_z17, cellstring_z21)
+                         [(trajectory_id, mmsi, start_time, end_time, cellstring_z13, cellstring_z17, cellstring_z21)
+                          for (trajectory_id, mmsi, start_time, end_time, cellstring_z13, cellstring_z17, cellstring_z21)
                           in results])
 
         total_processed += len(results)
@@ -61,7 +59,7 @@ def transform_ls_trajectories_to_cs_duckdb(conn: duckdb.DuckDBPyConnection, max_
     print(f"Finished processing all trajectories ({total_processed:,} total)")
 
 
-def transform_ls_stops_to_cs_duckdb(conn: duckdb.DuckDBPyConnection, max_workers: int = MAX_WORKERS,
+def transform_poly_stops_to_cs_duckdb(conn: duckdb.DuckDBPyConnection, max_workers: int = MAX_WORKERS,
                                      batch_size: int = BATCH_SIZE):
     print(f"--- Processing stops (using {max_workers} workers) ---")
     total_processed = 0

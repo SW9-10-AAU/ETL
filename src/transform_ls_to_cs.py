@@ -1,14 +1,12 @@
 from enum import Enum
-from re import match
 from typing import LiteralString, cast
-from unittest import case
 import mercantile
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from psycopg import Connection, Cursor
 from shapely import MultiLineString, Point, from_wkb, LineString, Polygon, MultiPolygon, box, unary_union
 
 Row = tuple[int, int, int, int, bytes]  # (trajectory_id/stop_id, mmsi, ts_start, ts_end, geom_wkb)
-ProcessResultTraj = tuple[int, int, int, int, bool, list[int], list[int], list[int]]  # trajectory_id, mmsi, ts_start, ts_end, is_unique, cellstring_z13, cellstring_z17, cellstring_z21
+ProcessResultTraj = tuple[int, int, int, int, list[int], list[int], list[int]]  # trajectory_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21
 ProcessResultStop = tuple[int, int, int, int, list[int], list[int], list[int]]  # stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21
 FutureResultTraj = Future[ProcessResultTraj]
 FutureResultStop = Future[ProcessResultStop]
@@ -44,30 +42,8 @@ def encode_lonlat_to_cellid(lon: float, lat: float, zoom: int = DEFAULT_ZOOM) ->
     x, y = get_tile_xy(lon, lat, zoom)
     return encode_tile_xy_to_cellid(x, y)
 
-# --- Bresenham --- TODO: remove bresenham
-
-def bresenham(x0: int, y0: int, x1: int, y1: int) -> list[tuple[int, int]]:
-    tiles: list[tuple[int, int]] = []
-    dx, dy = abs(x1 - x0), abs(y1 - y0)
-    sx, sy = (1, -1)[x0 > x1], (1, -1)[y0 > y1]
-    err = dx - dy
-
-    while True:
-        tiles.append((x0, y0))
-        if x0 == x1 and y0 == y1:
-            break
-        e2 = 2 * err
-        if e2 > -dy:
-            err -= dy
-            x0 += sx
-        if e2 < dx:
-            err += dx
-            y0 += sy
-    return tiles
-
-# ---- supercover bresenham ----   from https://dedu.fr/projects/bresenham/ 
-
-def supercover_bresenham(x1: int, y1: int, x2: int, y2: int) -> list[tuple[int, int]]:
+# Supercover line drawing algorithm from https://dedu.fr/projects/bresenham/ 
+def supercover(x1: int, y1: int, x2: int, y2: int) -> list[tuple[int, int]]:
     cells: list[tuple[int, int]] = []
     dx, dy = x2 - x1, y2 - y1
     x, y = x1, y1
@@ -117,42 +93,66 @@ def supercover_bresenham(x1: int, y1: int, x2: int, y2: int) -> list[tuple[int, 
 
     return cells
 
-def create_cellstring_multipoly(cell_tiles: list[tuple[int, int]], zoom: int = DEFAULT_ZOOM) -> MultiPolygon:
-    unique_tiles = set(cell_tiles)  # Remove duplicates to avoid redundant geometry creation
-    return cast(MultiPolygon, unary_union([
+def convert_tiles_to_shapely_polygon(segment_tiles: list[tuple[int, int]], zoom: int = DEFAULT_ZOOM) -> Polygon:
+    unique_tiles = set(segment_tiles)  # Remove duplicates to avoid redundant geometry creation
+    return cast(Polygon, unary_union([
         box(*mercantile.bounds(x, y, zoom))
         for x, y in unique_tiles
     ]))
 
-def find_noncontained_ls_segments(ls: LineString, tile_multipolygon: MultiPolygon) -> list[LineString]:
-    # shrink the multipolygon slightly to avoid edge cases where the line just touches the tile boundary but isn't actually covered by it
+def find_noncontained_ls_segments(ls: LineString, cellstring_poly: Polygon) -> list[LineString]:
+    # shrink the polygon slightly to avoid edge cases where the line just touches the cellstring boundary but isn't actually contained by it
     eps = 1e-9
-    shrunk_poly = tile_multipolygon.buffer(-eps)
-    noncovered_segments = ls.difference(shrunk_poly)
-    if noncovered_segments.is_empty:
+    shrunk_cellstring_poly = cellstring_poly.buffer(-eps)
+    noncontained_ls_segments = ls.difference(shrunk_cellstring_poly)
+    
+    # LineString is fully contained
+    if noncontained_ls_segments.is_empty:
         return []
 
-    if isinstance(noncovered_segments, LineString):
-        return [noncovered_segments]
+    # A single noncontained LineString segment
+    if isinstance(noncontained_ls_segments, LineString):
+        return [noncontained_ls_segments]
 
-    if isinstance(noncovered_segments, MultiLineString):
-        return list(noncovered_segments.geoms)
+    # Multiple noncontained LineString segments
+    if isinstance(noncontained_ls_segments, MultiLineString):
+        return list(noncontained_ls_segments.geoms)
 
     return []
 
-def buffer_point_for_tile_edge_cases(point: Point) -> Polygon:
+def buffer_point_to_poly(point: Point, buffer_distance = 1e-9) -> Polygon:
     """Buffer a point by a small amount to ensure we capture edge cases where the line just touches the tile boundary."""
-    point_buf = 1e-9
-    return cast(Polygon, point.buffer(point_buf).envelope)
+    return cast(Polygon, point.buffer(buffer_distance).envelope)
 
-def point_to_all_candidate_tiles(lon: float, lat: float, zoom: int) -> list[tuple[int, int]]:
+def get_intersecting_tiles_for_point(lon: float, lat: float, zoom: int) -> list[tuple[int, int]]:
     """Return all tiles a point could touch, handling edges/corners."""
-    minx, miny, maxx, maxy = buffer_point_for_tile_edge_cases(Point(lon, lat)).bounds
+    minx, miny, maxx, maxy = buffer_point_to_poly(Point(lon, lat)).bounds
     return [(t.x, t.y) for t in mercantile.tiles(minx, miny, maxx, maxy, zoom)]
+
+def get_tiles_for_endpoints(start_coord: tuple[float, float], end_coord: tuple[float, float], zoom: int) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:  
+    start_tiles = [
+        (x, y)
+        for x, y in get_intersecting_tiles_for_point(start_coord[0], start_coord[1], zoom)
+        if box(*mercantile.bounds(x, y, zoom)).intersects(buffer_point_to_poly(Point(start_coord[:2])))
+    ]
+    
+    end_tiles = [
+        (x, y)
+        for x, y in get_intersecting_tiles_for_point(end_coord[0], end_coord[1], zoom)
+        if box(*mercantile.bounds(x, y, zoom)).intersects(buffer_point_to_poly(Point(end_coord[:2])))
+    ]
+    
+    return start_tiles, end_tiles
 
 # --- Conversion Utilities ---
 
-def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM, use_supercover: bool = False) -> list[int]:
+def convert_linestring_to_cellstrings(ls: LineString) -> tuple[list[int], list[int], list[int]]:
+    cellstring_z13 = convert_linestring_to_cellstring(ls, 13)
+    cellstring_z17 = convert_linestring_to_cellstring(ls, 17)
+    cellstring_z21 = convert_linestring_to_cellstring(ls, 21)
+    return cellstring_z13, cellstring_z17, cellstring_z21
+
+def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -> list[int]:
     if ls.is_empty:
         return []
     
@@ -168,56 +168,40 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM, u
         x1, y1 = get_tile_xy(lon1, lat1, zoom)
         
         # Get initial tiles for this segment
-        tiles = bresenham(x0, y0, x1, y1) if not use_supercover else supercover_bresenham(x0, y0, x1, y1)
-        
-        # Create this segment's LineString and check coverage
         segment_ls = LineString([c0, c1])
-        tile_multipolygon = create_cellstring_multipoly(tiles, zoom)
-        noncovered_ls_segments = find_noncontained_ls_segments(segment_ls, tile_multipolygon)
+        segment_tiles = supercover(x0, y0, x1, y1)
+        segment_tiles_poly = convert_tiles_to_shapely_polygon(segment_tiles, zoom)
         
-        # Iterative gap-filling for THIS segment only
-        max_iterations = 10  # Safety limit
-        iteration = 0
-        while noncovered_ls_segments and iteration < max_iterations:
-            iteration += 1
-            if iteration == 10:
-                raise Exception(f"Exceeded max iterations for segment {i} - possible infinite loop in coverage filling")
-            
-            for segment in noncovered_ls_segments:
+        # Check for any segments of the LineString not contained in the polygon constructed from the tiles
+        noncontained_ls_segments = find_noncontained_ls_segments(segment_ls, segment_tiles_poly)
+        
+        # Add cells for any non-contained LineString segments
+        while noncontained_ls_segments:
+            for segment in noncontained_ls_segments:
                 seg_coords = list(segment.coords)
                 
-                for sc0, sc1 in zip(seg_coords[:-1], seg_coords[1:]):
+                for start_coord, end_coord in zip(seg_coords[:-1], seg_coords[1:]):
                     
-                    # Get all candidate tiles for both endpoints
-                    tiles_c0 = [
-                        (x, y)
-                        for x, y in point_to_all_candidate_tiles(sc0[0], sc0[1], zoom)
-                        if box(*mercantile.bounds(x, y, zoom)).intersects(buffer_point_for_tile_edge_cases(Point(sc0[:2])))
-                    ]
-                    
-                    tiles_c1 = [
-                        (x, y)
-                        for x, y in point_to_all_candidate_tiles(sc1[0], sc1[1], zoom)
-                        if box(*mercantile.bounds(x, y, zoom)).intersects(buffer_point_for_tile_edge_cases(Point(sc1[:2])))
-                    ]
+                    # Get all intersecting tiles for both endpoints of the non-contained LineString segment
+                    start_tiles, end_tiles = get_tiles_for_endpoints(start_coord, end_coord, zoom)
                     
                     # Add supercover tiles between all candidate pairs.
-                    for x0_c, y0_c in tiles_c0:
-                        for x1_c, y1_c in tiles_c1:
-                            tiles.extend(supercover_bresenham(x0_c, y0_c, x1_c, y1_c))
+                    for x0_c, y0_c in start_tiles:
+                        for x1_c, y1_c in end_tiles:
+                            segment_tiles.extend(supercover(x0_c, y0_c, x1_c, y1_c))
             
-            # Re-check coverage with updated tiles
-            tile_multipolygon = create_cellstring_multipoly(tiles, zoom)
-            noncovered_ls_segments = find_noncontained_ls_segments(segment_ls, tile_multipolygon)
+            # Check containment with updated tiles
+            segment_tiles_poly = convert_tiles_to_shapely_polygon(segment_tiles, zoom)
+            noncontained_ls_segments = find_noncontained_ls_segments(segment_ls, segment_tiles_poly)
         
         # Convert segment tiles to cell IDs and append to cellstring
-        for x, y in tiles:
+        for x, y in segment_tiles:
             cellstring.append(encode_tile_xy_to_cellid(x, y, zoom))
     
     deduplicated_cellstring = list(dict.fromkeys(cellstring))
     return deduplicated_cellstring
 
-def convert_polygon_to_cellstring(poly: Polygon | MultiPolygon, zoom: int = DEFAULT_ZOOM) -> list[int]:
+def convert_polygon_to_cellstring(poly: Polygon | Polygon, zoom: int = DEFAULT_ZOOM) -> list[int]:
     """
     Converts a Polygon or MultiPolygon to a cellstring (list of tile IDs).
 
@@ -239,7 +223,7 @@ def convert_polygon_to_cellstring(poly: Polygon | MultiPolygon, zoom: int = DEFA
 
     for tile in tiles:
         bounds = mercantile.bounds(tile)
-        tile_poly  = box(bounds.west, bounds.south, bounds.east, bounds.north)
+        tile_poly: Polygon  = box(bounds.west, bounds.south, bounds.east, bounds.north)
         if poly.intersects(tile_poly):
             cellstring.append(encode_tile_xy_to_cellid(tile.x, tile.y, zoom))
     return cellstring
@@ -401,27 +385,23 @@ def convert_polygon_to_cellstring_hierarchical(poly: Polygon | MultiPolygon) -> 
     cellstring_z17, fully_contained_z17, partially_contained_z17 = process_z17_tiles(poly, fully_contained_z13, partially_contained_z13)
     cellstring_z21 = process_z21_tiles(poly, fully_contained_z17, partially_contained_z17)
 
-    return (cellstring_z13, cellstring_z17, cellstring_z21)
+    return cellstring_z13, cellstring_z17, cellstring_z21
 
 
 # --- Worker Functions ---
 
-def process_trajectory_row(row: Row, use_supercover: bool) -> ProcessResultTraj:
+def process_trajectory_row(row: Row) -> ProcessResultTraj:
     trajectory_id, mmsi, ts_start, ts_end, geom_wkb = row
     linestring = cast(LineString, from_wkb(geom_wkb))
-    cellstring_z13 = convert_linestring_to_cellstring(linestring, 13, use_supercover)
-    cellstring_z17 = convert_linestring_to_cellstring(linestring, 17, use_supercover)
-    cellstring_z21 = convert_linestring_to_cellstring(linestring, 21, use_supercover)
-    is_unique : bool = True #TODO: remove unique
-    return (trajectory_id, mmsi, ts_start, ts_end, is_unique, cellstring_z13, cellstring_z17, cellstring_z21)
+    cellstring_z13, cellstring_z17, cellstring_z21= convert_linestring_to_cellstrings(linestring)
+  
+    return (trajectory_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21)
 
 def process_stop_row(row: Row) -> ProcessResultStop:
     stop_id, mmsi, ts_start, ts_end, geom_wkb = row
     polygon = cast(Polygon, from_wkb(geom_wkb))
 
-    cellstring_z13 = convert_polygon_to_cellstring(polygon, 13)
-    cellstring_z17 = convert_polygon_to_cellstring(polygon, 17)
-    cellstring_z21 = convert_polygon_to_cellstring(polygon, 21)
+    cellstring_z13, cellstring_z17, cellstring_z21 = convert_polygon_to_cellstring_hierarchical(polygon)
     return stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21
 
 # --- Batch Helper ---
@@ -439,26 +419,25 @@ def get_batches(cur: Cursor, query: LiteralString, batch_size: int):
 
 # --- Main Transformation Functions ---
 
-def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = MAX_WORKERS,
-                                    batch_size: int = BATCH_SIZE, use_supercover: bool = False):
-    print(f"--- Processing trajectories with {'Supercover' if use_supercover else 'Bresenham'} (using {max_workers} workers) ---")
+def transform_ls_trajectories_to_cs(connection: Connection, db_schema: str, max_workers: int = MAX_WORKERS,
+                                    batch_size: int = BATCH_SIZE):
+    print(f"--- Processing trajectories (using {max_workers} workers) ---")
     total_processed = 0
-    table_name = "trajectory_contained_supercover_cs" if use_supercover else "trajectory_cs"
-    insert_query = f"""
-                INSERT INTO prototype2.{table_name} (trajectory_id, mmsi, ts_start, ts_end, unique_cells, cellstring_z13, cellstring_z17, cellstring_z21)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+    insert_traj_query = f"""
+                INSERT INTO {db_schema}.trajectory_cs (trajectory_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """
                 
     with connection.cursor() as cur:
-        query = """
+        get_trajs_query = f"""
                 SELECT trajectory_id, mmsi, ts_start, ts_end, ST_AsBinary(geom)
-                FROM prototype2.trajectory_ls
+                FROM {db_schema}.trajectory_ls
                 ORDER BY trajectory_id;
                 """
 
-        for batch in get_batches(cur, query, batch_size):
+        for batch in get_batches(cur, get_trajs_query, batch_size):
             with ProcessPoolExecutor(max_workers=max_workers) as executor:
-                futures: list[FutureResultTraj] = [executor.submit(process_trajectory_row, row, use_supercover) for row in batch]
+                futures: list[FutureResultTraj] = [executor.submit(process_trajectory_row, row) for row in batch]
                 results: list[ProcessResultTraj] = []
                 for future in as_completed(futures):
                     try:
@@ -467,9 +446,9 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
                         print(f"Worker error: {e}")
 
             with connection.cursor() as insert_cur:
-                insert_cur.executemany(insert_query,
-                                       [(trajectory_id, mmsi, start_time, end_time, is_unique, cellstring_z13, cellstring_z17, cellstring_z21) for
-                                        (trajectory_id, mmsi, start_time, end_time, is_unique, cellstring_z13, cellstring_z17, cellstring_z21) in
+                insert_cur.executemany(insert_traj_query,
+                                       [(trajectory_id, mmsi, start_time, end_time, cellstring_z13, cellstring_z17, cellstring_z21) for
+                                        (trajectory_id, mmsi, start_time, end_time, cellstring_z13, cellstring_z17, cellstring_z21) in
                                         results])
             connection.commit()
 
@@ -478,22 +457,22 @@ def transform_ls_trajectories_to_cs(connection: Connection, max_workers: int = M
 
     print(f"Finished processing all trajectories ({total_processed:,} total)")
 
-def transform_ls_stops_to_cs(connection: Connection, max_workers: int = MAX_WORKERS, batch_size: int = BATCH_SIZE):
+def transform_poly_stops_to_cs(connection: Connection, db_schema: str, max_workers: int = MAX_WORKERS, batch_size: int = BATCH_SIZE):
     print(f"--- Processing stops (using {max_workers} workers) ---")
     total_processed = 0
-    insert_query = """
-                   INSERT INTO prototype2.concave_stop_cs (stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21)
+    insert_stop_query = f"""
+                   INSERT INTO {db_schema}.stop_cs (stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21)
                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                    """
 
     with connection.cursor() as cur:
-        query = """
+        get_stops_query = f"""
                 SELECT stop_id, mmsi, ts_start, ts_end, ST_AsBinary(geom)
-                FROM prototype2.concave_stop_poly
+                FROM {db_schema}.stop_poly
                 ORDER BY stop_id;
                 """
 
-        for batch in get_batches(cur, query, batch_size):
+        for batch in get_batches(cur, get_stops_query, batch_size):
             with ProcessPoolExecutor(max_workers=max_workers) as executor:
                 futures: list[FutureResultStop] = [executor.submit(process_stop_row, row) for row in batch]
                 results: list[ProcessResultStop] = []
@@ -504,7 +483,7 @@ def transform_ls_stops_to_cs(connection: Connection, max_workers: int = MAX_WORK
                         print(f"Worker error: {e}")
 
             with connection.cursor() as insert_cur:
-                insert_cur.executemany(insert_query, [(stop_id, mmsi, start_time, end_time, cellstring_z13, cellstring_z17, cellstring_z21) for
+                insert_cur.executemany(insert_stop_query, [(stop_id, mmsi, start_time, end_time, cellstring_z13, cellstring_z17, cellstring_z21) for
                                                       (stop_id, mmsi, start_time, end_time, cellstring_z13, cellstring_z17, cellstring_z21) in results])
             connection.commit()
 
