@@ -1,0 +1,127 @@
+import time
+from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor, as_completed
+
+import duckdb
+from shapely import Point
+
+from construct_trajs_stops import (
+    BATCH_SIZE,
+    DictAISPointWKB,
+    FutureResult,
+    Traj,
+    Stop,
+    process_single_mmsi,
+)
+
+INSERT_TRAJ_SQL = """
+    INSERT INTO trajectory_ls (mmsi, ts_start, ts_end, geom)
+    VALUES (?, to_timestamp(?), to_timestamp(?), ST_GeomFromWKB(?))
+"""
+
+INSERT_STOP_SQL = """
+    INSERT INTO stop_poly (mmsi, ts_start, ts_end, geom)
+    VALUES (?, to_timestamp(?), to_timestamp(?), ST_GeomFromWKB(?))
+"""
+
+
+def get_mmsis_duckdb(conn: duckdb.DuckDBPyConnection) -> list[int]:
+    """Fetch MMSIs that still need processing, ordered by number of points (descending)."""
+    rows = conn.execute("""
+        SELECT p.mmsi, COUNT(*) AS num_points
+        FROM points p
+        WHERE p.mmsi NOT IN (
+            SELECT mmsi FROM stop_poly
+            UNION
+            SELECT mmsi FROM trajectory_ls
+        )
+        GROUP BY p.mmsi
+        ORDER BY num_points DESC;
+    """).fetchall()
+    return [mmsi for mmsi, _ in rows]
+
+
+def get_points_for_mmsis_in_batch_duckdb(conn: duckdb.DuckDBPyConnection, mmsis: list[int]) -> DictAISPointWKB:
+    """Fetch all points for multiple MMSIs, construct WKB PointZ (with Z=epoch_ts), grouped by MMSI."""
+    placeholders = ','.join(['?'] * len(mmsis))
+    rows = conn.execute(f"""
+        SELECT mmsi, lon, lat, sog, epoch_ts
+        FROM points
+        WHERE mmsi IN ({placeholders})
+        ORDER BY mmsi, epoch_ts;
+    """, mmsis).fetchall()
+
+    grouped: DictAISPointWKB = defaultdict(list)
+    for mmsi, lon, lat, sog, epoch_ts in rows:
+        if mmsi is None or lon is None or lat is None or epoch_ts is None:
+            continue
+        pt = Point(lon, lat, epoch_ts)
+        grouped[int(mmsi)].append((pt.wkb, float(sog) if sog is not None else None))
+    return grouped
+
+
+def construct_trajectories_and_stops_duckdb(conn: duckdb.DuckDBPyConnection, max_workers: int = 4, batch_size: int = BATCH_SIZE):
+    """Construct trajectories and stops for all MMSIs in DuckDB. Processes MMSIs in batches."""
+    all_mmsis = get_mmsis_duckdb(conn)
+
+    num_mmsis = len(all_mmsis)
+    if num_mmsis == 0:
+        print("No MMSIs to process.")
+        return
+
+    start_time = time.perf_counter()
+    print(f"Processing {num_mmsis} MMSIs in batches of {batch_size} MMSIs using {max_workers} workers.")
+
+    for batch_start in range(0, num_mmsis, batch_size):
+        mmsis_in_batch = all_mmsis[batch_start : batch_start + batch_size]
+        batch_num = batch_start // batch_size + 1
+        num_batches = (num_mmsis + batch_size - 1) // batch_size
+        batch_start_time = time.perf_counter()
+        print(f"\n--- Processing batch {batch_num} of {num_batches} ({len(mmsis_in_batch)} MMSIs: {mmsis_in_batch[0]} to {mmsis_in_batch[-1]}) ---")
+
+        # Retrieve points for all MMSIs in the batch
+        print(f"Fetching points for MMSIs in batch {batch_num}...")
+        points = get_points_for_mmsis_in_batch_duckdb(conn, mmsis_in_batch)
+        print(f"{sum(len(pts) for pts in points.values()):,} points fetched.")
+
+        trajs_to_insert: list[Traj] = []
+        stops_to_insert: list[Stop] = []
+
+        # Parallel processing of the batch of MMSIs
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures: dict[FutureResult, int] = {
+                executor.submit(process_single_mmsi, mmsi, points[mmsi]): mmsi
+                for mmsi in mmsis_in_batch
+            }
+
+            for future in as_completed(futures):
+                mmsi = futures[future]
+                try:
+                    (mmsi, trajs, stops) = future.result()
+                    trajs_to_insert.extend(trajs)
+                    stops_to_insert.extend(stops)
+                except Exception as e:
+                    print(f"Error processing MMSI {mmsi}: {e}")
+                    continue
+
+        # Batch insert trajectories and stops
+        if trajs_to_insert:
+            conn.executemany(
+                INSERT_TRAJ_SQL,
+                [(mmsi, ts_start, ts_end, geom.wkb) for (mmsi, ts_start, ts_end, geom) in trajs_to_insert]
+            )
+
+        if stops_to_insert:
+            conn.executemany(
+                INSERT_STOP_SQL,
+                [(mmsi, ts_start, ts_end, geom.wkb) for (mmsi, ts_start, ts_end, geom) in stops_to_insert]
+            )
+
+        print(f"Batch {batch_num} inserted: {len(trajs_to_insert)} trajectories, {len(stops_to_insert)} stops.")
+        elapsed_time = time.perf_counter() - start_time
+        batch_time = time.perf_counter() - batch_start_time
+        print(f"Progress: {batch_num/num_batches*100:.2f}% | Elapsed time: {elapsed_time:.2f}s | Batch time: {batch_time:.2f}s | Avg per MMSI: {batch_time/len(mmsis_in_batch):.2f}s")
+
+    total_time = time.perf_counter() - start_time
+    print(f"\nAll MMSIs processed.")
+    print(f"Total time: {total_time/60:.2f} min | Avg per MMSI: {total_time/num_mmsis:.2f}s")
