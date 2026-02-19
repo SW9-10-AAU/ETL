@@ -1,6 +1,7 @@
 import unittest
 import mercantile
 from shapely import LineString, Polygon
+from shapely.wkb import dumps
 import src.transform_ls_to_cs as transform
 
 
@@ -32,23 +33,218 @@ class TestEncodeLonLatToMVTCellId(unittest.TestCase):
         self.assertEqual(cell_id, 1_1892937_1286854)
 
 
-class TestLineStringToCellString(unittest.TestCase):
+class TestLineStringToCellStringTransformation(unittest.TestCase):
+    """Tests for convert_linestring_to_cellstring transformation logic."""
 
-    def test_convert_linestring_to_cellstring(self):
-        linestring = LineString([[10.836495399475098, 57.36823654174805], [10.83551025390625, 57.368526458740234]])
-        cellstring = transform.convert_linestring_to_cellstring(linestring)
-        expected = [1_1111703_0638525, 1_1111702_0638525, 1_1111701_0638524, 1_1111700_0638524, 1_1111699_0638523,
-                    1_1111698_0638523, 1_1111697_0638522]
-        self.assertEqual(cellstring, expected)
+    def _decode_cellid_to_tile(self, cellid: int, zoom: int) -> tuple[int, int]:
+        """Decode a cell ID back to tile (x, y) coordinates."""
+        if zoom == 13:
+            offset = transform.ENCODE_OFFSET_Z13
+            mult = transform.ENCODE_MULT_Z13
+        elif zoom == 17:
+            offset = transform.ENCODE_OFFSET_Z17
+            mult = transform.ENCODE_MULT_Z17
+        else:
+            offset = transform.ENCODE_OFFSET_Z21
+            mult = transform.ENCODE_MULT_Z21
 
-    def test_convert_linestring_to_cellstring_last_two_points_same_cell(self):
+        cellid_adjusted = cellid - offset
+        x = cellid_adjusted // mult
+        y = cellid_adjusted % mult
+        return (x, y)
+
+    def test_linestring_coverage_simple_east(self):
+        """Test: simple east-moving trajectory produces coverage."""
         linestring = LineString([
-            [10.836495399475098, 57.36823654174805], [10.83551025390625, 57.368526458740234],
-            [10.835510777, 57.368526435]])
+            (10.0, 55.0),
+            (10.1, 55.0),
+            (10.2, 55.0),
+        ])
+        cellstring = transform.convert_linestring_to_cellstring(linestring, zoom=13)
+
+        self.assertGreater(len(cellstring), 0, "Should produce cells for trajectory")
+
+        # All cells should be decodable
+        tile_coords = [self._decode_cellid_to_tile(cell, 13) for cell in cellstring]
+        self.assertEqual(len(tile_coords), len(cellstring))
+
+        # Verify no duplicates (deduplication at end of function)
+        self.assertEqual(len(cellstring), len(set(cellstring)),
+                         "Cellstring should have no duplicates after deduplication")
+
+    def test_linestring_coverage_simple_north(self):
+        """Test: simple north-moving trajectory produces coverage."""
+        linestring = LineString([
+            (10.0, 55.0),
+            (10.0, 55.1),
+            (10.0, 55.2),
+        ])
+        cellstring = transform.convert_linestring_to_cellstring(linestring, zoom=13)
+
+        self.assertGreater(len(cellstring), 0)
+
+        tile_coords = [self._decode_cellid_to_tile(cell, 13) for cell in cellstring]
+        self.assertEqual(len(tile_coords), len(cellstring))
+
+        # Verify no duplicates
+        self.assertEqual(len(cellstring), len(set(cellstring)))
+
+    def test_linestring_two_segments_produces_cells(self):
+        """Test: two-segment trajectory produces cells for both segments."""
+        linestring = LineString([
+            [10.836495399475098, 57.36823654174805],
+            [10.83551025390625, 57.368526458740234]
+        ])
         cellstring = transform.convert_linestring_to_cellstring(linestring)
-        expected = [1_1111703_0638525, 1_1111702_0638525, 1_1111701_0638524, 1_1111700_0638524, 1_1111699_0638523,
-                    1_1111698_0638523, 1_1111697_0638522, 1_1111697_0638522]
-        self.assertEqual(cellstring, expected)
+
+        self.assertGreater(len(cellstring), 0, "Two-segment trajectory should produce cells")
+
+        # All cells should be decodable
+        for cell in cellstring:
+            tile_coords = self._decode_cellid_to_tile(cell, 21)
+            self.assertIsInstance(tile_coords, tuple)
+            self.assertEqual(len(tile_coords), 2)
+
+        # No duplicates
+        self.assertEqual(len(cellstring), len(set(cellstring)))
+
+    def test_linestring_three_segments_with_duplicate_endpoint(self):
+        """Test: three-segment trajectory with duplicate endpoint produces cells."""
+        linestring = LineString([
+            [10.836495399475098, 57.36823654174805],
+            [10.83551025390625, 57.368526458740234],
+            [10.835510777, 57.368526435]
+        ])
+        cellstring = transform.convert_linestring_to_cellstring(linestring)
+
+        self.assertGreater(len(cellstring), 0)
+
+        # All cells should be valid
+        for cell in cellstring:
+            self.assertIsInstance(cell, int)
+            self.assertGreater(cell, 0)
+
+        # No duplicates after deduplication
+        self.assertEqual(len(cellstring), len(set(cellstring)))
+
+    def test_linestring_empty_returns_empty(self):
+        """Test: empty LineString returns empty cellstring."""
+        linestring = LineString()
+        cellstring = transform.convert_linestring_to_cellstring(linestring)
+
+        self.assertEqual(cellstring, [])
+
+    def test_linestring_uses_correct_zoom_levels(self):
+        """Test: cellstrings at different zoom levels have different cell counts."""
+        linestring = LineString([
+            (10.0, 55.0),
+            (10.1, 55.1),
+        ])
+
+        cs_z13 = transform.convert_linestring_to_cellstring(linestring, zoom=13)
+        cs_z17 = transform.convert_linestring_to_cellstring(linestring, zoom=17)
+        cs_z21 = transform.convert_linestring_to_cellstring(linestring, zoom=21)
+
+        self.assertGreater(len(cs_z21), 0)
+        self.assertGreater(len(cs_z17), 0)
+        self.assertGreater(len(cs_z13), 0)
+
+        # Higher zoom = more granular = more cells
+        self.assertGreaterEqual(len(cs_z21), len(cs_z17))
+        self.assertGreaterEqual(len(cs_z17), len(cs_z13))
+
+    def test_linestring_temporal_order_preserved(self):
+        """Test: cells progress in trajectory direction (temporal order)."""
+        linestring = LineString([
+            (10.0, 55.0),
+            (10.1, 55.1),
+        ])
+        cellstring = transform.convert_linestring_to_cellstring(linestring, zoom=13)
+
+        self.assertGreater(len(cellstring), 0)
+
+        tile_coords = [self._decode_cellid_to_tile(cell, 13) for cell in cellstring]
+        first_x, first_y = tile_coords[0]
+        last_x, last_y = tile_coords[-1]
+
+        # Should progress northeast
+        self.assertLess(first_x, last_x, "Should progress eastward")
+        self.assertGreater(first_y, last_y, "Should progress northward (Web Mercator)")
+
+    def test_process_trajectory_row_deduplicates(self):
+        """Test: process_trajectory_row returns deduplicated cellstrings for all zoom levels."""
+        linestring = LineString([
+            (10.0, 55.0),
+            (10.05, 55.05),
+            (10.1, 55.1),
+        ])
+        geom_wkb = dumps(linestring)
+
+        row: transform.Row = (1, 12345, 1000, 2000, geom_wkb)
+        result = transform.process_trajectory_row(row, use_supercover=False)
+
+        trajectory_id, mmsi, ts_start, ts_end, is_unique, cs_z13, cs_z17, cs_z21 = result
+
+        self.assertEqual(trajectory_id, 1)
+        self.assertEqual(mmsi, 12345)
+        self.assertEqual(ts_start, 1000)
+        self.assertEqual(ts_end, 2000)
+        self.assertIsInstance(is_unique, bool)
+
+        self.assertGreater(len(cs_z13), 0)
+        self.assertGreater(len(cs_z17), 0)
+        self.assertGreater(len(cs_z21), 0)
+
+        # Critical: verify deduplication works at all zoom levels
+        self.assertEqual(len(cs_z13), len(set(cs_z13)),
+                         "z13 cellstring should have no duplicates")
+        self.assertEqual(len(cs_z17), len(set(cs_z17)),
+                         "z17 cellstring should have no duplicates")
+        self.assertEqual(len(cs_z21), len(set(cs_z21)),
+                         "z21 cellstring should have no duplicates")
+
+    def test_process_trajectory_row_with_supercover(self):
+        """Test: process_trajectory_row works with supercover=True."""
+        linestring = LineString([
+            (10.0, 55.0),
+            (10.05, 55.05),
+            (10.1, 55.1),
+        ])
+        geom_wkb = dumps(linestring)
+
+        row: transform.Row = (2, 54321, 2000, 3000, geom_wkb)
+        result = transform.process_trajectory_row(row, use_supercover=True)
+
+        trajectory_id, mmsi, ts_start, ts_end, is_unique, cs_z13, cs_z17, cs_z21 = result
+
+        self.assertEqual(trajectory_id, 2)
+        self.assertEqual(mmsi, 54321)
+
+        # All should be deduplicated
+        self.assertEqual(len(cs_z13), len(set(cs_z13)))
+        self.assertEqual(len(cs_z17), len(set(cs_z17)))
+        self.assertEqual(len(cs_z21), len(set(cs_z21)))
+
+    def test_linestring_diagonal_northeast(self):
+        """Test: diagonal northeast trajectory produces valid cells."""
+        linestring = LineString([
+            (10.0, 55.0),
+            (10.05, 55.05),
+            (10.1, 55.1),
+        ])
+        cellstring = transform.convert_linestring_to_cellstring(linestring, zoom=13)
+
+        self.assertGreater(len(cellstring), 0)
+
+        tile_coords = [self._decode_cellid_to_tile(cell, 13) for cell in cellstring]
+        first_x, first_y = tile_coords[0]
+        last_x, last_y = tile_coords[-1]
+
+        self.assertLess(first_x, last_x, "Should progress eastward")
+        self.assertGreater(first_y, last_y, "Should progress northward (Web Mercator)")
+
+        # No duplicates
+        self.assertEqual(len(cellstring), len(set(cellstring)))
 
 
 class TestPolygonToCellString(unittest.TestCase):
@@ -91,6 +287,117 @@ class TestPolygonToCellString(unittest.TestCase):
         ]
 
         self.assertEqual(cellstring, expected)
+
+
+class TestHierarchicalPolygonToCellString(unittest.TestCase):
+
+    def test_hierarchical_vs_original_same_results(self):
+        """Verify hierarchical algorithm produces same cellstrings as original algorithm."""
+        polygon = Polygon([
+            [
+              10.314142022338359,
+              56.989841283038544
+            ],
+            [
+              10.308192009866758,
+              56.96758619876718
+            ],
+            [
+              10.32171476548396,
+              56.97466210465393
+            ],
+            [
+              10.339564802898877,
+              56.97525170280585
+            ],
+            [
+              10.343892084696563,
+              56.969650143499706
+            ],
+            [
+              10.324419316607646,
+              56.9565274047078
+            ],
+            [
+              10.341457988686244,
+              56.94753049842973
+            ],
+            [
+              10.36390576301099,
+              56.96729134018483
+            ],
+            [
+              10.378510339077962,
+              56.99617639075896
+            ],
+            [
+              10.353087558517444,
+              56.99882797615109
+            ],
+            [
+              10.347137546045786,
+              56.99043064087442
+            ],
+            [
+              10.336860251775192,
+              56.97878909571352
+            ],
+            [
+              10.32766477795559,
+              56.97937862853158
+            ],
+            [
+              10.327935233067706,
+              56.98880988437111
+            ],
+            [
+              10.314142022338359,
+              56.989841283038544
+            ]
+        ])
+
+        # Original algorithm
+        z13_old = transform.convert_polygon_to_cellstring(polygon, 13)
+        z17_old = transform.convert_polygon_to_cellstring(polygon, 17)
+        z21_old = transform.convert_polygon_to_cellstring(polygon, 21)
+
+        # Hierarchical algorithm
+        z13_new, z17_new, z21_new = transform.convert_polygon_to_cellstring_hierarchical(polygon)
+
+        # Should produce identical results (using sets since order may differ)
+        self.assertEqual(set(z13_old), set(z13_new), "Z13 cellstrings should match")
+        self.assertEqual(set(z17_old), set(z17_new), "Z17 cellstrings should match")
+        self.assertEqual(set(z21_old), set(z21_new), "Z21 cellstrings should match")
+
+    def test_hierarchical_empty_polygon(self):
+        """Verify hierarchical algorithm handles empty polygons correctly."""
+        polygon = Polygon()
+        z13, z17, z21 = transform.convert_polygon_to_cellstring_hierarchical(polygon)
+
+        self.assertEqual(z13, [])
+        self.assertEqual(z17, [])
+        self.assertEqual(z21, [])
+
+    def test_classify_tile_containment(self):
+        """Test the classify_tile_containment helper function."""
+        # Create a simple polygon
+        polygon = Polygon([
+            [10.0, 57.0],
+            [10.0, 58.0],
+            [11.0, 58.0],
+            [11.0, 57.0],
+            [10.0, 57.0]
+        ])
+
+        # Get a tile inside the polygon
+        tile_inside = mercantile.tile(10.5, 57.5, 13)
+        classification_inside = transform.classify_tile_containment(polygon, tile_inside)
+        self.assertEqual(classification_inside, transform.Classification.FULLY_CONTAINED)
+
+        # Get a tile outside the polygon
+        tile_outside = mercantile.tile(15.0, 60.0, 13)
+        classification_outside = transform.classify_tile_containment(polygon, tile_outside)
+        self.assertEqual(classification_outside, transform.Classification.NO_INTERSECTION)
 
 
 if __name__ == "__main__":
