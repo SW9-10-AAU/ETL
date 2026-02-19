@@ -299,24 +299,7 @@ def get_all_children_at_zoom(tile: mercantile.Tile, target_zoom: int) -> list[me
     return all_descendants
 
 
-def convert_polygon_to_cellstring_hierarchical(poly: Polygon | MultiPolygon) -> tuple[list[int], list[int], list[int]]:
-    """
-    Convert polygon to cellstrings at Z13, Z17, and Z21 using hierarchical subdivision.
-
-    This algorithm optimizes polygon-to-cellstring conversion by leveraging the tile hierarchy:
-    - Tiles fully contained at a coarse zoom level have all their children included at finer levels
-    - Only tiles partially intersecting the polygon boundary require testing at finer levels
-
-    Args:
-        poly: A Shapely Polygon or MultiPolygon to convert
-
-    Returns:
-        Tuple of (cellstring_z13, cellstring_z17, cellstring_z21)
-    """
-    if poly.is_empty:
-        return ([], [], [])
-
-    # --- Phase 1: Z13 Processing (Base Level) ---
+def process_z13_tiles(poly: Polygon | MultiPolygon) -> tuple[list[int], list[mercantile.Tile], list[mercantile.Tile]]:
     minx, miny, maxx, maxy = poly.bounds
     z13_tiles = mercantile.tiles(minx, miny, maxx, maxy, 13)
 
@@ -331,24 +314,28 @@ def convert_polygon_to_cellstring_hierarchical(poly: Polygon | MultiPolygon) -> 
             fully_contained_z13.append(tile)
         elif classification == Classification.PARTIALLY_CONTAINED:
             partially_contained_z13.append(tile)
-        
+
         cellstring_z13.append(encode_tile_xy_to_cellid(tile.x, tile.y, 13))
 
     print(f"Z13: {len(fully_contained_z13)} fully contained tiles, {len(partially_contained_z13)} partially contained tiles, total {len(cellstring_z13)} tiles")
-    
-    # --- Phase 2: Z17 Processing (Hierarchical Subdivision) ---
+    return cellstring_z13, fully_contained_z13, partially_contained_z13
+
+
+def process_z17_tiles(
+    poly: Polygon | MultiPolygon,
+    fully_contained_z13: list[mercantile.Tile],
+    partially_contained_z13: list[mercantile.Tile],
+) -> tuple[list[int], list[mercantile.Tile], list[mercantile.Tile]]:
     cellstring_z17: list[int] = []
     fully_contained_z17: list[mercantile.Tile] = []
     partially_contained_z17: list[mercantile.Tile] = []
 
-    # Process fully-contained Z13 tiles
     for tile in fully_contained_z13:
         children_z17 = get_all_children_at_zoom(tile, 17)
         for child in children_z17:
             cellstring_z17.append(encode_tile_xy_to_cellid(child.x, child.y, 17))
             fully_contained_z17.append(child)
 
-    # Process partially-contained Z13 tiles
     for tile in partially_contained_z13:
         children_z17 = get_all_children_at_zoom(tile, 17)
         for child in children_z17:
@@ -362,17 +349,21 @@ def convert_polygon_to_cellstring_hierarchical(poly: Polygon | MultiPolygon) -> 
                 partially_contained_z17.append(child)
 
     print(f"Z17: {len(fully_contained_z17)} fully contained tiles, {len(partially_contained_z17)} partially contained tiles, total {len(cellstring_z17)} tiles")
+    return cellstring_z17, fully_contained_z17, partially_contained_z17
 
-    # --- Phase 3: Z21 Processing (Final Subdivision) ---
+
+def process_z21_tiles(
+    poly: Polygon | MultiPolygon,
+    fully_contained_z17: list[mercantile.Tile],
+    partially_contained_z17: list[mercantile.Tile],
+) -> list[int]:
     cellstring_z21: list[int] = []
 
-    # Process fully-contained Z17 tiles
     for tile in fully_contained_z17:
         children_z21 = get_all_children_at_zoom(tile, 21)
         for child in children_z21:
             cellstring_z21.append(encode_tile_xy_to_cellid(child.x, child.y, 21))
 
-    # Process partially-contained Z17 tiles
     for tile in partially_contained_z17:
         children_z21 = get_all_children_at_zoom(tile, 21)
         for child in children_z21:
@@ -382,6 +373,25 @@ def convert_polygon_to_cellstring_hierarchical(poly: Polygon | MultiPolygon) -> 
                 cellstring_z21.append(encode_tile_xy_to_cellid(child.x, child.y, 21))
 
     print(f"Z21: Total {len(cellstring_z21)} tiles")
+    return cellstring_z21
+
+
+def convert_polygon_to_cellstring_hierarchical(poly: Polygon | MultiPolygon) -> tuple[list[int], list[int], list[int]]:
+    """
+    Convert polygon to cellstrings at Z13, Z17, and Z21.
+
+    Args:
+        poly: A Shapely Polygon or MultiPolygon to convert
+
+    Returns:
+        Tuple of (cellstring_z13, cellstring_z17, cellstring_z21)
+    """
+    if poly.is_empty:
+        return ([], [], [])
+
+    cellstring_z13, fully_contained_z13, partially_contained_z13 = process_z13_tiles(poly)
+    cellstring_z17, fully_contained_z17, partially_contained_z17 = process_z17_tiles(poly, fully_contained_z13, partially_contained_z13)
+    cellstring_z21 = process_z21_tiles(poly, fully_contained_z17, partially_contained_z17)
 
     return (cellstring_z13, cellstring_z17, cellstring_z21)
 
