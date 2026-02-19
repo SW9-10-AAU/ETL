@@ -328,12 +328,11 @@ def convert_polygon_to_cellstring_hierarchical(poly: Polygon | MultiPolygon) -> 
         classification = classify_tile_containment(poly, tile)
 
         if classification == Classification.FULLY_CONTAINED:
-            cellstring_z13.append(encode_tile_xy_to_cellid(tile.x, tile.y, 13))
             fully_contained_z13.append(tile)
         elif classification == Classification.PARTIALLY_CONTAINED:
-            cellstring_z13.append(encode_tile_xy_to_cellid(tile.x, tile.y, 13))
             partially_contained_z13.append(tile)
-        # no_intersection tiles are skipped
+        
+        cellstring_z13.append(encode_tile_xy_to_cellid(tile.x, tile.y, 13))
 
     print(f"Z13: {len(fully_contained_z13)} fully contained tiles, {len(partially_contained_z13)} partially contained tiles, total {len(cellstring_z13)} tiles")
     
