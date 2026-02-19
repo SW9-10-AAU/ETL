@@ -4,7 +4,7 @@ import time
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from typing import cast
 from psycopg import Connection, Cursor
-from shapely import Polygon, from_wkb, Point, LineString, MultiPoint
+from shapely import Polygon, from_wkb, Point, LineString, MultiPoint, concave_hull
 from geopy.distance import geodesic
 
 # Stops
@@ -194,7 +194,9 @@ def process_single_mmsi(mmsi: int, wkb_points: list[AISPointWKB]) -> ProcessResu
         
         if len(merged_stop) >= MIN_STOP_POINTS and stop_duration >= MIN_STOP_DURATION:
             geom_points = MultiPoint(merged_stop)
-            hull = geom_points.convex_hull 
+           # ratio controls how tight the hull is; tune as needed
+            hull = concave_hull(geom_points, ratio=0.2, allow_holes=False)
+            #hull = geom_points.convex_hull 
             envelope = geom_points.envelope
             
             # Use the envelope (MBR) if the convex hull is not Polygon
@@ -235,7 +237,7 @@ INSERT_TRAJ_SQL = """
 """
 
 INSERT_STOP_SQL = """
-    INSERT INTO prototype2.stop_poly (mmsi, ts_start, ts_end, geom)
+    INSERT INTO prototype2.concave_stop_poly (mmsi, ts_start, ts_end, geom)
     VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_GeomFromWKB(%s, 4326))
 """
 
@@ -373,9 +375,9 @@ def get_mmsis(cur: Cursor) -> list[int]:
         SELECT p.mmsi, COUNT(*) AS num_points
         FROM prototype2.points p
         WHERE p.mmsi NOT IN (
-            SELECT mmsi FROM prototype2.stop_poly
+            SELECT mmsi FROM prototype2.concave_stop_poly
             UNION
-            SELECT mmsi FROM prototype2.trajectory_ls
+            SELECT mmsi FROM prototype2.concave_trajectory_ls
         )
         GROUP BY p.mmsi
         ORDER BY num_points DESC;

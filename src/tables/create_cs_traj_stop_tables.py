@@ -6,7 +6,7 @@ def create_cs_traj_stop_tables(conn: Connection):
 
     # Trajectory table
     cur.execute("""
-            CREATE TABLE IF NOT EXISTS prototype2.trajectory_cs (
+            CREATE TABLE IF NOT EXISTS prototype2.concave_trajectory_cs (
                 trajectory_id BIGINT PRIMARY KEY,
                 mmsi          BIGINT                      NOT NULL,
                 ts_start      TIMESTAMP WITHOUT TIME ZONE NOT NULL,
@@ -20,32 +20,32 @@ def create_cs_traj_stop_tables(conn: Connection):
         """)
     cur.execute("""
             CREATE INDEX IF NOT EXISTS trajectory_mmsi_idx 
-            ON prototype2.trajectory_cs (mmsi);
+            ON prototype2.concave_trajectory_cs (mmsi);
         """)
     cur.execute("""
             CREATE INDEX IF NOT EXISTS trajectory_time_idx
-            ON prototype2.trajectory_cs (ts_start, ts_end);
+            ON prototype2.concave_trajectory_cs (ts_start, ts_end);
         """)
     cur.execute("""
             CREATE INDEX IF NOT EXISTS trajectory_cellstring_z13_gin_idx 
-            ON prototype2.trajectory_cs 
+            ON prototype2.concave_trajectory_cs 
             USING GIN (cellstring_z13 gin__int_ops);
         """)
     cur.execute("""
             CREATE INDEX IF NOT EXISTS trajectory_cellstring_z17_gin_idx 
-            ON prototype2.trajectory_cs 
+            ON prototype2.concave_trajectory_cs 
             USING GIN (cellstring_z17);
         """)
     cur.execute("""
             CREATE INDEX IF NOT EXISTS trajectory_cellstring_z21_gin_idx 
-            ON prototype2.trajectory_cs 
+            ON prototype2.concave_trajectory_cs 
             USING GIN (cellstring_z21);
         """)
     print("Created CS trajectory table if not exists")
 
     # Stop table
     cur.execute("""
-            CREATE TABLE IF NOT EXISTS prototype2.stop_cs
+            CREATE TABLE IF NOT EXISTS prototype2.concave_stop_cs
             (
                 stop_id     BIGINT PRIMARY KEY,
                 mmsi        BIGINT                      NOT NULL,
@@ -60,25 +60,25 @@ def create_cs_traj_stop_tables(conn: Connection):
         """)
     cur.execute("""
             CREATE INDEX IF NOT EXISTS stop_mmsi_idx
-            ON prototype2.stop_cs (mmsi);
+            ON prototype2.concave_stop_cs (mmsi);
         """)
     cur.execute("""
             CREATE INDEX IF NOT EXISTS stop_time_idx
-            ON prototype2.stop_cs (ts_start, ts_end);
+            ON prototype2.concave_stop_cs (ts_start, ts_end);
         """)
     cur.execute("""
             CREATE INDEX IF NOT EXISTS stop_cellstring_z13_gin_idx
-            ON prototype2.stop_cs
+            ON prototype2.concave_stop_cs
             USING GIN (cellstring_z13 gin__int_ops);
         """)
     cur.execute("""
             CREATE INDEX IF NOT EXISTS stop_cellstring_z17_gin_idx
-            ON prototype2.stop_cs
+            ON prototype2.concave_stop_cs
             USING GIN (cellstring_z17);
         """)
     cur.execute("""
             CREATE INDEX IF NOT EXISTS stop_cellstring_z21_gin_idx
-            ON prototype2.stop_cs
+            ON prototype2.concave_stop_cs
             USING GIN (cellstring_z21);
         """)
     print("Created CS stop table if not exists")

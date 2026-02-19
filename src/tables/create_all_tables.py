@@ -24,4 +24,5 @@ def create_all_tables(conn: Connection):
     #create_area_tables(conn)
     #create_crossing_tables(conn)
     
+    
     print("Created all tables and materialized views if not exist.")
