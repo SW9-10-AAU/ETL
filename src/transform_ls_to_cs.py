@@ -125,15 +125,15 @@ def find_noncontained_ls_segments(ls: LineString,tile_multipolygon: MultiPolygon
     # shrink the multipolygon slightly to avoid edge cases where the line just touches the tile boundary but isn't actually covered by it
     eps = 1e-9
     shrunk_poly = tile_multipolygon.buffer(-eps)
-    noncovered = ls.difference(shrunk_poly)
-    if noncovered.is_empty:
+    noncovered_segments = ls.difference(shrunk_poly)
+    if noncovered_segments.is_empty:
         return []
 
-    if isinstance(noncovered, LineString):
-        return [noncovered]
+    if isinstance(noncovered_segments, LineString):
+        return [noncovered_segments]
 
-    if isinstance(noncovered, MultiLineString):
-        return list(noncovered.geoms)
+    if isinstance(noncovered_segments, MultiLineString):
+        return list(noncovered_segments.geoms)
 
     return []
 
@@ -170,17 +170,17 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM, u
         # Create this segment's LineString and check coverage
         segment_ls = LineString([c0, c1])
         tile_multipolygon = create_cellstring_multipoly(tiles, zoom)
-        non_covere_ls_segments = find_noncontained_ls_segments(segment_ls, tile_multipolygon)
+        noncovered_ls_segments = find_noncontained_ls_segments(segment_ls, tile_multipolygon)
         
         # Iterative gap-filling for THIS segment only
         max_iterations = 10  # Safety limit
         iteration = 0
-        while non_covere_ls_segments and iteration < max_iterations:
+        while noncovered_ls_segments and iteration < max_iterations:
             iteration += 1
             if iteration == 10:
                 raise Exception(f"Exceeded max iterations for segment {i} - possible infinite loop in coverage filling")
             
-            for segment in non_covere_ls_segments:
+            for segment in noncovered_ls_segments:
                 seg_coords = list(segment.coords)
                 
                 for sc0, sc1 in zip(seg_coords[:-1], seg_coords[1:]):
@@ -205,7 +205,7 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM, u
             
             # Re-check coverage with updated tiles
             tile_multipolygon = create_cellstring_multipoly(tiles, zoom)
-            non_covere_ls_segments = find_noncontained_ls_segments(segment_ls, tile_multipolygon)
+            noncovered_ls_segments = find_noncontained_ls_segments(segment_ls, tile_multipolygon)
         
         # Convert segment tiles to cell IDs and append to cellstring
         for x, y in tiles:
