@@ -2,7 +2,7 @@ from shapely import LineString
 from core.ls_poly_to_cs import convert_linestring_to_cellstrings
 from db_setup.utils.db_utils import get_db_backend, get_db_path_or_url, get_db_schema
 
-#PostgreSQL implementation
+# PostgreSQL implementation
 def convert_crossing_linestring_to_cs_postgres(linestring: LineString, name: str):
     """
     Converts a LineString to a CellString and inserts both into PostGIS tables.

@@ -4,9 +4,9 @@ from pathlib import Path
 from shapely import MultiPolygon, Polygon
 from shapely.geometry import shape
 from db_setup.utils.db_utils import get_db_backend
-from utils.convert_area_polygon import convert_area_polygon_to_cs_duckdb, convert_area_polygon_to_cs_postgresql
+from convert_area_polygon import convert_area_polygon_to_cs_duckdb, convert_area_polygon_to_cs_postgresql
 
-def convert_area_geojson_to_cs(geojson_path: str, name: str):
+def convert_area_geojson_to_cs(geojson_path: str, name: str, skip_z21: bool = False):
     """
     Loads a GeoJSON file and converts its geometry to cellstrings.
 
@@ -51,13 +51,13 @@ def convert_area_geojson_to_cs(geojson_path: str, name: str):
         num_polygons = len(multiPolygon.geoms)
         total_points = sum(len(poly.exterior.coords) for poly in multiPolygon.geoms)
         print(f"MultiPolygon contains {num_polygons} polygon(s) with {total_points} total points")
-        if db_backend == 'postgresql': convert_area_polygon_to_cs_postgresql(multiPolygon, name)
-        elif db_backend == 'duckdb': convert_area_polygon_to_cs_duckdb(multiPolygon, name)
+        if db_backend == 'postgresql': convert_area_polygon_to_cs_postgresql(multiPolygon, name, skip_z21=skip_z21)
+        elif db_backend == 'duckdb': convert_area_polygon_to_cs_duckdb(multiPolygon, name, skip_z21=skip_z21)
     else:
         poly: Polygon = cast(Polygon, geometry)
         print(f"Polygon contains {len(poly.exterior.coords)} points")
-        if db_backend == 'postgresql': convert_area_polygon_to_cs_postgresql(poly, name)
-        elif db_backend == 'duckdb': convert_area_polygon_to_cs_duckdb(poly, name)
+        if db_backend == 'postgresql': convert_area_polygon_to_cs_postgresql(poly, name, skip_z21=skip_z21)
+        elif db_backend == 'duckdb': convert_area_polygon_to_cs_duckdb(poly, name, skip_z21=skip_z21)
 
 
 def main():
@@ -67,7 +67,7 @@ def main():
     geojson_path = './geojson/Denmark_EEZ_gml.geojson'
     name = "Denmark-EEZ"
 
-    convert_area_geojson_to_cs(geojson_path, name)
+    convert_area_geojson_to_cs(geojson_path, name, skip_z21=True)
 
 if __name__ == "__main__":
     main()

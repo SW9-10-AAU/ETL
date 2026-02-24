@@ -67,7 +67,7 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -
     deduplicated_cellstring = list(dict.fromkeys(cellstring))
     return deduplicated_cellstring
 
-def convert_polygon_to_cellstrings(poly: Polygon | MultiPolygon) -> tuple[list[int], list[int], list[int]]:
+def convert_polygon_to_cellstrings(poly: Polygon | MultiPolygon, skip_z21: bool = False) -> tuple[list[int], list[int], list[int]]:
     """
     Convert Polygon or MultiPolygon to CellStrings at z13, z17, and z21.
 
@@ -82,7 +82,7 @@ def convert_polygon_to_cellstrings(poly: Polygon | MultiPolygon) -> tuple[list[i
 
     cellstring_z13, fully_contained_z13, partially_contained_z13 = process_z13_tiles(poly)
     cellstring_z17, fully_contained_z17, partially_contained_z17 = process_z17_tiles(poly, fully_contained_z13, partially_contained_z13)
-    cellstring_z21 = process_z21_tiles(poly, fully_contained_z17, partially_contained_z17)
+    cellstring_z21 = [] if skip_z21 else process_z21_tiles(poly, fully_contained_z17, partially_contained_z17)
 
     return cellstring_z13, cellstring_z17, cellstring_z21
 
