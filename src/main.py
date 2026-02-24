@@ -14,23 +14,27 @@ def main():
 
 def main_duckdb():
     import duckdb
+    from db_setup.duckdb.drop_duckdb_tables import drop_duckdb_tables
     from db_setup.duckdb.create_duckdb_tables import create_duckdb_tables
-    from duckdb_construct_trajs_stops import construct_trajectories_and_stops_duckdb
+    from duckdb_construct_trajs_stops import construct_trajectories_and_stops
     from duckdb_transform_ls_to_cs import transform_ls_trajectories_to_cs, transform_poly_stops_to_cs
 
     db_path = get_db_path_or_url('duckdb')
     db_schema = get_db_schema('duckdb')
     connection = duckdb.connect(database=db_path)
 
+    # Drop tables
+    drop_duckdb_tables(connection, db_schema)
+
     # Create tables 
     create_duckdb_tables(connection, db_schema)
 
     # Construct LineString trajectories and Polygon stops from the Points table
-    construct_trajectories_and_stops_duckdb(connection, min(os.cpu_count() or 4, 12))
+    construct_trajectories_and_stops(connection, db_schema, min(os.cpu_count() or 4, 12))
 
     # Transform LineString trajectories and Polygon stops to CellStrings
-    transform_ls_trajectories_to_cs(connection, min(os.cpu_count() or 4, 12), batch_size=100)
-    transform_poly_stops_to_cs(connection, min(os.cpu_count() or 4, 12), batch_size=100)
+    transform_ls_trajectories_to_cs(connection, db_schema, min(os.cpu_count() or 4, 12), batch_size=100)
+    transform_poly_stops_to_cs(connection, db_schema, min(os.cpu_count() or 4, 12), batch_size=100)
 
     connection.close()
 
