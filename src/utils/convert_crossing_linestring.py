@@ -1,22 +1,24 @@
 from shapely import LineString
 from core.ls_poly_to_cs import convert_linestring_to_cellstrings
-from db_setup.utils.connect import connect_to_postgres_db
-from db_setup.utils.db_utils import get_db_backend, get_db_path, get_db_schema
+from db_setup.utils.db_utils import get_db_backend, get_db_path_or_url, get_db_schema
 
-#postgresql implementation
+#PostgreSQL implementation
 def convert_crossing_linestring_to_cs_postgres(linestring: LineString, name: str):
     """
     Converts a LineString to a CellString and inserts both into PostGIS tables.
     """
+    from db_setup.utils.connect import connect_to_postgres_db
+    from psycopg import sql
+    
     conn = connect_to_postgres_db()
     cur = conn.cursor()
     db_schema = get_db_schema("postgresql")
     
     # Insert crossing as linestring into table
-    cur.execute(f"""
+    cur.execute(sql.SQL("""
             INSERT INTO {db_schema}.crossing_ls (name, geom)
             VALUES (%s, ST_GeomFromWKB(%s, 4326))
-        """, (name, linestring.wkb))    
+        """).format(db_schema=sql.Identifier(db_schema)), (name, linestring.wkb))    
     conn.commit()
     print("Inserted crossing linestring into PostGIS table")
     
@@ -25,10 +27,10 @@ def convert_crossing_linestring_to_cs_postgres(linestring: LineString, name: str
     cellstring_z13, cellstring_z17, cellstring_z21 = convert_linestring_to_cellstrings(linestring)
     print(f"Conversion succeeded with {len(cellstring_z13)} cells (zoom 13), {len(cellstring_z17)} cells (zoom 17), and {len(cellstring_z21)} cells (zoom 21).")
     
-    cur.execute(f"""
+    cur.execute(sql.SQL("""
             INSERT INTO {db_schema}.crossing_cs (name, cellstring_z13, cellstring_z17, cellstring_z21)
             VALUES (%s, %s, %s, %s)
-        """, (name, cellstring_z13, cellstring_z17, cellstring_z21))
+        """).format(db_schema=sql.Identifier(db_schema)), (name, cellstring_z13, cellstring_z17, cellstring_z21))
     print("Inserted crossing cellstrings into PostGIS table")
     conn.commit()
     cur.close()
@@ -43,7 +45,7 @@ def convert_crossing_linestring_to_cs_duckdb(linestring: LineString, name: str):
     import duckdb
 
     db_schema = get_db_schema("duckdb")
-    db_path = get_db_path("duckdb")
+    db_path = get_db_path_or_url("duckdb")
     conn = duckdb.connect(db_path)
 
     # Insert crossing as linestring into table

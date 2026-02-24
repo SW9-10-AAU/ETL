@@ -1,7 +1,6 @@
 import duckdb
-
 from db_setup.duckdb.create_duckdb_points import create_duckdb_points
-#TODO area poly and cs tables and crossings tables
+
 def create_duckdb_tables(conn: duckdb.DuckDBPyConnection, db_schema: str):
     conn.execute("INSTALL spatial; LOAD spatial;")
 
@@ -39,7 +38,7 @@ def create_duckdb_tables(conn: duckdb.DuckDBPyConnection, db_schema: str):
     # trajectory_cs
     conn.execute(f"""
         CREATE TABLE IF NOT EXISTS {db_schema}.trajectory_cs (
-            trajectory_id BIGINT PRIMARY KEY,
+            trajectory_id INTEGER PRIMARY KEY,
             mmsi          BIGINT NOT NULL,
             ts_start      TIMESTAMP NOT NULL,
             ts_end        TIMESTAMP NOT NULL,
@@ -52,7 +51,7 @@ def create_duckdb_tables(conn: duckdb.DuckDBPyConnection, db_schema: str):
     # stop_cs
     conn.execute(f"""
         CREATE TABLE IF NOT EXISTS {db_schema}.stop_cs (
-            stop_id    BIGINT PRIMARY KEY,
+            stop_id    INTEGER PRIMARY KEY,
             mmsi       BIGINT NOT NULL,
             ts_start   TIMESTAMP NOT NULL,
             ts_end     TIMESTAMP NOT NULL,

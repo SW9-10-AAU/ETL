@@ -1,16 +1,17 @@
-from psycopg import Connection
-from create_crossing_tables import create_crossing_tables
-from create_ls_traj_stop_tables import create_ls_traj_stop_tables
-from create_cs_traj_stop_tables import create_cs_traj_stop_tables
-from mat_points_view import mat_points_view
-from create_area_tables import create_area_tables
+from psycopg import Connection, sql
+from db_setup.postgresql.create_area_tables import create_area_tables
+from db_setup.postgresql.create_crossing_tables import create_crossing_tables
+from db_setup.postgresql.create_cs_traj_stop_tables import create_cs_traj_stop_tables
+from db_setup.postgresql.create_ls_traj_stop_tables import create_ls_traj_stop_tables
+from db_setup.postgresql.mat_points_view import mat_points_view
 
 def create_postgresql_tables(conn: Connection, db_schema: str):
-    cur = conn.cursor()
     
     # Create DB schema
-    cur.execute(f"""CREATE SCHEMA IF NOT EXISTS {db_schema};""")
-    
+    cur = conn.cursor()
+    cur.execute(sql.SQL("""CREATE SCHEMA IF NOT EXISTS {db_schema};""").format(db_schema=sql.Identifier(db_schema)))
+    conn.commit()
+    cur.close()
     print(f"Ensured database schema {db_schema} exists.")
     
     # Create Point Materialized View

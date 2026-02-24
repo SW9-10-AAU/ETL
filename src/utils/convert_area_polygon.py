@@ -1,10 +1,9 @@
 from shapely import Polygon, MultiPolygon
-from db_setup.utils.db_utils import get_db_backend, get_db_path, get_db_schema
+from db_setup.utils.db_utils import get_db_backend, get_db_path_or_url, get_db_schema
 from core.ls_poly_to_cs import convert_polygon_to_cellstrings
 
-## postresql implementation
+# PostgreSQL implementation
 def convert_area_polygon_to_cs_postgresql(polygon: Polygon | MultiPolygon, name: str):
-    from db_setup.utils.connect import connect_to_db
     """
     Converts a Polygon or MultiPolygon to CellStrings and inserts both into PostGIS tables.
 
@@ -12,15 +11,18 @@ def convert_area_polygon_to_cs_postgresql(polygon: Polygon | MultiPolygon, name:
         polygon: A Shapely Polygon or MultiPolygon representing the area
         name: A unique identifier for this area
     """
-    conn = connect_to_db()
+    from db_setup.utils.connect import connect_to_postgres_db
+    from psycopg import sql
+    
+    conn = connect_to_postgres_db()
     cur = conn.cursor()
     db_schema = get_db_schema("postgresql")
 
     # Insert area as polygon into table
-    cur.execute(f"""
+    cur.execute(sql.SQL("""
             INSERT INTO {db_schema}.area_poly (name, geom)
             VALUES (%s, ST_GeomFromWKB(%s, 4326))
-        """, (name, polygon.wkb))    
+        """).format(db_schema=sql.Identifier(db_schema)), (name, polygon.wkb))    
     conn.commit()
     print("Inserted area polygon into PostGIS table")
     
@@ -29,17 +31,17 @@ def convert_area_polygon_to_cs_postgresql(polygon: Polygon | MultiPolygon, name:
     cellstring_z13, cellstring_z17, cellstring_z21 = convert_polygon_to_cellstrings(polygon)
     print(f"Conversion succeeded with {len(cellstring_z13)} cells (zoom 13), {len(cellstring_z17)} cells (zoom 17), and {len(cellstring_z21)} cells (zoom 21).")
     
-    cur.execute(f"""
+    cur.execute(sql.SQL("""
             INSERT INTO {db_schema}.area_cs (name, cellstring_z13, cellstring_z17, cellstring_z21)
             VALUES (%s, %s, %s, %s)
-        """, (name, cellstring_z13, cellstring_z17, cellstring_z21))
+        """).format(db_schema=sql.Identifier(db_schema)), (name, cellstring_z13, cellstring_z17, cellstring_z21))
     print("Inserted area cellstrings into PostGIS table")
     conn.commit()
     cur.close()
 
     print(f"Area ({name}) uploaded to {db_schema} schema in database")
 
-## duckdb implementation
+# DuckDB implementation
 def convert_area_polygon_to_cs_duckdb(polygon: Polygon | MultiPolygon, name: str):
     """
     Converts a Polygon or MultiPolygon to CellStrings and inserts both into DuckDB tables.
@@ -52,7 +54,7 @@ def convert_area_polygon_to_cs_duckdb(polygon: Polygon | MultiPolygon, name: str
     import duckdb
 
     db_schema = get_db_schema("duckdb")
-    duckdb_path = get_db_path("duckdb")
+    duckdb_path = get_db_path_or_url("duckdb")
     conn = duckdb.connect(duckdb_path)
 
     # Insert area polygon as WKB blob

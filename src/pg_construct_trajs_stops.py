@@ -2,6 +2,8 @@ from collections import defaultdict
 import time
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from psycopg import Connection, Cursor
+from psycopg import sql
+from psycopg.sql import SQL
 from core.points_to_ls_poly import AISPointRow, DictAISPointWKB, ProcessResult, Stop, Traj, process_single_mmsi
 
 BATCH_SIZE = 50 # Number of MMSIs to process in parallel
@@ -10,18 +12,18 @@ FutureResult = Future[ProcessResult] # Future returning ProcessResult
 def construct_trajectories_and_stops(conn: Connection, db_schema: str, max_workers: int = 4, batch_size: int = BATCH_SIZE):
     """Construct trajectories and stops for all MMSIs in the database. Processes MMSIs in batches."""
     cur = conn.cursor()
-    all_mmsis = get_mmsis(cur)
+    all_mmsis = get_mmsis(cur, db_schema)
     cur.close()
     
-    INSERT_TRAJ_SQL = f"""
-        INSERT INTO {db_schema}.trajectory_ls (mmsi, ts_start, ts_end, geom)
-        VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_Force2D(ST_GeomFromWKB(%s, 4326)))
-    """
+    insert_traj_query = sql.SQL("""
+            INSERT INTO {db_schema}.trajectory_ls (mmsi, ts_start, ts_end, geom)
+            VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_Force2D(ST_GeomFromWKB(%s, 4326)))
+        """).format(db_schema=sql.Identifier(db_schema))
 
-    INSERT_STOP_SQL = f"""
-        INSERT INTO {db_schema}.stop_poly (mmsi, ts_start, ts_end, geom)
-        VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_GeomFromWKB(%s, 4326))
-    """
+    insert_stop_query = sql.SQL("""
+            INSERT INTO {db_schema}.stop_poly (mmsi, ts_start, ts_end, geom)
+            VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_GeomFromWKB(%s, 4326))
+        """).format(db_schema=sql.Identifier(db_schema))
 
     num_mmsis = len(all_mmsis)
     if num_mmsis == 0:
@@ -42,7 +44,7 @@ def construct_trajectories_and_stops(conn: Connection, db_schema: str, max_worke
             
             # Retrieve points for all MMSIs in the batch
             print(f"Fetching points for MMSIs in batch {batch_num}...")
-            points: DictAISPointWKB = get_points_for_mmsis_in_batch(read_cur, mmsis_in_batch)
+            points: DictAISPointWKB = get_points_for_mmsis_in_batch(read_cur, db_schema, mmsis_in_batch)
             print(f"{sum(len(pts) for pts in points.values()):,} points fetched.")
             
             trajs_to_insert: list[Traj] = []
@@ -66,13 +68,13 @@ def construct_trajectories_and_stops(conn: Connection, db_schema: str, max_worke
             with conn.cursor() as insert_cur:
                 if trajs_to_insert:
                     insert_cur.executemany(
-                        INSERT_TRAJ_SQL,
+                        insert_traj_query,
                         [(mmsi, ts_start, ts_end, geom.wkb) for (mmsi, ts_start, ts_end, geom) in trajs_to_insert]
                     )
 
                 if stops_to_insert:
                     insert_cur.executemany(
-                        INSERT_STOP_SQL,
+                        insert_stop_query,
                         [(mmsi, ts_start, ts_end, geom.wkb) for (mmsi, ts_start, ts_end, geom) in stops_to_insert]
                     )
 
@@ -93,17 +95,20 @@ def get_mmsis(cur: Cursor, db_schema: str) -> list[int]:
     """
     Fetch MMSIs that still need processing, ordered by number of points (descending).
     """
-    cur.execute(f"""
-        SELECT p.mmsi, COUNT(*) AS num_points
-        FROM {db_schema}.points p
-        WHERE p.mmsi NOT IN (
-            SELECT mmsi FROM {db_schema}.stop_poly
-            UNION
-            SELECT mmsi FROM {db_schema}.trajectory_ls
-        )
-        GROUP BY p.mmsi
-        ORDER BY num_points DESC;
-    """)
+    query = sql.SQL("""
+            SELECT p.mmsi, COUNT(*) AS num_points
+            FROM {db_schema}.points p
+            WHERE p.mmsi NOT IN (
+                SELECT mmsi FROM {db_schema}.stop_poly
+                UNION
+                SELECT mmsi FROM {db_schema}.trajectory_ls
+            )
+            GROUP BY p.mmsi
+            ORDER BY num_points DESC
+            LIMIT 100; -- LIMIT MMSIS (TODO: REMOVE THIS LIMIT)
+        """).format(db_schema=sql.Identifier(db_schema))
+    
+    cur.execute(query)
 
     rows: list[tuple[int, int]] = cur.fetchall()
     return [mmsi for mmsi, _ in rows]
@@ -111,12 +116,14 @@ def get_mmsis(cur: Cursor, db_schema: str) -> list[int]:
 def get_points_for_mmsis_in_batch(cur: Cursor, db_schema: str, mmsis: list[int]) -> DictAISPointWKB:
     """Fetch all points for multiple MMSIs grouped by MMSI, ordered by time."""
     
-    cur.execute(f"""
-        SELECT mmsi, ST_AsBinary(geom), sog
-        FROM {db_schema}.points
-        WHERE mmsi = ANY(%s)
-        ORDER BY mmsi, ST_M(geom);
-    """, (mmsis,))
+    query = sql.SQL("""
+            SELECT mmsi, ST_AsBinary(geom), sog
+            FROM {db_schema}.points
+            WHERE mmsi = ANY(%s)
+            ORDER BY mmsi, ST_M(geom);
+        """).format(db_schema=sql.Identifier(db_schema))
+
+    cur.execute(query, (mmsis,))
 
     rows: list[AISPointRow] = cur.fetchall()
 

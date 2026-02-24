@@ -49,7 +49,7 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -
                 for start_coord, end_coord in zip(seg_coords[:-1], seg_coords[1:]):
                     
                     # Get all intersecting tiles for both endpoints of the non-contained LineString segment
-                    start_tiles, end_tiles = get_tiles_for_endpoints(start_coord, end_coord, zoom)
+                    start_tiles, end_tiles = get_tiles_for_endpoints((start_coord[0], start_coord[1]), (end_coord[0], end_coord[1]), zoom)
                     
                     # Add supercover tiles between all candidate pairs.
                     for x0_c, y0_c in start_tiles:

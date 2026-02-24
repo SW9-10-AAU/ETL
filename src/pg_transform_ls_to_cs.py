@@ -1,6 +1,7 @@
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
-from typing import LiteralString
 from psycopg import Connection, Cursor
+from psycopg import sql
+from psycopg.abc import Query
 from core.ls_poly_to_cs import ProcessResultStop, ProcessResultTraj, process_stop_row, process_trajectory_row
 
 FutureResultTraj = Future[ProcessResultTraj]
@@ -11,7 +12,7 @@ MAX_WORKERS = 4
 
 # --- Batch Helper ---
 
-def get_batches(cur: Cursor, query: LiteralString, batch_size: int):
+def get_batches(cur: Cursor, query: Query, batch_size: int):
     """Generator that yields rows in batches."""
     print(f"Fetching rows...")
     cur.execute(query)
@@ -28,17 +29,17 @@ def transform_ls_trajectories_to_cs(connection: Connection, db_schema: str, max_
                                     batch_size: int = BATCH_SIZE):
     print(f"--- Processing trajectories (using {max_workers} workers) ---")
     total_processed = 0
-    insert_traj_query = f"""
+    insert_traj_query = sql.SQL("""
                 INSERT INTO {db_schema}.trajectory_cs (trajectory_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """
+                """).format(db_schema=sql.Identifier(db_schema))
                 
     with connection.cursor() as cur:
-        get_trajs_query = f"""
+        get_trajs_query = sql.SQL("""
                 SELECT trajectory_id, mmsi, ts_start, ts_end, ST_AsBinary(geom)
                 FROM {db_schema}.trajectory_ls
                 ORDER BY trajectory_id;
-                """
+                """).format(db_schema=sql.Identifier(db_schema))
 
         for batch in get_batches(cur, get_trajs_query, batch_size):
             with ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -65,17 +66,17 @@ def transform_ls_trajectories_to_cs(connection: Connection, db_schema: str, max_
 def transform_poly_stops_to_cs(connection: Connection, db_schema: str, max_workers: int = MAX_WORKERS, batch_size: int = BATCH_SIZE):
     print(f"--- Processing stops (using {max_workers} workers) ---")
     total_processed = 0
-    insert_stop_query = f"""
+    insert_stop_query = sql.SQL("""
                    INSERT INTO {db_schema}.stop_cs (stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21)
                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                   """
+                   """).format(db_schema=sql.Identifier(db_schema))
 
     with connection.cursor() as cur:
-        get_stops_query = f"""
+        get_stops_query = sql.SQL("""
                 SELECT stop_id, mmsi, ts_start, ts_end, ST_AsBinary(geom)
                 FROM {db_schema}.stop_poly
                 ORDER BY stop_id;
-                """
+                """).format(db_schema=sql.Identifier(db_schema))
 
         for batch in get_batches(cur, get_stops_query, batch_size):
             with ProcessPoolExecutor(max_workers=max_workers) as executor:

@@ -1,14 +1,16 @@
 import os
 
-from db_setup.utils.db_utils import get_db_backend, get_db_path, get_db_schema
+from db_setup.utils.db_utils import get_db_backend, get_db_path_or_url, get_db_schema
 
 def main():
     backend = get_db_backend()
 
     if backend == 'duckdb':
         main_duckdb()
-    elif backend == 'postgres':
+    elif backend == 'postgresql':
         main_postgres()
+    else:
+        raise ValueError(f"Unsupported database backend: {backend}")
 
 def main_duckdb():
     import duckdb
@@ -16,7 +18,7 @@ def main_duckdb():
     from duckdb_construct_trajs_stops import construct_trajectories_and_stops_duckdb
     from duckdb_transform_ls_to_cs import transform_ls_trajectories_to_cs, transform_poly_stops_to_cs
 
-    db_path = get_db_path('duckdb')
+    db_path = get_db_path_or_url('duckdb')
     db_schema = get_db_schema('duckdb')
     connection = duckdb.connect(database=db_path)
 
@@ -39,7 +41,8 @@ def main_postgres():
     from pg_construct_trajs_stops import construct_trajectories_and_stops
     from pg_transform_ls_to_cs import transform_ls_trajectories_to_cs, transform_poly_stops_to_cs
 
-    db_schema = os.getenv('POSTGRESQL_SCHEMA')
+    db_schema = get_db_schema('postgresql')
+    
     connection = connect_to_postgres_db()
 
     # Drop existing tables and views
