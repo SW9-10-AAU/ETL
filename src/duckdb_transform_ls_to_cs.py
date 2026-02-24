@@ -1,21 +1,14 @@
-from concurrent.futures import ProcessPoolExecutor, as_completed
-
+from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 import duckdb
+from core.ls_poly_to_cs import ProcessResultStop, ProcessResultTraj, Row, process_stop_row, process_trajectory_row
 
-from transform_ls_to_cs import (
-    BATCH_SIZE,
-    MAX_WORKERS,
-    Row,
-    FutureResultTraj,
-    FutureResultStop,
-    ProcessResultTraj,
-    ProcessResultStop,
-    process_trajectory_row,
-    process_stop_row,
-)
+FutureResultTraj = Future[ProcessResultTraj]
+FutureResultStop = Future[ProcessResultStop]
 
+BATCH_SIZE = 5000
+MAX_WORKERS = 4
 
-def transform_ls_trajectories_to_cs_duckdb(conn: duckdb.DuckDBPyConnection, max_workers: int = MAX_WORKERS,
+def transform_ls_trajectories_to_cs(conn: duckdb.DuckDBPyConnection, max_workers: int = MAX_WORKERS,
                                             batch_size: int = BATCH_SIZE):
     print(f"--- Processing trajectories with (using {max_workers} workers) ---")
     total_processed = 0
@@ -59,7 +52,7 @@ def transform_ls_trajectories_to_cs_duckdb(conn: duckdb.DuckDBPyConnection, max_
     print(f"Finished processing all trajectories ({total_processed:,} total)")
 
 
-def transform_poly_stops_to_cs_duckdb(conn: duckdb.DuckDBPyConnection, max_workers: int = MAX_WORKERS,
+def transform_poly_stops_to_cs(conn: duckdb.DuckDBPyConnection, max_workers: int = MAX_WORKERS,
                                      batch_size: int = BATCH_SIZE):
     print(f"--- Processing stops (using {max_workers} workers) ---")
     total_processed = 0

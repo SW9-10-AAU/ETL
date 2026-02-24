@@ -1,10 +1,10 @@
 from typing import cast
-from dotenv import load_dotenv
 import json
 from pathlib import Path
 from shapely import MultiPolygon, Polygon
 from shapely.geometry import shape
-from convert_area_polygon import convert_area_polygon_to_cs
+from db_setup.utils.db_utils import get_db_backend
+from utils.convert_area_polygon import convert_area_polygon_to_cs_duckdb, convert_area_polygon_to_cs_postgresql
 
 def convert_area_geojson_to_cs(geojson_path: str, name: str):
     """
@@ -17,8 +17,8 @@ def convert_area_geojson_to_cs(geojson_path: str, name: str):
         geojson_path: Path to GeoJSON file
         name: Name to store the area under in the database
     """
-    load_dotenv()
-
+    db_backend = get_db_backend()
+    
     # Load GeoJSON file
     geojson_file = Path(geojson_path)
     if not geojson_file.exists():
@@ -51,11 +51,13 @@ def convert_area_geojson_to_cs(geojson_path: str, name: str):
         num_polygons = len(multiPolygon.geoms)
         total_points = sum(len(poly.exterior.coords) for poly in multiPolygon.geoms)
         print(f"MultiPolygon contains {num_polygons} polygon(s) with {total_points} total points")
-        convert_area_polygon_to_cs(multiPolygon, name)
+        if db_backend == 'postgresql': convert_area_polygon_to_cs_postgresql(multiPolygon, name)
+        elif db_backend == 'duckdb': convert_area_polygon_to_cs_duckdb(multiPolygon, name)
     else:
         poly: Polygon = cast(Polygon, geometry)
         print(f"Polygon contains {len(poly.exterior.coords)} points")
-        convert_area_polygon_to_cs(poly, name)
+        if db_backend == 'postgresql': convert_area_polygon_to_cs_postgresql(poly, name)
+        elif db_backend == 'duckdb': convert_area_polygon_to_cs_duckdb(poly, name)
 
 
 def main():

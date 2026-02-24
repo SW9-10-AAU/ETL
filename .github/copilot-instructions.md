@@ -49,11 +49,11 @@ pip install flake8
 **Step 3: Configure Database Connection** (Required for running the application)
 
 - Copy `.env.example` to `.env`
-- Update `DATABASE_URL` with actual PostgreSQL connection string:
+- Update `POSTGRESQL_URL` with actual PostgreSQL connection string:
   ```
-  DATABASE_URL=postgresql://{username}:{password}@{serverip}:{port}/{dbname}
+  POSTGRESQL_URL=postgresql://{username}:{password}@{serverip}:{port}/{dbname}
   ```
-- The application will exit with error "DATABASE_URL not defined in .env file" if this is missing
+- The application will exit with error "POSTGRESQL_URL not defined in .env file" if this is missing
 
 ### Linting (ALWAYS Run Before Committing)
 
@@ -114,7 +114,7 @@ python3 src/main.py
 
 **Prerequisites for Running:**
 
-- Valid `.env` file with `DATABASE_URL` configured
+- Valid `.env` file with `POSTGRESQL_URL` configured
 - PostgreSQL database must be accessible
 - Database schema `{schema_name}` should exist
 
@@ -158,7 +158,7 @@ python3 src/main.py
 **src/main.py** - Main Orchestrator (42 lines)
 
 - Loads environment variables with `python-dotenv`
-- Validates DATABASE_URL exists
+- Validates POSTGRESQL_URL exists
 - Calls ETL steps in sequence:
   1. `create_ls_traj_stop_tables()` - Create LineString tables
   2. `create_cs_traj_stop_tables()` - Create CellString tables
@@ -168,8 +168,8 @@ python3 src/main.py
 **src/connect.py** - Database Connection (11 lines)
 
 - Single function: `connect_to_db()` returns psycopg.Connection
-- Reads DATABASE_URL from environment
-- Exits with error message if DATABASE_URL not set
+- Reads POSTGRESQL_URL from environment
+- Exits with error message if POSTGRESQL_URL not set
 
 **src/construct_trajs_stops.py** - Core Processing Logic (268 lines)
 

@@ -1,18 +1,13 @@
 import time
 from collections import defaultdict
-from concurrent.futures import ProcessPoolExecutor, as_completed
-
+from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 import duckdb
 from shapely import Point
 
-from construct_trajs_stops import (
-    BATCH_SIZE,
-    DictAISPointWKB,
-    FutureResult,
-    Traj,
-    Stop,
-    process_single_mmsi,
-)
+from core.points_to_ls_poly import DictAISPointWKB, ProcessResult, Stop, Traj, process_single_mmsi
+
+BATCH_SIZE = 50 # Number of MMSIs to process in parallel
+FutureResult = Future[ProcessResult] # Future returning ProcessResult
 
 INSERT_TRAJ_SQL = """
     INSERT INTO trajectory_ls (mmsi, ts_start, ts_end, geom)

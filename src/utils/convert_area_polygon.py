@@ -1,10 +1,10 @@
-from dotenv import load_dotenv
 from shapely import Polygon, MultiPolygon
-from transform_ls_to_cs import convert_polygon_to_cellstring_hierarchical
-from connect import connect_to_db
-from db_setup.postgresql.create_area_tables import create_area_tables
+from db_setup.utils.db_utils import get_db_backend, get_db_path, get_db_schema
+from core.ls_poly_to_cs import convert_polygon_to_cellstrings
 
-def convert_area_polygon_to_cs(polygon: Polygon | MultiPolygon, name: str):
+## postresql implementation
+def convert_area_polygon_to_cs_postgresql(polygon: Polygon | MultiPolygon, name: str):
+    from db_setup.utils.connect import connect_to_db
     """
     Converts a Polygon or MultiPolygon to CellStrings and inserts both into PostGIS tables.
 
@@ -12,16 +12,13 @@ def convert_area_polygon_to_cs(polygon: Polygon | MultiPolygon, name: str):
         polygon: A Shapely Polygon or MultiPolygon representing the area
         name: A unique identifier for this area
     """
-    load_dotenv()
     conn = connect_to_db()
     cur = conn.cursor()
-    
-    # Create benchmark schema and area tables if not exist
-    create_area_tables(conn)
-    
+    db_schema = get_db_schema("postgresql")
+
     # Insert area as polygon into table
-    cur.execute("""
-            INSERT INTO benchmark.area_poly (name, geom)
+    cur.execute(f"""
+            INSERT INTO {db_schema}.area_poly (name, geom)
             VALUES (%s, ST_GeomFromWKB(%s, 4326))
         """, (name, polygon.wkb))    
     conn.commit()
@@ -29,18 +26,62 @@ def convert_area_polygon_to_cs(polygon: Polygon | MultiPolygon, name: str):
     
     # Convert polygon to cellstring and insert into table
     print("Converting polygon to cellstrings using hierarchical algorithm")
-    cellstring_z13, cellstring_z17, cellstring_z21 = convert_polygon_to_cellstring_hierarchical(polygon)
+    cellstring_z13, cellstring_z17, cellstring_z21 = convert_polygon_to_cellstrings(polygon)
     print(f"Conversion succeeded with {len(cellstring_z13)} cells (zoom 13), {len(cellstring_z17)} cells (zoom 17), and {len(cellstring_z21)} cells (zoom 21).")
     
-    cur.execute("""
-            INSERT INTO benchmark.area_cs (name, cellstring_z13, cellstring_z17, cellstring_z21)
+    cur.execute(f"""
+            INSERT INTO {db_schema}.area_cs (name, cellstring_z13, cellstring_z17, cellstring_z21)
             VALUES (%s, %s, %s, %s)
         """, (name, cellstring_z13, cellstring_z17, cellstring_z21))
     print("Inserted area cellstrings into PostGIS table")
     conn.commit()
     cur.close()
 
-    print(f"Area ({name}) uploaded to benchmark schema in database")
+    print(f"Area ({name}) uploaded to {db_schema} schema in database")
+
+## duckdb implementation
+def convert_area_polygon_to_cs_duckdb(polygon: Polygon | MultiPolygon, name: str):
+    """
+    Converts a Polygon or MultiPolygon to CellStrings and inserts both into DuckDB tables.
+
+    Args:
+        polygon: A Shapely Polygon or MultiPolygon representing the area
+        name: A unique identifier for this area
+        duckdb_path: Path to DuckDB database file
+    """
+    import duckdb
+
+    db_schema = get_db_schema("duckdb")
+    duckdb_path = get_db_path("duckdb")
+    conn = duckdb.connect(duckdb_path)
+
+    # Insert area polygon as WKB blob
+    conn.execute(
+        f"""INSERT INTO {db_schema}.area_poly (name, geom)
+           VALUES (?, ?)""",
+        [name, polygon.wkb],
+    )
+    print("Inserted area polygon into DuckDB table")
+
+    print("Converting polygon to cellstrings using hierarchical algorithm")
+    cellstring_z13, cellstring_z17, cellstring_z21 = (
+        convert_polygon_to_cellstrings(polygon)
+    )
+    print(
+        f"Conversion succeeded with {len(cellstring_z13)} cells (zoom 13), "
+        f"{len(cellstring_z17)} cells (zoom 17), and {len(cellstring_z21)} cells (zoom 21)."
+    )
+
+    conn.execute(
+        f"""INSERT INTO {db_schema}.area_cs
+           (name, cellstring_z13, cellstring_z17, cellstring_z21)
+           VALUES (?, ?, ?, ?)""",
+        [name, cellstring_z13, cellstring_z17, cellstring_z21],
+    )
+    print("Inserted area cellstrings into DuckDB table")
+    conn.close()
+
+    print(f"Area ({name}) uploaded to {db_schema} schema in database")
 
 def main():
     """
@@ -49,7 +90,6 @@ def main():
     - https://geojson.io/#map=6.47/55.777/10.723 
     - https://www.keene.edu/campus/maps/tool/
     """
-    
     name = "Danmark-EEZ-simple"
     polygon = Polygon([
         [
@@ -246,8 +286,12 @@ def main():
             ]
     ])
 
-    convert_area_polygon_to_cs(polygon, name)
-
+    db = get_db_backend()
+    
+    if (db == "postgresql"):
+        convert_area_polygon_to_cs_postgresql(polygon, name)
+    elif (db == "duckdb"):
+        convert_area_polygon_to_cs_duckdb(polygon, name)
 
 if __name__ == "__main__":
     main()
