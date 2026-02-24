@@ -92,7 +92,7 @@ def main():
     Convert all area polygons in DB to cellstrings and upload to PostGIS. 
     """
     db_backend = get_db_backend()
-    if db_backend == "postgres":
+    if db_backend == "postgresql":
         convert_area_polygons_to_cs_postgres()
     elif db_backend == "duckdb":
         convert_area_polygons_to_cs_duckdb()
