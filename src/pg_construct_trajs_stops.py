@@ -104,8 +104,7 @@ def get_mmsis(cur: Cursor, db_schema: str) -> list[int]:
                 SELECT mmsi FROM {db_schema}.trajectory_ls
             )
             GROUP BY p.mmsi
-            ORDER BY num_points DESC
-            LIMIT 100; -- LIMIT MMSIS (TODO: REMOVE THIS LIMIT)
+            ORDER BY num_points DESC;
         """).format(db_schema=sql.Identifier(db_schema))
     
     cur.execute(query)
