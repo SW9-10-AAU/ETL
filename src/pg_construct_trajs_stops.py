@@ -10,7 +10,7 @@ FutureResult = Future[ProcessResult] # Future returning ProcessResult
 def construct_trajectories_and_stops(conn: Connection, db_schema: str, max_workers: int = 4, batch_size: int = BATCH_SIZE):
     """Construct trajectories and stops for all MMSIs in the database. Processes MMSIs in batches."""
     cur = conn.cursor()
-    all_mmsis = get_mmsis(cur)
+    all_mmsis = get_mmsis(cur, db_schema)
     cur.close()
     
     INSERT_TRAJ_SQL = f"""

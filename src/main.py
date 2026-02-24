@@ -7,8 +7,10 @@ def main():
 
     if backend == 'duckdb':
         main_duckdb()
-    elif backend == 'postgres':
+    elif backend == 'postgresql':
         main_postgres()
+    else:
+        raise ValueError(f"Unsupported database backend: {backend}")
 
 def main_duckdb():
     import duckdb
