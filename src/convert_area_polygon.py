@@ -57,10 +57,10 @@ def convert_area_polygon_to_cs_duckdb(polygon: Polygon | MultiPolygon, name: str
     duckdb_path = get_db_path_or_url("duckdb")
     conn = duckdb.connect(duckdb_path)
 
-    # Insert area polygon as WKB blob
+    # Insert area polygon as geom from WKB
     conn.execute(
         f"""INSERT INTO {db_schema}.area_poly (name, geom)
-           VALUES (?, ?)""",
+           VALUES (?, ST_GeomFromWKB(?))""",
         [name, polygon.wkb],
     )
     print("Inserted area polygon into DuckDB table")
