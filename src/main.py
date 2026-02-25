@@ -1,5 +1,4 @@
 import os
-
 from db_setup.utils.db_utils import get_db_backend, get_db_path_or_url, get_db_schema
 
 def main():
@@ -26,11 +25,11 @@ def main_duckdb():
     # Drop tables
     drop_duckdb_tables(connection, db_schema)
 
-    # Create tables 
+    # Create tables
     create_duckdb_tables(connection, db_schema)
 
     # Construct LineString trajectories and Polygon stops from the Points table
-    construct_trajectories_and_stops(connection, db_schema, min(os.cpu_count() or 4, 12))
+    # construct_trajectories_and_stops(connection, db_schema, min(os.cpu_count() or 4, 12))
 
     # Transform LineString trajectories and Polygon stops to CellStrings
     transform_ls_trajectories_to_cs(connection, db_schema, min(os.cpu_count() or 4, 12), batch_size=100)
