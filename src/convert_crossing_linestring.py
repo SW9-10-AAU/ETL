@@ -43,12 +43,15 @@ def convert_crossing_linestring_to_cs_duckdb(linestring: LineString, name: str):
     Converts a LineString to a CellString and inserts both into DuckDB tables.
     """
     import duckdb
-
+    import pyarrow as pa
+    from db_setup.duckdb.pyarrow_schemas import CROSSING_CS_SCHEMA
+    
     db_schema = get_db_schema("duckdb")
     db_path = get_db_path_or_url("duckdb")
     conn = duckdb.connect(db_path)
 
     # Insert crossing as linestring into table
+    conn.execute("LOAD spatial;")
     conn.execute(
         f"""INSERT INTO {db_schema}.crossing_ls (name, geom)
            VALUES (?, ST_GeomFromWKB(?))""",
@@ -65,12 +68,24 @@ def convert_crossing_linestring_to_cs_duckdb(linestring: LineString, name: str):
         f"{len(cellstring_z17)} cells (zoom 17), and {len(cellstring_z21)} cells "
         f"(zoom 21)."
     )
-
+    
+    arrow_table = pa.table({
+            "crossing_id": pa.array([None], type=pa.int32()),
+            "name": pa.array([name], type=pa.string()),
+            "cellstring_z13": pa.array([cellstring_z13], type=pa.list_(pa.int32())),
+            "cellstring_z17": pa.array([cellstring_z17], type=pa.list_(pa.int64())),
+            "cellstring_z21": pa.array([cellstring_z21], type=pa.list_(pa.int64())),
+        }, schema=CROSSING_CS_SCHEMA)
     conn.execute(
-        f"""INSERT INTO {db_schema}.crossing_cs
-           (name, cellstring_z13, cellstring_z17, cellstring_z21)
-           VALUES (?, ?, ?, ?)""",
-        [name, cellstring_z13, cellstring_z17, cellstring_z21],
+        f"""INSERT INTO {db_schema}.crossing_cs 
+            (crossing_id, name, cellstring_z13, cellstring_z17, cellstring_z21)
+            SELECT 
+                nextval('{db_schema}.crossing_cs_seq'), 
+                name, 
+                cellstring_z13, 
+                cellstring_z17, 
+                cellstring_z21 
+            FROM arrow_table""",
     )
     print("Inserted crossing cellstrings into DuckDB table")
     conn.close()
@@ -84,7 +99,7 @@ def main():
     - https://geojson.io/#map=6.47/55.777/10.723 
     - https://www.keene.edu/campus/maps/tool/
     """
-    name = "Bornholm"
+    name = "Test Crossing"
     linestring = LineString([
         [
             14.376500767303753,

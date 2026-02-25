@@ -2,32 +2,13 @@ from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 import duckdb
 import pyarrow as pa
 from core.ls_poly_to_cs import ProcessResultStop, ProcessResultTraj, Row, process_stop_row, process_trajectory_row
+from db_setup.duckdb.pyarrow_schemas import STOP_CS_SCHEMA, TRAJ_CS_SCHEMA
 
 FutureResultTraj = Future[ProcessResultTraj]
 FutureResultStop = Future[ProcessResultStop]
 
 BATCH_SIZE = 5000
 MAX_WORKERS = 4
-
-TRAJ_SCHEMA = pa.schema([
-    pa.field("trajectory_id", pa.int32()),
-    pa.field("mmsi", pa.int64()),
-    pa.field("ts_start", pa.timestamp("us", tz="UTC")),
-    pa.field("ts_end", pa.timestamp("us", tz="UTC")),
-    pa.field("cellstring_z13", pa.list_(pa.int32())),
-    pa.field("cellstring_z17", pa.list_(pa.int64())),
-    pa.field("cellstring_z21", pa.list_(pa.int64())),
-])
-
-STOP_SCHEMA = pa.schema([
-    pa.field("stop_id", pa.int32()),
-    pa.field("mmsi", pa.int64()),
-    pa.field("ts_start", pa.timestamp("us", tz="UTC")),
-    pa.field("ts_end", pa.timestamp("us", tz="UTC")),
-    pa.field("cellstring_z13", pa.list_(pa.int32())),
-    pa.field("cellstring_z17", pa.list_(pa.int64())),
-    pa.field("cellstring_z21", pa.list_(pa.int64())),
-])
 
 def transform_ls_trajectories_to_cs(conn: duckdb.DuckDBPyConnection, db_schema: str, max_workers: int = MAX_WORKERS,
                                             batch_size: int = BATCH_SIZE):
@@ -69,10 +50,10 @@ def transform_ls_trajectories_to_cs(conn: duckdb.DuckDBPyConnection, db_schema: 
             "mmsi":          pa.array([r[1] for r in results], type=pa.int64()),
             "ts_start":      pa.array([r[2] for r in results], type=pa.timestamp("us", tz="UTC")),
             "ts_end":        pa.array([r[3] for r in results], type=pa.timestamp("us", tz="UTC")),
-            "cellstring_z13": pa.array([r[4] for r in results], type=pa.list_(pa.int64())),
+            "cellstring_z13": pa.array([r[4] for r in results], type=pa.list_(pa.int32())),
             "cellstring_z17": pa.array([r[5] for r in results], type=pa.list_(pa.int64())),
             "cellstring_z21": pa.array([r[6] for r in results], type=pa.list_(pa.int64())),
-        }, schema=TRAJ_SCHEMA)
+        }, schema=TRAJ_CS_SCHEMA)
         conn.execute(f"INSERT INTO {db_schema}.trajectory_cs SELECT * FROM arrow_table")
 
         last_id = batch[-1][0]
@@ -121,7 +102,7 @@ def transform_poly_stops_to_cs(conn: duckdb.DuckDBPyConnection, db_schema: str, 
             "cellstring_z13": pa.array([r[4] for r in results], type=pa.list_(pa.int32())),
             "cellstring_z17": pa.array([r[5] for r in results], type=pa.list_(pa.int64())),
             "cellstring_z21": pa.array([r[6] for r in results], type=pa.list_(pa.int64())),
-        }, schema=STOP_SCHEMA)
+        }, schema=STOP_CS_SCHEMA)
         conn.execute(f"INSERT INTO {db_schema}.stop_cs SELECT * FROM arrow_table")
 
         last_id = batch[-1][0]

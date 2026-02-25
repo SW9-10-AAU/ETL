@@ -52,12 +52,15 @@ def convert_area_polygon_to_cs_duckdb(polygon: Polygon | MultiPolygon, name: str
         duckdb_path: Path to DuckDB database file
     """
     import duckdb
-
+    import pyarrow as pa
+    from db_setup.duckdb.pyarrow_schemas import AREA_CS_SCHEMA
+    
     db_schema = get_db_schema("duckdb")
     duckdb_path = get_db_path_or_url("duckdb")
     conn = duckdb.connect(duckdb_path)
 
     # Insert area polygon as geom from WKB
+    conn.execute("LOAD SPATIAL;")
     conn.execute(
         f"""INSERT INTO {db_schema}.area_poly (name, geom)
            VALUES (?, ST_GeomFromWKB(?))""",
@@ -74,12 +77,25 @@ def convert_area_polygon_to_cs_duckdb(polygon: Polygon | MultiPolygon, name: str
         f"{len(cellstring_z17)} cells (zoom 17), and {len(cellstring_z21)} cells (zoom 21)."
     )
 
-    conn.execute(
-        f"""INSERT INTO {db_schema}.area_cs
-           (name, cellstring_z13, cellstring_z17, cellstring_z21)
-           VALUES (?, ?, ?, ?)""",
-        [name, cellstring_z13, cellstring_z17, cellstring_z21],
-    )
+    arrow_table = pa.table({
+            "area_id": pa.array([None], type=pa.int32()),
+            "name": pa.array([name], type=pa.string()),
+            "cellstring_z13": pa.array([cellstring_z13], type=pa.list_(pa.int32())),
+            "cellstring_z17": pa.array([cellstring_z17], type=pa.list_(pa.int64())),
+            "cellstring_z21": pa.array([cellstring_z21], type=pa.list_(pa.int64())),
+        }, schema=AREA_CS_SCHEMA)
+    conn.execute(f"""
+        INSERT INTO {db_schema}.area_cs 
+        (area_id, name, cellstring_z13, cellstring_z17, cellstring_z21)
+        SELECT 
+            nextval('{db_schema}.area_cs_seq'), 
+            name, 
+            cellstring_z13, 
+            cellstring_z17, 
+            cellstring_z21 
+        FROM arrow_table
+        """)
+    
     print("Inserted area cellstrings into DuckDB table")
     conn.close()
 

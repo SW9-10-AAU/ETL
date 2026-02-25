@@ -8,8 +8,8 @@ def drop_duckdb_tables(conn: DuckDBPyConnection, db_schema: str):
     # cur.execute(f"DROP TABLE IF EXISTS {db_schema}.trajectory_ls;")
     # cur.execute(f"DROP TABLE IF EXISTS {db_schema}.stop_poly;")
     
-    cur.execute(f"DROP TABLE IF EXISTS {db_schema}.trajectory_cs;")
-    cur.execute(f"DROP TABLE IF EXISTS {db_schema}.stop_cs;")
+    # cur.execute(f"DROP TABLE IF EXISTS {db_schema}.trajectory_cs;")
+    # cur.execute(f"DROP TABLE IF EXISTS {db_schema}.stop_cs;")
     
     # cur.execute(f"DROP TABLE IF EXISTS {db_schema}.area_poly;")
     # cur.execute(f"DROP TABLE IF EXISTS {db_schema}.area_cs;")
