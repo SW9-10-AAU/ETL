@@ -1,69 +1,65 @@
-from dotenv import load_dotenv
 import os
-import sys
+from db_setup.utils.db_utils import get_db_backend, get_db_path_or_url, get_db_schema
 
 def main():
-    load_dotenv()
-    backend = os.getenv('DB_BACKEND', 'postgres').lower()
+    backend = get_db_backend()
 
     if backend == 'duckdb':
         main_duckdb()
-    else:
+    elif backend == 'postgresql':
         main_postgres()
+    else:
+        raise ValueError(f"Unsupported database backend: {backend}")
 
 def main_duckdb():
     import duckdb
-    from tables.create_duckdb_tables import create_duckdb_tables
-    from tables.create_duckdb_points import create_duckdb_points
-    from duckdb_construct_trajs_stops import construct_trajectories_and_stops_duckdb
-    from duckdb_transform_ls_to_cs import transform_ls_trajectories_to_cs_duckdb, transform_ls_stops_to_cs_duckdb
+    from db_setup.duckdb.drop_duckdb_tables import drop_duckdb_tables
+    from db_setup.duckdb.create_duckdb_tables import create_duckdb_tables
+    from duckdb_construct_trajs_stops import construct_trajectories_and_stops
+    from duckdb_transform_ls_to_cs import transform_ls_trajectories_to_cs, transform_poly_stops_to_cs
 
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    db_path = os.getenv('DUCKDB_PATH', os.path.join(project_root, 'ais_data', 'ais_db.duckdb'))
-    conn = duckdb.connect(database=db_path)
+    db_path = get_db_path_or_url('duckdb')
+    db_schema = get_db_schema('duckdb')
+    connection = duckdb.connect(database=db_path)
 
-    # Create points table from raw AIS data
-    # create_duckdb_points(conn)
+    # Drop tables
+    drop_duckdb_tables(connection, db_schema)
 
-    # Create output tables (trajectory_ls, stop_poly, *_cs)
-    create_duckdb_tables(conn)
+    # Create tables
+    create_duckdb_tables(connection, db_schema)
 
-    # Construct Trajectories and Stops from the Points table
-    construct_trajectories_and_stops_duckdb(conn, min(os.cpu_count() or 4, 12))
+    # Construct LineString trajectories and Polygon stops from the Points table
+    construct_trajectories_and_stops(connection, db_schema, min(os.cpu_count() or 4, 12))
 
-    # Transform LS Trajectories to CS Trajectories
-    transform_ls_trajectories_to_cs_duckdb(conn, min(os.cpu_count() or 4, 12), batch_size=10)
-    transform_ls_stops_to_cs_duckdb(conn, min(os.cpu_count() or 4, 12), batch_size=10)
+    # Transform LineString trajectories and Polygon stops to CellStrings
+    transform_ls_trajectories_to_cs(connection, db_schema, min(os.cpu_count() or 4, 12), batch_size=100)
+    transform_poly_stops_to_cs(connection, db_schema, min(os.cpu_count() or 4, 12), batch_size=100)
 
-    conn.close()
+    connection.close()
 
 def main_postgres():
-    from connect import connect_to_db
-    from tables.create_all_tables import create_all_tables
-    from tables.drop_all_tables import drop_all_tables
-    from construct_trajs_stops import construct_trajectories_and_stops
-    from transform_ls_to_cs import transform_ls_trajectories_to_cs, transform_ls_stops_to_cs
+    from db_setup.utils.connect import connect_to_postgres_db
+    from db_setup.postgresql.create_postgresql_tables import create_postgresql_tables
+    from db_setup.postgresql.drop_postgresql_tables import drop_postgresql_tables
+    from pg_construct_trajs_stops import construct_trajectories_and_stops
+    from pg_transform_ls_to_cs import transform_ls_trajectories_to_cs, transform_poly_stops_to_cs
 
-    db_url = os.getenv('DATABASE_URL')
-
-    if not db_url:
-        sys.exit("DATABASE_URL not defined in .env file")
-
-    connection = connect_to_db()
+    db_schema = get_db_schema('postgresql')
+    
+    connection = connect_to_postgres_db()
 
     # Drop existing tables and views
-    drop_all_tables(connection)
+    drop_postgresql_tables(connection, db_schema)
 
     # Create all necessary tables and Materialized view
-    create_all_tables(connection)
+    create_postgresql_tables(connection, db_schema)
     
     # Construct Trajectories and Stops from the Points Materialized View 
-    construct_trajectories_and_stops(connection, min(os.cpu_count() or 4, 12))
+    construct_trajectories_and_stops(connection, db_schema, min(os.cpu_count() or 4, 12))
 
     # Transform LS Trajectories to CS Trajectories
-    #transform_ls_trajectories_to_cs(connection, min(os.cpu_count() or 4, 12), batch_size=1000)
-    transform_ls_trajectories_to_cs(connection, min(os.cpu_count() or 4, 12), batch_size=1000, use_supercover=True)
-    transform_ls_stops_to_cs(connection, min(os.cpu_count() or 4, 12), batch_size=1000)
+    transform_ls_trajectories_to_cs(connection, db_schema, min(os.cpu_count() or 4, 12), batch_size=1000)
+    transform_poly_stops_to_cs(connection, db_schema, min(os.cpu_count() or 4, 12), batch_size=1000)
     
     connection.close()
 

@@ -1,45 +1,96 @@
-from dotenv import load_dotenv
 from shapely import LineString
-from tables.create_crossing_tables import create_crossing_tables
-from transform_ls_to_cs import convert_linestring_to_cellstring
-from connect import connect_to_db
+from core.ls_poly_to_cs import convert_linestring_to_cellstrings
+from db_setup.utils.db_utils import get_db_backend, get_db_path_or_url, get_db_schema
 
-def convert_crossing_linestring_to_cs(linestring: LineString, name: str):
+# PostgreSQL implementation
+def convert_crossing_linestring_to_cs_postgres(linestring: LineString, name: str):
     """
     Converts a LineString to a CellString and inserts both into PostGIS tables.
     """
-    load_dotenv()
-    conn = connect_to_db()
-    cur = conn.cursor()
+    from db_setup.utils.connect import connect_to_postgres_db
+    from psycopg import sql
     
-    # Create benchmark schema and crossing tables if not exist
-    create_crossing_tables(conn)
+    conn = connect_to_postgres_db()
+    cur = conn.cursor()
+    db_schema = get_db_schema("postgresql")
     
     # Insert crossing as linestring into table
-    cur.execute("""
-            INSERT INTO benchmark.crossing_ls (name, geom)
+    cur.execute(sql.SQL("""
+            INSERT INTO {db_schema}.crossing_ls (name, geom)
             VALUES (%s, ST_GeomFromWKB(%s, 4326))
-        """, (name, linestring.wkb))    
+        """).format(db_schema=sql.Identifier(db_schema)), (name, linestring.wkb))    
     conn.commit()
     print("Inserted crossing linestring into PostGIS table")
     
     # Convert crossing to cellstring and insert into table 
     print("Converting crossing to cellstrings")
-    use_supercover = True
-    cellstring_z13 = convert_linestring_to_cellstring(linestring, 13, use_supercover)
-    cellstring_z17 = convert_linestring_to_cellstring(linestring, 17, use_supercover)
-    cellstring_z21 = convert_linestring_to_cellstring(linestring, 21, use_supercover)
+    cellstring_z13, cellstring_z17, cellstring_z21 = convert_linestring_to_cellstrings(linestring)
     print(f"Conversion succeeded with {len(cellstring_z13)} cells (zoom 13), {len(cellstring_z17)} cells (zoom 17), and {len(cellstring_z21)} cells (zoom 21).")
     
-    cur.execute("""
-            INSERT INTO benchmark.crossing_cs (name, cellstring_z13, cellstring_z17, cellstring_z21)
+    cur.execute(sql.SQL("""
+            INSERT INTO {db_schema}.crossing_cs (name, cellstring_z13, cellstring_z17, cellstring_z21)
             VALUES (%s, %s, %s, %s)
-        """, (name, cellstring_z13, cellstring_z17, cellstring_z21))
+        """).format(db_schema=sql.Identifier(db_schema)), (name, cellstring_z13, cellstring_z17, cellstring_z21))
     print("Inserted crossing cellstrings into PostGIS table")
     conn.commit()
     cur.close()
 
-    print(f"Crossing ({name}) uploaded to benchmark schema in database")
+    print(f"Crossing ({name}) uploaded to {db_schema} schema in database")
+    
+# DuckDB implementation   
+def convert_crossing_linestring_to_cs_duckdb(linestring: LineString, name: str):
+    """
+    Converts a LineString to a CellString and inserts both into DuckDB tables.
+    """
+    import duckdb
+    import pyarrow as pa
+    from db_setup.duckdb.pyarrow_schemas import CROSSING_CS_SCHEMA
+    
+    db_schema = get_db_schema("duckdb")
+    db_path = get_db_path_or_url("duckdb")
+    conn = duckdb.connect(db_path)
+
+    # Insert crossing as linestring into table
+    conn.execute("LOAD spatial;")
+    conn.execute(
+        f"""INSERT INTO {db_schema}.crossing_ls (name, geom)
+           VALUES (?, ST_GeomFromWKB(?))""",
+        [name, linestring.wkb],
+    )
+    print("Inserted crossing linestring into DuckDB table")
+
+    print("Converting crossing to cellstrings")
+    cellstring_z13, cellstring_z17, cellstring_z21 = (
+        convert_linestring_to_cellstrings(linestring)
+    )
+    print(
+        f"Conversion succeeded with {len(cellstring_z13)} cells (zoom 13), "
+        f"{len(cellstring_z17)} cells (zoom 17), and {len(cellstring_z21)} cells "
+        f"(zoom 21)."
+    )
+    
+    arrow_table = pa.table({
+            "crossing_id": pa.array([None], type=pa.int32()),
+            "name": pa.array([name], type=pa.string()),
+            "cellstring_z13": pa.array([cellstring_z13], type=pa.list_(pa.int32())),
+            "cellstring_z17": pa.array([cellstring_z17], type=pa.list_(pa.int64())),
+            "cellstring_z21": pa.array([cellstring_z21], type=pa.list_(pa.int64())),
+        }, schema=CROSSING_CS_SCHEMA)
+    conn.execute(
+        f"""INSERT INTO {db_schema}.crossing_cs 
+            (crossing_id, name, cellstring_z13, cellstring_z17, cellstring_z21)
+            SELECT 
+                nextval('{db_schema}.crossing_cs_seq'), 
+                name, 
+                cellstring_z13, 
+                cellstring_z17, 
+                cellstring_z21 
+            FROM arrow_table""",
+    )
+    print("Inserted crossing cellstrings into DuckDB table")
+    conn.close()
+
+    print(f"Crossing ({name}) uploaded to {db_schema} schema in database")
 
 def main():
     """
@@ -48,8 +99,7 @@ def main():
     - https://geojson.io/#map=6.47/55.777/10.723 
     - https://www.keene.edu/campus/maps/tool/
     """
-    
-    name = "Bornholm"
+    name = "Test Crossing"
     linestring = LineString([
         [
             14.376500767303753,
@@ -60,9 +110,10 @@ def main():
             55.30487796624158
         ]
     ])
-
-    convert_crossing_linestring_to_cs(linestring, name)
-
+    
+    db_backend = get_db_backend()
+    if db_backend == 'postgresql': convert_crossing_linestring_to_cs_postgres(linestring, name)
+    elif db_backend == 'duckdb': convert_crossing_linestring_to_cs_duckdb(linestring, name)  
     
 if __name__ == "__main__":
     main()

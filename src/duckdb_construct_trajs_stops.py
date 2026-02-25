@@ -1,39 +1,23 @@
 import time
 from collections import defaultdict
-from concurrent.futures import ProcessPoolExecutor, as_completed
-
+from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 import duckdb
 from shapely import Point
 
-from construct_trajs_stops import (
-    BATCH_SIZE,
-    DictAISPointWKB,
-    FutureResult,
-    Traj,
-    Stop,
-    process_single_mmsi,
-)
+from core.points_to_ls_poly import DictAISPointWKB, ProcessResult, Stop, Traj, process_single_mmsi
 
-INSERT_TRAJ_SQL = """
-    INSERT INTO trajectory_ls (mmsi, ts_start, ts_end, geom)
-    VALUES (?, to_timestamp(?), to_timestamp(?), ST_GeomFromWKB(?))
-"""
+BATCH_SIZE = 50 # Number of MMSIs to process in parallel
+FutureResult = Future[ProcessResult] # Future returning ProcessResult
 
-INSERT_STOP_SQL = """
-    INSERT INTO stop_poly (mmsi, ts_start, ts_end, geom)
-    VALUES (?, to_timestamp(?), to_timestamp(?), ST_GeomFromWKB(?))
-"""
-
-
-def get_mmsis_duckdb(conn: duckdb.DuckDBPyConnection) -> list[int]:
+def get_mmsis_duckdb(conn: duckdb.DuckDBPyConnection, db_schema: str) -> list[int]:
     """Fetch MMSIs that still need processing, ordered by number of points (descending)."""
-    rows = conn.execute("""
+    rows = conn.execute(f"""
         SELECT p.mmsi, COUNT(*) AS num_points
-        FROM points p
+        FROM {db_schema}.points p
         WHERE p.mmsi NOT IN (
-            SELECT mmsi FROM stop_poly
+            SELECT mmsi FROM {db_schema}.stop_poly
             UNION
-            SELECT mmsi FROM trajectory_ls
+            SELECT mmsi FROM {db_schema}.trajectory_ls
         )
         GROUP BY p.mmsi
         ORDER BY num_points DESC;
@@ -41,12 +25,12 @@ def get_mmsis_duckdb(conn: duckdb.DuckDBPyConnection) -> list[int]:
     return [mmsi for mmsi, _ in rows]
 
 
-def get_points_for_mmsis_in_batch_duckdb(conn: duckdb.DuckDBPyConnection, mmsis: list[int]) -> DictAISPointWKB:
+def get_points_for_mmsis_in_batch_duckdb(conn: duckdb.DuckDBPyConnection, db_schema: str, mmsis: list[int]) -> DictAISPointWKB:
     """Fetch all points for multiple MMSIs, construct WKB PointZ (with Z=epoch_ts), grouped by MMSI."""
     placeholders = ','.join(['?'] * len(mmsis))
     rows = conn.execute(f"""
         SELECT mmsi, lon, lat, sog, epoch_ts
-        FROM points
+        FROM {db_schema}.points
         WHERE mmsi IN ({placeholders})
         ORDER BY mmsi, epoch_ts;
     """, mmsis).fetchall()
@@ -60,9 +44,19 @@ def get_points_for_mmsis_in_batch_duckdb(conn: duckdb.DuckDBPyConnection, mmsis:
     return grouped
 
 
-def construct_trajectories_and_stops_duckdb(conn: duckdb.DuckDBPyConnection, max_workers: int = 4, batch_size: int = BATCH_SIZE):
+def construct_trajectories_and_stops(conn: duckdb.DuckDBPyConnection, db_schema: str, max_workers: int = 4, batch_size: int = BATCH_SIZE):
     """Construct trajectories and stops for all MMSIs in DuckDB. Processes MMSIs in batches."""
-    all_mmsis = get_mmsis_duckdb(conn)
+    all_mmsis = get_mmsis_duckdb(conn, db_schema)
+
+    insert_traj_query = f"""
+        INSERT INTO {db_schema}.trajectory_ls (mmsi, ts_start, ts_end, geom)
+        VALUES (?, to_timestamp(?), to_timestamp(?), ST_GeomFromWKB(?))
+    """
+
+    insert_stop_query = f"""
+        INSERT INTO {db_schema}.stop_poly (mmsi, ts_start, ts_end, geom)
+        VALUES (?, to_timestamp(?), to_timestamp(?), ST_GeomFromWKB(?))
+    """
 
     num_mmsis = len(all_mmsis)
     if num_mmsis == 0:
@@ -81,7 +75,7 @@ def construct_trajectories_and_stops_duckdb(conn: duckdb.DuckDBPyConnection, max
 
         # Retrieve points for all MMSIs in the batch
         print(f"Fetching points for MMSIs in batch {batch_num}...")
-        points = get_points_for_mmsis_in_batch_duckdb(conn, mmsis_in_batch)
+        points = get_points_for_mmsis_in_batch_duckdb(conn, db_schema, mmsis_in_batch)
         print(f"{sum(len(pts) for pts in points.values()):,} points fetched.")
 
         trajs_to_insert: list[Traj] = []
@@ -107,13 +101,13 @@ def construct_trajectories_and_stops_duckdb(conn: duckdb.DuckDBPyConnection, max
         # Batch insert trajectories and stops
         if trajs_to_insert:
             conn.executemany(
-                INSERT_TRAJ_SQL,
+                insert_traj_query,
                 [(mmsi, ts_start, ts_end, geom.wkb) for (mmsi, ts_start, ts_end, geom) in trajs_to_insert]
             )
 
         if stops_to_insert:
             conn.executemany(
-                INSERT_STOP_SQL,
+                insert_stop_query,
                 [(mmsi, ts_start, ts_end, geom.wkb) for (mmsi, ts_start, ts_end, geom) in stops_to_insert]
             )
 

@@ -1,35 +1,41 @@
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src'))
+
 import unittest
 import mercantile
 from shapely import LineString, Polygon
 from shapely.wkb import dumps
-import src.transform_ls_to_cs as transform
+
+from core.cellstring_utils import ENCODE_MULT_Z13, ENCODE_MULT_Z17, ENCODE_MULT_Z21, ENCODE_OFFSET_Z13, ENCODE_OFFSET_Z17, ENCODE_OFFSET_Z21, Classification, classify_tile_containment, encode_lonlat_to_cellid
+from core.ls_poly_to_cs import Row, convert_linestring_to_cellstring, convert_polygon_to_cellstrings, deprecated_convert_polygon_to_cellstring, process_trajectory_row
 
 
 class TestEncodeLonLatToMVTCellId(unittest.TestCase):
 
     def test_HouHavn(self):
         lon, lat = 10.383365, 57.056374
-        cell_id = transform.encode_lonlat_to_cellid(lon, lat)
+        cell_id = encode_lonlat_to_cellid(lon, lat)
         self.assertEqual(cell_id, 1_1109063_0641880)
 
     def test_toprightquadrant_VenoeHavn(self):
         lon, lat = 8.614294, 56.550693
-        cell_id = transform.encode_lonlat_to_cellid(lon, lat)
+        cell_id = encode_lonlat_to_cellid(lon, lat)
         self.assertEqual(cell_id, 1_1098757_0647260)
 
     def test_topleftquadrant_Canada(self):
         lon, lat = -123.120231, 49.290563
-        cell_id = transform.encode_lonlat_to_cellid(lon, lat)
+        cell_id = encode_lonlat_to_cellid(lon, lat)
         self.assertEqual(cell_id, 1_0331348_0717620)
 
     def test_bottomleftquadrant_BuenosAires(self):
         lon, lat = -57.853151, -34.469250
-        cell_id = transform.encode_lonlat_to_cellid(lon, lat)
+        cell_id = encode_lonlat_to_cellid(lon, lat)
         self.assertEqual(cell_id, 1_0711556_1262712)
 
     def test_bottomrightquadrant_Melbourne(self):
         lon, lat = 144.944281, -37.815050
-        cell_id = transform.encode_lonlat_to_cellid(lon, lat)
+        cell_id = encode_lonlat_to_cellid(lon, lat)
         self.assertEqual(cell_id, 1_1892937_1286854)
 
 
@@ -39,14 +45,14 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
     def _decode_cellid_to_tile(self, cellid: int, zoom: int) -> tuple[int, int]:
         """Decode a cell ID back to tile (x, y) coordinates."""
         if zoom == 13:
-            offset = transform.ENCODE_OFFSET_Z13
-            mult = transform.ENCODE_MULT_Z13
+            offset = ENCODE_OFFSET_Z13
+            mult = ENCODE_MULT_Z13
         elif zoom == 17:
-            offset = transform.ENCODE_OFFSET_Z17
-            mult = transform.ENCODE_MULT_Z17
+            offset = ENCODE_OFFSET_Z17
+            mult = ENCODE_MULT_Z17
         else:
-            offset = transform.ENCODE_OFFSET_Z21
-            mult = transform.ENCODE_MULT_Z21
+            offset = ENCODE_OFFSET_Z21
+            mult = ENCODE_MULT_Z21
 
         cellid_adjusted = cellid - offset
         x = cellid_adjusted // mult
@@ -60,7 +66,7 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
             (10.1, 55.0),
             (10.2, 55.0),
         ])
-        cellstring = transform.convert_linestring_to_cellstring(linestring, zoom=13)
+        cellstring = convert_linestring_to_cellstring(linestring, zoom=13)
 
         self.assertGreater(len(cellstring), 0, "Should produce cells for trajectory")
 
@@ -79,7 +85,7 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
             (10.0, 55.1),
             (10.0, 55.2),
         ])
-        cellstring = transform.convert_linestring_to_cellstring(linestring, zoom=13)
+        cellstring = convert_linestring_to_cellstring(linestring, zoom=13)
 
         self.assertGreater(len(cellstring), 0)
 
@@ -95,7 +101,7 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
             [10.836495399475098, 57.36823654174805],
             [10.83551025390625, 57.368526458740234]
         ])
-        cellstring = transform.convert_linestring_to_cellstring(linestring)
+        cellstring = convert_linestring_to_cellstring(linestring)
 
         self.assertGreater(len(cellstring), 0, "Two-segment trajectory should produce cells")
 
@@ -115,7 +121,7 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
             [10.83551025390625, 57.368526458740234],
             [10.835510777, 57.368526435]
         ])
-        cellstring = transform.convert_linestring_to_cellstring(linestring)
+        cellstring = convert_linestring_to_cellstring(linestring)
 
         self.assertGreater(len(cellstring), 0)
 
@@ -130,7 +136,7 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
     def test_linestring_empty_returns_empty(self):
         """Test: empty LineString returns empty cellstring."""
         linestring = LineString()
-        cellstring = transform.convert_linestring_to_cellstring(linestring)
+        cellstring = convert_linestring_to_cellstring(linestring)
 
         self.assertEqual(cellstring, [])
 
@@ -141,9 +147,9 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
             (10.1, 55.1),
         ])
 
-        cs_z13 = transform.convert_linestring_to_cellstring(linestring, zoom=13)
-        cs_z17 = transform.convert_linestring_to_cellstring(linestring, zoom=17)
-        cs_z21 = transform.convert_linestring_to_cellstring(linestring, zoom=21)
+        cs_z13 = convert_linestring_to_cellstring(linestring, zoom=13)
+        cs_z17 = convert_linestring_to_cellstring(linestring, zoom=17)
+        cs_z21 = convert_linestring_to_cellstring(linestring, zoom=21)
 
         self.assertGreater(len(cs_z21), 0)
         self.assertGreater(len(cs_z17), 0)
@@ -159,7 +165,7 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
             (10.0, 55.0),
             (10.1, 55.1),
         ])
-        cellstring = transform.convert_linestring_to_cellstring(linestring, zoom=13)
+        cellstring = convert_linestring_to_cellstring(linestring, zoom=13)
 
         self.assertGreater(len(cellstring), 0)
 
@@ -171,8 +177,8 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
         self.assertLess(first_x, last_x, "Should progress eastward")
         self.assertGreater(first_y, last_y, "Should progress northward (Web Mercator)")
 
-    def test_process_trajectory_row_deduplicates(self):
-        """Test: process_trajectory_row returns deduplicated cellstrings for all zoom levels."""
+    def test_process_trajectory_row(self):
+        """Test: process_trajectory_row works and produces unique cells."""
         linestring = LineString([
             (10.0, 55.0),
             (10.05, 55.05),
@@ -180,42 +186,10 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
         ])
         geom_wkb = dumps(linestring)
 
-        row: transform.Row = (1, 12345, 1000, 2000, geom_wkb)
-        result = transform.process_trajectory_row(row, use_supercover=False)
+        row: Row = (2, 54321, 2000, 3000, geom_wkb)
+        result = process_trajectory_row(row)
 
-        trajectory_id, mmsi, ts_start, ts_end, is_unique, cs_z13, cs_z17, cs_z21 = result
-
-        self.assertEqual(trajectory_id, 1)
-        self.assertEqual(mmsi, 12345)
-        self.assertEqual(ts_start, 1000)
-        self.assertEqual(ts_end, 2000)
-        self.assertIsInstance(is_unique, bool)
-
-        self.assertGreater(len(cs_z13), 0)
-        self.assertGreater(len(cs_z17), 0)
-        self.assertGreater(len(cs_z21), 0)
-
-        # Critical: verify deduplication works at all zoom levels
-        self.assertEqual(len(cs_z13), len(set(cs_z13)),
-                         "z13 cellstring should have no duplicates")
-        self.assertEqual(len(cs_z17), len(set(cs_z17)),
-                         "z17 cellstring should have no duplicates")
-        self.assertEqual(len(cs_z21), len(set(cs_z21)),
-                         "z21 cellstring should have no duplicates")
-
-    def test_process_trajectory_row_with_supercover(self):
-        """Test: process_trajectory_row works with supercover=True."""
-        linestring = LineString([
-            (10.0, 55.0),
-            (10.05, 55.05),
-            (10.1, 55.1),
-        ])
-        geom_wkb = dumps(linestring)
-
-        row: transform.Row = (2, 54321, 2000, 3000, geom_wkb)
-        result = transform.process_trajectory_row(row, use_supercover=True)
-
-        trajectory_id, mmsi, ts_start, ts_end, is_unique, cs_z13, cs_z17, cs_z21 = result
+        trajectory_id, mmsi, ts_start, ts_end, cs_z13, cs_z17, cs_z21 = result
 
         self.assertEqual(trajectory_id, 2)
         self.assertEqual(mmsi, 54321)
@@ -232,7 +206,7 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
             (10.05, 55.05),
             (10.1, 55.1),
         ])
-        cellstring = transform.convert_linestring_to_cellstring(linestring, zoom=13)
+        cellstring = convert_linestring_to_cellstring(linestring, zoom=13)
 
         self.assertGreater(len(cellstring), 0)
 
@@ -247,9 +221,9 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
         self.assertEqual(len(cellstring), len(set(cellstring)))
 
 
-class TestPolygonToCellString(unittest.TestCase):
+class TestPolygonToCellStrings(unittest.TestCase):
 
-    def test_convert_polygon_to_cellstring(self):
+    def test_convert_polygon_to_cellstrings(self):
         polygon = Polygon([
             [10.788898468017578, 57.37221145629883],
             [10.787409782409668, 57.37289810180664],
@@ -268,7 +242,7 @@ class TestPolygonToCellString(unittest.TestCase):
             [10.788898468017578, 57.37221145629883]
         ])
 
-        cellstring = transform.convert_polygon_to_cellstring(polygon)
+        cellstring = deprecated_convert_polygon_to_cellstring(polygon, 21)
 
         expected = [
             111114130638469, 111114130638470, 111114140638469, 111114140638470, 111114140638471,
@@ -357,12 +331,12 @@ class TestHierarchicalPolygonToCellString(unittest.TestCase):
         ])
 
         # Original algorithm
-        z13_old = transform.convert_polygon_to_cellstring(polygon, 13)
-        z17_old = transform.convert_polygon_to_cellstring(polygon, 17)
-        z21_old = transform.convert_polygon_to_cellstring(polygon, 21)
+        z13_old = deprecated_convert_polygon_to_cellstring(polygon, 13)
+        z17_old = deprecated_convert_polygon_to_cellstring(polygon, 17)
+        z21_old = deprecated_convert_polygon_to_cellstring(polygon, 21)
 
         # Hierarchical algorithm
-        z13_new, z17_new, z21_new = transform.convert_polygon_to_cellstring_hierarchical(polygon)
+        z13_new, z17_new, z21_new = convert_polygon_to_cellstrings(polygon)
 
         # Should produce identical results (using sets since order may differ)
         self.assertEqual(set(z13_old), set(z13_new), "Z13 cellstrings should match")
@@ -372,7 +346,7 @@ class TestHierarchicalPolygonToCellString(unittest.TestCase):
     def test_hierarchical_empty_polygon(self):
         """Verify hierarchical algorithm handles empty polygons correctly."""
         polygon = Polygon()
-        z13, z17, z21 = transform.convert_polygon_to_cellstring_hierarchical(polygon)
+        z13, z17, z21 = convert_polygon_to_cellstrings(polygon)
 
         self.assertEqual(z13, [])
         self.assertEqual(z17, [])
@@ -391,13 +365,13 @@ class TestHierarchicalPolygonToCellString(unittest.TestCase):
 
         # Get a tile inside the polygon
         tile_inside = mercantile.tile(10.5, 57.5, 13)
-        classification_inside = transform.classify_tile_containment(polygon, tile_inside)
-        self.assertEqual(classification_inside, transform.Classification.FULLY_CONTAINED)
+        classification_inside = classify_tile_containment(polygon, tile_inside)
+        self.assertEqual(classification_inside, Classification.FULLY_CONTAINED)
 
         # Get a tile outside the polygon
         tile_outside = mercantile.tile(15.0, 60.0, 13)
-        classification_outside = transform.classify_tile_containment(polygon, tile_outside)
-        self.assertEqual(classification_outside, transform.Classification.NO_INTERSECTION)
+        classification_outside = classify_tile_containment(polygon, tile_outside)
+        self.assertEqual(classification_outside, Classification.NO_INTERSECTION)
 
 
 if __name__ == "__main__":
