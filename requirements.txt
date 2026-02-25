@@ -9,4 +9,5 @@ shapely==2.1.1
 typing_extensions==4.15.0
 tzdata==2025.2
 duckdb==1.4.4
+pyarrow>=14.0
 ukc_core==0.1.4

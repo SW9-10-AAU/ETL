@@ -1,5 +1,6 @@
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 import duckdb
+import pyarrow as pa
 from core.ls_poly_to_cs import ProcessResultStop, ProcessResultTraj, Row, process_stop_row, process_trajectory_row
 
 FutureResultTraj = Future[ProcessResultTraj]
@@ -8,29 +9,49 @@ FutureResultStop = Future[ProcessResultStop]
 BATCH_SIZE = 5000
 MAX_WORKERS = 4
 
+TRAJ_SCHEMA = pa.schema([
+    pa.field("trajectory_id", pa.int32()),
+    pa.field("mmsi", pa.int64()),
+    pa.field("ts_start", pa.timestamp("us", tz="UTC")),
+    pa.field("ts_end", pa.timestamp("us", tz="UTC")),
+    pa.field("cellstring_z13", pa.list_(pa.int32())),
+    pa.field("cellstring_z17", pa.list_(pa.int64())),
+    pa.field("cellstring_z21", pa.list_(pa.int64())),
+])
+
+STOP_SCHEMA = pa.schema([
+    pa.field("stop_id", pa.int32()),
+    pa.field("mmsi", pa.int64()),
+    pa.field("ts_start", pa.timestamp("us", tz="UTC")),
+    pa.field("ts_end", pa.timestamp("us", tz="UTC")),
+    pa.field("cellstring_z13", pa.list_(pa.int32())),
+    pa.field("cellstring_z17", pa.list_(pa.int64())),
+    pa.field("cellstring_z21", pa.list_(pa.int64())),
+])
+
 def transform_ls_trajectories_to_cs(conn: duckdb.DuckDBPyConnection, db_schema: str, max_workers: int = MAX_WORKERS,
                                             batch_size: int = BATCH_SIZE):
     print(f"--- Processing trajectories with (using {max_workers} workers) ---")
     total_processed = 0
-    insert_query = f"""
-        INSERT INTO {db_schema}.trajectory_cs (trajectory_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """
 
     conn.execute("LOAD spatial")
-    print("Fetching all trajectory rows...")
-    all_rows : list[Row] = [
-        (int(tid), int(mmsi), ts_start, ts_end, bytes(geom_wkb))
-        for tid, mmsi, ts_start, ts_end, geom_wkb in conn.execute(f"""
-            SELECT trajectory_id, mmsi, ts_start, ts_end, ST_AsWKB(geom)
-            FROM {db_schema}.trajectory_ls
-            ORDER BY trajectory_id
-        """).fetchall()
-    ]
-    print(f"Fetched {len(all_rows):,} rows, processing in batches of {batch_size}...")
+    print(f"Processing trajectories in batches of {batch_size}...")
+    last_id = 0
+    while True:
+        batch: list[Row] = [
+            (int(tid), int(mmsi), ts_start, ts_end, bytes(geom_wkb))
+            for tid, mmsi, ts_start, ts_end, geom_wkb in conn.execute(f"""
+                SELECT trajectory_id, mmsi, ts_start, ts_end, ST_AsWKB(geom)
+                FROM {db_schema}.trajectory_ls
+                WHERE trajectory_id > ?
+                ORDER BY trajectory_id
+                LIMIT ?
+            """, [last_id, batch_size]).fetchall()
+        ]
+        if not batch:
+            break
 
-    for i in range(0, len(all_rows), batch_size):
-        batch = all_rows[i:i + batch_size]
+        print(f"Processing batch of {len(batch)} trajectories (total processed so far: {total_processed:,})...")
 
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures: list[FutureResultTraj] = [executor.submit(process_trajectory_row, row) for row in batch]
@@ -41,13 +62,22 @@ def transform_ls_trajectories_to_cs(conn: duckdb.DuckDBPyConnection, db_schema: 
                 except Exception as e:
                     print(f"Worker error: {e}")
 
-        conn.executemany(insert_query,
-                         [(trajectory_id, mmsi, start_time, end_time, cellstring_z13, cellstring_z17, cellstring_z21)
-                          for (trajectory_id, mmsi, start_time, end_time, cellstring_z13, cellstring_z17, cellstring_z21)
-                          in results])
+        print(f"Processed batch of {len(results)} trajectories, inserting into the database...")
 
+        arrow_table = pa.table({
+            "trajectory_id": pa.array([r[0] for r in results], type=pa.int32()),
+            "mmsi":          pa.array([r[1] for r in results], type=pa.int64()),
+            "ts_start":      pa.array([r[2] for r in results], type=pa.timestamp("us", tz="UTC")),
+            "ts_end":        pa.array([r[3] for r in results], type=pa.timestamp("us", tz="UTC")),
+            "cellstring_z13": pa.array([r[4] for r in results], type=pa.list_(pa.int64())),
+            "cellstring_z17": pa.array([r[5] for r in results], type=pa.list_(pa.int64())),
+            "cellstring_z21": pa.array([r[6] for r in results], type=pa.list_(pa.int64())),
+        }, schema=TRAJ_SCHEMA)
+        conn.execute(f"INSERT INTO {db_schema}.trajectory_cs SELECT * FROM arrow_table")
+
+        last_id = batch[-1][0]
         total_processed += len(results)
-        print(f"Processed total: {total_processed:,} trajectories")
+        print(f"Inserted: {total_processed:,} trajectories in total")
 
     print(f"Finished processing all trajectories ({total_processed:,} total)")
 
@@ -56,25 +86,23 @@ def transform_poly_stops_to_cs(conn: duckdb.DuckDBPyConnection, db_schema: str, 
                                      batch_size: int = BATCH_SIZE):
     print(f"--- Processing stops (using {max_workers} workers) ---")
     total_processed = 0
-    insert_query = f"""
-        INSERT INTO {db_schema}.stop_cs (stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """
 
     conn.execute("LOAD spatial")
-    print("Fetching all stop rows...")
-    all_rows : list[Row] = [
-        (int(sid), int(mmsi), ts_start, ts_end, bytes(geom_wkb))
-        for sid, mmsi, ts_start, ts_end, geom_wkb in conn.execute(f"""
-            SELECT stop_id, mmsi, ts_start, ts_end, ST_AsWKB(geom)
-            FROM {db_schema}.stop_poly
-            ORDER BY stop_id
-        """).fetchall()
-    ]
-    print(f"Fetched {len(all_rows):,} rows, processing in batches of {batch_size}...")
-
-    for i in range(0, len(all_rows), batch_size):
-        batch = all_rows[i:i + batch_size]
+    print(f"Processing stops in batches of {batch_size}...")
+    last_id = 0
+    while True:
+        batch: list[Row] = [
+            (int(sid), int(mmsi), ts_start, ts_end, bytes(geom_wkb))
+            for sid, mmsi, ts_start, ts_end, geom_wkb in conn.execute(f"""
+                SELECT stop_id, mmsi, ts_start, ts_end, ST_AsWKB(geom)
+                FROM {db_schema}.stop_poly
+                WHERE stop_id > ?
+                ORDER BY stop_id
+                LIMIT ?
+            """, [last_id, batch_size]).fetchall()
+        ]
+        if not batch:
+            break
 
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures: list[FutureResultStop] = [executor.submit(process_stop_row, row) for row in batch]
@@ -85,12 +113,19 @@ def transform_poly_stops_to_cs(conn: duckdb.DuckDBPyConnection, db_schema: str, 
                 except Exception as e:
                     print(f"Worker error: {e}")
 
-        conn.executemany(insert_query,
-                         [(stop_id, mmsi, start_time, end_time, cellstring_z13, cellstring_z17, cellstring_z21)
-                          for (stop_id, mmsi, start_time, end_time, cellstring_z13, cellstring_z17, cellstring_z21)
-                          in results])
+        arrow_table = pa.table({
+            "stop_id":        pa.array([r[0] for r in results], type=pa.int32()),
+            "mmsi":           pa.array([r[1] for r in results], type=pa.int64()),
+            "ts_start":       pa.array([r[2] for r in results], type=pa.timestamp("us", tz="UTC")),
+            "ts_end":         pa.array([r[3] for r in results], type=pa.timestamp("us", tz="UTC")),
+            "cellstring_z13": pa.array([r[4] for r in results], type=pa.list_(pa.int32())),
+            "cellstring_z17": pa.array([r[5] for r in results], type=pa.list_(pa.int64())),
+            "cellstring_z21": pa.array([r[6] for r in results], type=pa.list_(pa.int64())),
+        }, schema=STOP_SCHEMA)
+        conn.execute(f"INSERT INTO {db_schema}.stop_cs SELECT * FROM arrow_table")
 
+        last_id = batch[-1][0]
         total_processed += len(results)
-        print(f"Processed total: {total_processed:,} stops")
+        print(f"Inserted: {total_processed:,} stops in total")
 
     print(f"Finished processing all stops ({total_processed:,} total)")
