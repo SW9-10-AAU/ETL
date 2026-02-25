@@ -31,7 +31,7 @@ def create_duckdb_tables(conn: duckdb.DuckDBPyConnection, db_schema: str):
             mmsi     BIGINT NOT NULL,
             ts_start TIMESTAMP NOT NULL,
             ts_end   TIMESTAMP NOT NULL,
-            geom     POLYGON_2D NOT NULL
+            geom     GEOMETRY NOT NULL
         );
     """)
 
@@ -68,7 +68,7 @@ def create_duckdb_tables(conn: duckdb.DuckDBPyConnection, db_schema: str):
         (
             area_id INTEGER PRIMARY KEY DEFAULT nextval('{db_schema}.area_poly_seq'),
             name TEXT NOT NULL,
-            geom BLOB NOT NULL
+            geom GEOMETRY NOT NULL
         );
     """)
 
@@ -92,7 +92,7 @@ def create_duckdb_tables(conn: duckdb.DuckDBPyConnection, db_schema: str):
         (
             crossing_id INTEGER PRIMARY KEY DEFAULT nextval('{db_schema}.crossing_ls_seq'),
             name TEXT NOT NULL,
-            geom BLOB NOT NULL
+            geom GEOMETRY NOT NULL
         );
     """)
     

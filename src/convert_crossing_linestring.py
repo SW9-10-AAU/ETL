@@ -51,7 +51,7 @@ def convert_crossing_linestring_to_cs_duckdb(linestring: LineString, name: str):
     # Insert crossing as linestring into table
     conn.execute(
         f"""INSERT INTO {db_schema}.crossing_ls (name, geom)
-           VALUES (?, ?)""",
+           VALUES (?, ST_GeomFromWKB(?))""",
         [name, linestring.wkb],
     )
     print("Inserted crossing linestring into DuckDB table")
