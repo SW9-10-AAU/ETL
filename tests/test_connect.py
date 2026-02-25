@@ -1,10 +1,10 @@
 import sys
 import os
-sys.path.append(os.path.join(os.path.dirname(__file__), '../src'))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src'))
 
 import unittest
+from db_setup.utils.connect import connect_to_postgres_db
 from unittest.mock import patch
-from connect import connect_to_db
 
 class TestConnect(unittest.TestCase):
     
@@ -15,7 +15,7 @@ class TestConnect(unittest.TestCase):
         mock_getenv.return_value = 'postgresql://user:pass@localhost/dbname'
         mock_psycopg_connect.return_value = 'mock_connection'
 
-        conn = connect_to_db()
+        conn = connect_to_postgres_db()
 
         # Assert that psycopg.connect was called with the correct argument
         mock_psycopg_connect.assert_called_with('postgresql://user:pass@localhost/dbname')
