@@ -20,7 +20,9 @@ def main_duckdb():
 
     db_path = get_db_path_or_url('duckdb')
     db_schema = get_db_schema('duckdb')
+    num_workers = min(os.cpu_count() or 4, 16)
     connection = duckdb.connect(database=db_path)
+    connection.execute(f"SET threads = {max(1, (os.cpu_count() or 4) - num_workers)}")
 
     # Drop tables
     # drop_duckdb_tables(connection, db_schema)
@@ -29,11 +31,11 @@ def main_duckdb():
     # create_duckdb_tables(connection, db_schema)
 
     # Construct LineString trajectories and Polygon stops from the Points table
-    construct_trajectories_and_stops(connection, db_schema, min(os.cpu_count() or 4, 12))
+    construct_trajectories_and_stops(connection, db_schema, num_workers)
 
     # Transform LineString trajectories and Polygon stops to CellStrings
-    transform_ls_trajectories_to_cs(connection, db_schema, min(os.cpu_count() or 4, 12), batch_size=100)
-    transform_poly_stops_to_cs(connection, db_schema, min(os.cpu_count() or 4, 12), batch_size=100)
+    transform_ls_trajectories_to_cs(connection, db_schema, num_workers, batch_size=100)
+    transform_poly_stops_to_cs(connection, db_schema, num_workers, batch_size=100)
 
     connection.close()
 
