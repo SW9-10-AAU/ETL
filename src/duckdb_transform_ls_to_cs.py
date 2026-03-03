@@ -17,7 +17,11 @@ def transform_ls_trajectories_to_cs(conn: duckdb.DuckDBPyConnection, db_schema: 
 
     conn.execute("LOAD spatial")
     print(f"Processing trajectories in batches of {batch_size}...")
-    last_id = 0
+    
+    # Use last processed trajectory as last_id
+    max_id = conn.execute(f"""SELECT MAX(trajectory_id) FROM {db_schema}.trajectory_cs""").fetchone()
+    last_id: int = max_id[0] if max_id and max_id[0] is not None else 0
+    
     while True:
         batch: list[Row] = [
             (int(tid), int(mmsi), ts_start, ts_end, bytes(geom_wkb))
@@ -70,7 +74,11 @@ def transform_poly_stops_to_cs(conn: duckdb.DuckDBPyConnection, db_schema: str, 
 
     conn.execute("LOAD spatial")
     print(f"Processing stops in batches of {batch_size}...")
-    last_id = 0
+    
+    # Use last processed stop as last_id
+    max_id = conn.execute(f"""SELECT MAX(stop_id) FROM {db_schema}.stop_cs""").fetchone()
+    last_id: int = max_id[0] if max_id and max_id[0] is not None else 0
+    
     while True:
         batch: list[Row] = [
             (int(sid), int(mmsi), ts_start, ts_end, bytes(geom_wkb))
