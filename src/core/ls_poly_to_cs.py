@@ -131,6 +131,7 @@ def process_trajectory_row(row: Row) -> ProcessResultTraj:
     trajectory_id, mmsi, ts_start, ts_end, geom_wkb = row
     linestring = cast(LineString, from_wkb(geom_wkb))
     cellstring_z13, cellstring_z17, cellstring_z21= convert_linestring_to_cellstrings(linestring)
+    print(f"Processed trajectory_id {trajectory_id} with {len(cellstring_z13)} z13 cells, {len(cellstring_z17)} z17 cells, and {len(cellstring_z21)} z21 cells.")
   
     return (trajectory_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21)
 
