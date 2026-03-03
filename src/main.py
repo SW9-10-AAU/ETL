@@ -22,7 +22,6 @@ def main_duckdb():
     db_schema = get_db_schema('duckdb')
     num_workers = min(os.cpu_count() or 4, 16)
     connection = duckdb.connect(database=db_path)
-    connection.execute(f"SET threads = {max(1, (os.cpu_count() or 4) - num_workers)}")
 
     # Drop tables
     # drop_duckdb_tables(connection, db_schema)

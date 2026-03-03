@@ -1,4 +1,3 @@
-import multiprocessing
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 import duckdb
 import pyarrow as pa
@@ -40,7 +39,7 @@ def transform_ls_trajectories_to_cs(conn: duckdb.DuckDBPyConnection, db_schema: 
 
         print(f"Processing batch of {len(batch)} trajectories (total processed so far: {total_processed:,})...")
 
-        with ProcessPoolExecutor(max_workers=max_workers, mp_context=multiprocessing.get_context('spawn')) as executor:
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures: list[FutureResultTraj] = [executor.submit(process_trajectory_row, row) for row in batch]
             results: list[ProcessResultTraj] = []
             for future in as_completed(futures):
@@ -96,7 +95,7 @@ def transform_poly_stops_to_cs(conn: duckdb.DuckDBPyConnection, db_schema: str, 
         if not batch:
             break
 
-        with ProcessPoolExecutor(max_workers=max_workers, mp_context=multiprocessing.get_context('spawn')) as executor:
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures: list[FutureResultStop] = [executor.submit(process_stop_row, row) for row in batch]
             results: list[ProcessResultStop] = []
             for future in as_completed(futures):

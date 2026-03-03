@@ -1,4 +1,3 @@
-import multiprocessing
 import time
 from collections import defaultdict
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
@@ -83,7 +82,7 @@ def construct_trajectories_and_stops(conn: duckdb.DuckDBPyConnection, db_schema:
         stops_to_insert: list[Stop] = []
 
         # Parallel processing of the batch of MMSIs
-        with ProcessPoolExecutor(max_workers=max_workers, mp_context=multiprocessing.get_context('spawn')) as executor:
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures: dict[FutureResult, int] = {
                 executor.submit(process_single_mmsi, mmsi, points[mmsi]): mmsi
                 for mmsi in mmsis_in_batch
