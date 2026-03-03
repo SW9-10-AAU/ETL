@@ -43,8 +43,6 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -
         
         # Add cells for any non-contained LineString segments
         while noncontained_ls_segments:
-            prev_tile_count = len(set(segment_tiles))
-
             for ls_segment in noncontained_ls_segments:
                 seg_coords = list(ls_segment.coords)
 
@@ -57,30 +55,10 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -
                         for x1_c, y1_c in end_tiles:
                             segment_tiles.extend(supercover(x0_c, y0_c, x1_c, y1_c))
                             
-                # ---- OTER APPROACH ----
-                # for start_coord, end_coord in zip(seg_coords[:-1], seg_coords[1:]):
-                #     eps = 1e-9
-                #     minx = min(start_coord[0], end_coord[0]) - eps
-                #     maxx = max(start_coord[0], end_coord[0]) + eps
-                #     miny = min(start_coord[1], end_coord[1]) - eps
-                #     maxy = max(start_coord[1], end_coord[1]) + eps
-                #     tiles = mercantile.tiles(minx, miny, maxx, maxy, zoom)
-
-                #     for tile in tiles:
-                #         bounds = mercantile.bounds(tile)
-                #         tile_poly: Polygon = box(bounds.west, bounds.south, bounds.east, bounds.north)
-                #         if ls_segment.intersects(tile_poly):
-                #             segment_tiles.append((tile.x, tile.y))
-
             # Check containment with updated tiles
             segment_tiles_poly = convert_tiles_to_shapely_polygon(segment_tiles, zoom)
             noncontained_ls_segments = find_noncontained_ls_segments(segment_ls, segment_tiles_poly)
 
-            # Safety guard: if no new tiles were added, the loop cannot make progress — break
-            if len(set(segment_tiles)) == prev_tile_count:
-                print(f"Breaking loop")
-                break
-            
         # Convert segment tiles to cell IDs and append to cellstring
         for x, y in segment_tiles:
             cellstring.append(encode_tile_xy_to_cellid(x, y, zoom))
