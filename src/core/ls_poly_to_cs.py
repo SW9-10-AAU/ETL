@@ -43,32 +43,32 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -
         
         # Add cells for any non-contained LineString segments
         while noncontained_ls_segments:
-            
+            # prev_tile_count = len(set(segment_tiles))
+
             for ls_segment in noncontained_ls_segments:
                 seg_coords = list(ls_segment.coords)
-                
+
                 for start_coord, end_coord in zip(seg_coords[:-1], seg_coords[1:]):
-                    minx, miny = start_coord[0], start_coord[1]
-                    maxx, maxy = end_coord[0], end_coord[1]
+                    eps = 1e-9
+                    minx = min(start_coord[0], end_coord[0]) - eps
+                    maxx = max(start_coord[0], end_coord[0]) + eps
+                    miny = min(start_coord[1], end_coord[1]) - eps
+                    maxy = max(start_coord[1], end_coord[1]) + eps
                     tiles = mercantile.tiles(minx, miny, maxx, maxy, zoom)
-                    
+
                     for tile in tiles:
                         bounds = mercantile.bounds(tile)
                         tile_poly: Polygon = box(bounds.west, bounds.south, bounds.east, bounds.north)
                         if ls_segment.intersects(tile_poly):
                             segment_tiles.append((tile.x, tile.y))
-                    
-                    # Get all intersecting tiles for both endpoints of the non-contained LineString segment
-                    # start_tiles, end_tiles = get_tiles_for_endpoints((start_coord[0], start_coord[1]), (end_coord[0], end_coord[1]), zoom)
-                    
-                    # Add supercover tiles between all candidate pairs.
-                    # for x0_c, y0_c in start_tiles:
-                    #     for x1_c, y1_c in end_tiles:
-                    #         segment_tiles.extend(supercover(x0_c, y0_c, x1_c, y1_c))
-            
+
             # Check containment with updated tiles
             segment_tiles_poly = convert_tiles_to_shapely_polygon(segment_tiles, zoom)
             noncontained_ls_segments = find_noncontained_ls_segments(segment_ls, segment_tiles_poly)
+
+            # Safety guard: if no new tiles were added, the loop cannot make progress — break
+            # if len(set(segment_tiles)) == prev_tile_count:
+            #     break
             
         # Convert segment tiles to cell IDs and append to cellstring
         for x, y in segment_tiles:
