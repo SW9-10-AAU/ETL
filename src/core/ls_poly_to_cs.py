@@ -48,18 +48,27 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -
             if (max_iterations == 9):
                 print(f"Warning: reached max iterations for segment {c0} to {c1}. Remaining non-contained segments: {len(noncontained_ls_segments)}")
             
-            for segment in noncontained_ls_segments:
-                seg_coords = list(segment.coords)
+            for ls_segment in noncontained_ls_segments:
+                seg_coords = list(ls_segment.coords)
                 
                 for start_coord, end_coord in zip(seg_coords[:-1], seg_coords[1:]):
+                    minx, miny = start_coord[0], start_coord[1]
+                    maxx, maxy = end_coord[0], end_coord[1]
+                    tiles = mercantile.tiles(minx, miny, maxx, maxy, zoom)
+                    
+                    for tile in tiles:
+                        bounds = mercantile.bounds(tile)
+                        tile_poly: Polygon = box(bounds.west, bounds.south, bounds.east, bounds.north)
+                        if ls_segment.intersects(tile_poly):
+                            segment_tiles.append((tile.x, tile.y))
                     
                     # Get all intersecting tiles for both endpoints of the non-contained LineString segment
-                    start_tiles, end_tiles = get_tiles_for_endpoints((start_coord[0], start_coord[1]), (end_coord[0], end_coord[1]), zoom)
+                    # start_tiles, end_tiles = get_tiles_for_endpoints((start_coord[0], start_coord[1]), (end_coord[0], end_coord[1]), zoom)
                     
                     # Add supercover tiles between all candidate pairs.
-                    for x0_c, y0_c in start_tiles:
-                        for x1_c, y1_c in end_tiles:
-                            segment_tiles.extend(supercover(x0_c, y0_c, x1_c, y1_c))
+                    # for x0_c, y0_c in start_tiles:
+                    #     for x1_c, y1_c in end_tiles:
+                    #         segment_tiles.extend(supercover(x0_c, y0_c, x1_c, y1_c))
             
             # Check containment with updated tiles
             segment_tiles_poly = convert_tiles_to_shapely_polygon(segment_tiles, zoom)
