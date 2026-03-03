@@ -43,7 +43,7 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -
         
         # Add cells for any non-contained LineString segments
         while noncontained_ls_segments:
-            # prev_tile_count = len(set(segment_tiles))
+            prev_tile_count = len(set(segment_tiles))
 
             for ls_segment in noncontained_ls_segments:
                 seg_coords = list(ls_segment.coords)
@@ -67,8 +67,9 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -
             noncontained_ls_segments = find_noncontained_ls_segments(segment_ls, segment_tiles_poly)
 
             # Safety guard: if no new tiles were added, the loop cannot make progress — break
-            # if len(set(segment_tiles)) == prev_tile_count:
-            #     break
+            if len(set(segment_tiles)) == prev_tile_count:
+                print(f"Breaking loop")
+                break
             
         # Convert segment tiles to cell IDs and append to cellstring
         for x, y in segment_tiles:
