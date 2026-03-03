@@ -41,12 +41,8 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -
         # Check for any segments of the LineString not contained in the polygon constructed from the tiles
         noncontained_ls_segments = find_noncontained_ls_segments(segment_ls, segment_tiles_poly)
         
-        max_iterations = 0
-        
         # Add cells for any non-contained LineString segments
-        while noncontained_ls_segments and max_iterations < 10:
-            if (max_iterations == 9):
-                print(f"Warning: reached max iterations for segment {c0} to {c1}. Remaining non-contained segments: {len(noncontained_ls_segments)}")
+        while noncontained_ls_segments:
             
             for ls_segment in noncontained_ls_segments:
                 seg_coords = list(ls_segment.coords)
@@ -73,7 +69,6 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -
             # Check containment with updated tiles
             segment_tiles_poly = convert_tiles_to_shapely_polygon(segment_tiles, zoom)
             noncontained_ls_segments = find_noncontained_ls_segments(segment_ls, segment_tiles_poly)
-            max_iterations += 1
             
         # Convert segment tiles to cell IDs and append to cellstring
         for x, y in segment_tiles:
