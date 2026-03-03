@@ -23,6 +23,7 @@ def transform_ls_trajectories_to_cs(conn: duckdb.DuckDBPyConnection, db_schema: 
     last_id: int = max_id[0] if max_id and max_id[0] is not None else 0
     
     while True:
+        print(f"Fetching batch of {batch_size} trajectories with trajectory_id > {last_id}...")
         batch: list[Row] = [
             (int(tid), int(mmsi), ts_start, ts_end, bytes(geom_wkb))
             for tid, mmsi, ts_start, ts_end, geom_wkb in conn.execute(f"""
@@ -80,6 +81,7 @@ def transform_poly_stops_to_cs(conn: duckdb.DuckDBPyConnection, db_schema: str, 
     last_id: int = max_id[0] if max_id and max_id[0] is not None else 0
     
     while True:
+        print(f"Fetching batch of {batch_size} stops with stop_id > {last_id}...")
         batch: list[Row] = [
             (int(sid), int(mmsi), ts_start, ts_end, bytes(geom_wkb))
             for sid, mmsi, ts_start, ts_end, geom_wkb in conn.execute(f"""

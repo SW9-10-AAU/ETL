@@ -23,10 +23,10 @@ def main_duckdb():
     connection = duckdb.connect(database=db_path)
 
     # Drop tables
-    drop_duckdb_tables(connection, db_schema)
+    # drop_duckdb_tables(connection, db_schema)
 
     # Create tables
-    create_duckdb_tables(connection, db_schema)
+    # create_duckdb_tables(connection, db_schema)
 
     # Construct LineString trajectories and Polygon stops from the Points table
     construct_trajectories_and_stops(connection, db_schema, min(os.cpu_count() or 4, 12))
