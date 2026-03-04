@@ -43,11 +43,10 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -
         
         # Add cells for any non-contained LineString segments
         while noncontained_ls_segments:
-            for segment in noncontained_ls_segments:
-                seg_coords = list(segment.coords)
-                
+            for ls_segment in noncontained_ls_segments:
+                seg_coords = list(ls_segment.coords)
+
                 for start_coord, end_coord in zip(seg_coords[:-1], seg_coords[1:]):
-                    
                     # Get all intersecting tiles for both endpoints of the non-contained LineString segment
                     start_tiles, end_tiles = get_tiles_for_endpoints((start_coord[0], start_coord[1]), (end_coord[0], end_coord[1]), zoom)
                     
@@ -55,11 +54,11 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -
                     for x0_c, y0_c in start_tiles:
                         for x1_c, y1_c in end_tiles:
                             segment_tiles.extend(supercover(x0_c, y0_c, x1_c, y1_c))
-            
+                            
             # Check containment with updated tiles
             segment_tiles_poly = convert_tiles_to_shapely_polygon(segment_tiles, zoom)
             noncontained_ls_segments = find_noncontained_ls_segments(segment_ls, segment_tiles_poly)
-        
+
         # Convert segment tiles to cell IDs and append to cellstring
         for x, y in segment_tiles:
             cellstring.append(encode_tile_xy_to_cellid(x, y, zoom))
@@ -121,6 +120,7 @@ def process_trajectory_row(row: Row) -> ProcessResultTraj:
     trajectory_id, mmsi, ts_start, ts_end, geom_wkb = row
     linestring = cast(LineString, from_wkb(geom_wkb))
     cellstring_z13, cellstring_z17, cellstring_z21= convert_linestring_to_cellstrings(linestring)
+    print(f"Processed trajectory_id {trajectory_id} with {len(cellstring_z13)} z13 cells, {len(cellstring_z17)} z17 cells, and {len(cellstring_z21)} z21 cells.")
   
     return (trajectory_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21)
 
