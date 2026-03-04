@@ -117,7 +117,7 @@ def find_noncontained_ls_segments(ls: LineString, cellstring_poly: Polygon) -> l
 
     return []
 
-def buffer_point_to_poly(point: Point, buffer_distance = 1e-9) -> Polygon:
+def buffer_point_to_poly(point: Point, buffer_distance = 1e-5) -> Polygon:
     """Buffer a point by a small amount to ensure we capture edge cases where the line just touches the tile boundary."""
     return cast(Polygon, point.buffer(buffer_distance).envelope)
 
