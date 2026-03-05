@@ -46,8 +46,9 @@ def get_points_for_mmsis_in_batch_duckdb(conn: duckdb.DuckDBPyConnection, db_sch
 
 def construct_trajectories_and_stops(conn: duckdb.DuckDBPyConnection, db_schema: str, max_workers: int = 4, batch_size: int = BATCH_SIZE):
     """Construct trajectories and stops for all MMSIs in DuckDB. Processes MMSIs in batches."""
-    all_mmsis = get_mmsis_duckdb(conn, db_schema)
-
+    # all_mmsis = get_mmsis_duckdb(conn, db_schema)
+    all_mmsis = [230688000, 244742000, 210028000, 305773000, 246179000, 277550000]
+    
     insert_traj_query = f"""
         INSERT INTO {db_schema}.trajectory_ls (mmsi, ts_start, ts_end, geom)
         VALUES (?, to_timestamp(?), to_timestamp(?), ST_GeomFromWKB(?))
