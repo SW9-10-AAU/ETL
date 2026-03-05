@@ -29,6 +29,10 @@ def main_duckdb():
     # Create tables
     # create_duckdb_tables(connection, db_schema)
 
+    # Install and load spatial extension
+    connection.execute("INSTALL spatial;")
+    connection.execute("LOAD spatial;")
+
     # Construct LineString trajectories and Polygon stops from the Points table
     construct_trajectories_and_stops(connection, db_schema, num_workers)
 

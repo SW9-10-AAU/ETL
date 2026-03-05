@@ -6,7 +6,7 @@ from shapely import Point
 
 from core.points_to_ls_poly import DictAISPointWKB, ProcessResult, Stop, Traj, process_single_mmsi
 
-BATCH_SIZE = 50 # Number of MMSIs to process in parallel
+BATCH_SIZE = 100 # Number of MMSIs to process in parallel
 FutureResult = Future[ProcessResult] # Future returning ProcessResult
 
 def get_mmsis_duckdb(conn: duckdb.DuckDBPyConnection, db_schema: str) -> list[int]:
