@@ -1,6 +1,6 @@
 from typing import cast
 from shapely import Polygon, from_wkb, Point, LineString, MultiPoint, concave_hull
-from core.utils import add_connecting_point_to_segment, append_and_clear_segment_if_nonempty, compute_mbr_area, compute_motion, extract_start_end_time_s, extract_time_s, merge_candidate_stops, try_merge_invalid_merged_stop_with_trajectories
+from core.utils import add_connecting_point_to_segment, append_segment_if_nonempty_and_clear_segment, compute_mbr_area, compute_motion, extract_start_end_time_s, extract_time_s, merge_candidate_stops, try_merge_invalid_merged_stop_with_trajectories
 
 # Stops
 STOP_SOG_THRESHOLD = 1.0            # knots, vT (original = 1 knot)
@@ -77,7 +77,7 @@ def process_single_mmsi(mmsi: int, wkb_points: list[AISPointWKB]) -> ProcessResu
             current_stop.append(current_point)
             
             # Append trajectory (if any)
-            append_and_clear_segment_if_nonempty(candidate_trajs, current_traj)
+            append_segment_if_nonempty_and_clear_segment(candidate_trajs, current_traj)
         
         # Trajectory condition
         else:
@@ -87,19 +87,19 @@ def process_single_mmsi(mmsi: int, wkb_points: list[AISPointWKB]) -> ProcessResu
                     current_traj.append(current_point)
                 else: 
                     # Append trajectory (start a new one due to large time gap)
-                    append_and_clear_segment_if_nonempty(candidate_trajs, current_traj)
+                    append_segment_if_nonempty_and_clear_segment(candidate_trajs, current_traj)
             else: 
                 continue # Don't update previous point to the skewed AIS point
             
             # Append candidate stop (if any)
-            append_and_clear_segment_if_nonempty(candidate_stops, current_stop)
+            append_segment_if_nonempty_and_clear_segment(candidate_stops, current_stop)
                 
         # Update previous point
         prev_point = current_point 
 
     # Final append (remaining traj or stop)
-    append_and_clear_segment_if_nonempty(candidate_trajs, current_traj)
-    append_and_clear_segment_if_nonempty(candidate_stops, current_stop)
+    append_segment_if_nonempty_and_clear_segment(candidate_trajs, current_traj)
+    append_segment_if_nonempty_and_clear_segment(candidate_stops, current_stop)
 
     # Merge nearby candidate stops
     merged_stops = merge_candidate_stops(candidate_stops, MERGE_DISTANCE_THRESHOLD, MERGE_TIME_THRESHOLD)
