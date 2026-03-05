@@ -42,9 +42,8 @@ def create_duckdb_tables(conn: duckdb.DuckDBPyConnection, db_schema: str):
             mmsi          BIGINT NOT NULL,
             ts_start      TIMESTAMP NOT NULL,
             ts_end        TIMESTAMP NOT NULL,
-            cellstring_z13 INTEGER[] NOT NULL,
-            cellstring_z17 BIGINT[]  NOT NULL,
-            cellstring_z21 BIGINT[]  NOT NULL
+            z16_parent    UINT32 NOT NULL,
+            z20_children  UINT8[] NOT NULL
         );
     """)
 
@@ -55,9 +54,8 @@ def create_duckdb_tables(conn: duckdb.DuckDBPyConnection, db_schema: str):
             mmsi       BIGINT NOT NULL,
             ts_start   TIMESTAMP NOT NULL,
             ts_end     TIMESTAMP NOT NULL,
-            cellstring_z13 INTEGER[] NOT NULL,
-            cellstring_z17 BIGINT[]  NOT NULL,
-            cellstring_z21 BIGINT[]  NOT NULL
+            z16_parent    UINT32 NOT NULL,
+            z20_children  UINT8[] NOT NULL,
         );
     """)
     
