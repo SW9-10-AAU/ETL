@@ -24,10 +24,10 @@ def main_duckdb():
     connection = duckdb.connect(database=db_path)
 
     # Drop tables
-    # drop_duckdb_tables(connection, db_schema)
+    drop_duckdb_tables(connection, db_schema)
 
     # Create tables
-    # create_duckdb_tables(connection, db_schema)
+    create_duckdb_tables(connection, db_schema)
 
     # Install and load spatial extension
     connection.execute("INSTALL spatial;")
@@ -37,8 +37,8 @@ def main_duckdb():
     construct_trajectories_and_stops(connection, db_schema, num_workers)
 
     # Transform LineString trajectories and Polygon stops to CellStrings
-    transform_ls_trajectories_to_cs(connection, db_schema, num_workers, batch_size=2000)
-    transform_poly_stops_to_cs(connection, db_schema, num_workers, batch_size=2000)
+    # transform_ls_trajectories_to_cs(connection, db_schema, num_workers, batch_size=2000)
+    # transform_poly_stops_to_cs(connection, db_schema, num_workers, batch_size=2000)
 
     connection.close()
 

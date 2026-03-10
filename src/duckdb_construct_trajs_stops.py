@@ -1,10 +1,18 @@
 import time
 from collections import defaultdict
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
+from typing import cast
 import duckdb
-from shapely import Point
+from shapely import LineString, from_wkt, to_wkb
 
 from core.points_to_ls_poly import DictAISPointWKB, ProcessResult, Stop, Traj, process_single_mmsi
+
+
+def linestring_to_wkb_linestring_m(ls: LineString) -> bytes:
+    """Rebuild a LineString (XYZ) as LineStringM, treating the third coordinate as M (epoch timestamp). Returns the LineStringM as WKB."""
+    coords_m = " , ".join(f"{x} {y} {int(z)}" for x, y, z in ls.coords)
+    
+    return to_wkb(from_wkt(f"LINESTRING M ({coords_m})"))
 
 BATCH_SIZE = 100 # Number of MMSIs to process in parallel
 FutureResult = Future[ProcessResult] # Future returning ProcessResult
@@ -26,7 +34,7 @@ def get_mmsis_duckdb(conn: duckdb.DuckDBPyConnection, db_schema: str) -> list[in
 
 
 def get_points_for_mmsis_in_batch_duckdb(conn: duckdb.DuckDBPyConnection, db_schema: str, mmsis: list[int]) -> DictAISPointWKB:
-    """Fetch all points for multiple MMSIs, construct WKB PointZ (with Z=epoch_ts), grouped by MMSI."""
+    """Fetch all points for multiple MMSIs, construct WKB PointM (with M=epoch_ts), grouped by MMSI."""
     placeholders = ','.join(['?'] * len(mmsis))
     rows = conn.execute(f"""
         SELECT mmsi, lon, lat, sog, epoch_ts
@@ -39,7 +47,7 @@ def get_points_for_mmsis_in_batch_duckdb(conn: duckdb.DuckDBPyConnection, db_sch
     for mmsi, lon, lat, sog, epoch_ts in rows:
         if mmsi is None or lon is None or lat is None or epoch_ts is None:
             continue
-        pt = Point(lon, lat, epoch_ts)
+        pt = from_wkt(f"POINT M ({lon} {lat} {int(epoch_ts)})")
         grouped[int(mmsi)].append((pt.wkb, float(sog) if sog is not None else None))
     return grouped
 
@@ -49,8 +57,8 @@ def construct_trajectories_and_stops(conn: duckdb.DuckDBPyConnection, db_schema:
     all_mmsis = get_mmsis_duckdb(conn, db_schema)
     
     insert_traj_query = f"""
-        INSERT INTO {db_schema}.trajectory_ls (mmsi, ts_start, ts_end, geom)
-        VALUES (?, to_timestamp(?), to_timestamp(?), ST_GeomFromWKB(?))
+        INSERT INTO {db_schema}.trajectory_ls (mmsi, geom)
+        VALUES (?, ST_GeomFromWKB(?))
     """
 
     insert_stop_query = f"""
@@ -102,7 +110,7 @@ def construct_trajectories_and_stops(conn: duckdb.DuckDBPyConnection, db_schema:
         if trajs_to_insert:
             conn.executemany(
                 insert_traj_query,
-                [(mmsi, ts_start, ts_end, geom.wkb) for (mmsi, ts_start, ts_end, geom) in trajs_to_insert]
+                [(mmsi, linestring_to_wkb_linestring_m(geom)) for (mmsi, _, _, geom) in trajs_to_insert]
             )
 
         if stops_to_insert:
