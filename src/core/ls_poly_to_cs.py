@@ -59,9 +59,10 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -
             noncontained_ls_segments = find_noncontained_ls_segments(segment_ls, segment_tiles_poly)
 
         # Convert segment tiles to bitencoded cell IDs and add to cellstring
-        for x, y in segment_tiles:
+        segment_tiles_deduplicated = list(dict.fromkeys(segment_tiles)) # Remove duplicates while preserving order
+        for x, y in segment_tiles_deduplicated:
             cellstring.append(zxy_to_quadkey(zoom, x, y))
-    
+            
     return cellstring
 
 def convert_polygon_to_cellstrings(poly: Polygon | MultiPolygon, skip_z21: bool = False) -> tuple[list[int], list[int], list[int]]:
