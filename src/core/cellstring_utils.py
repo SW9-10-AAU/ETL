@@ -88,8 +88,9 @@ def supercover(x1: int, y1: int, x2: int, y2: int) -> list[tuple[int, int]]:
                     cells.append((x, y - ystep))
             cells.append((x, y))
             errorprev = error
-
-    return cells
+            
+    deduplicated_cells = list(dict.fromkeys(cells)) # Remove duplicates while preserving order
+    return deduplicated_cells
 
 def convert_tiles_to_shapely_polygon(segment_tiles: list[tuple[int, int]], zoom: int = DEFAULT_ZOOM) -> Polygon:
     unique_tiles = set(segment_tiles)  # Remove duplicates to avoid redundant geometry creation

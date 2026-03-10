@@ -62,8 +62,7 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -
         for x, y in segment_tiles:
             cellstring.append(zxy_to_quadkey(zoom, x, y))
     
-    deduplicated_cellstring = list(dict.fromkeys(cellstring))
-    return deduplicated_cellstring
+    return cellstring
 
 def convert_polygon_to_cellstrings(poly: Polygon | MultiPolygon, skip_z21: bool = False) -> tuple[list[int], list[int], list[int]]:
     """
