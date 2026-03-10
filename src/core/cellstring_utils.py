@@ -3,6 +3,7 @@ from typing import cast
 
 import mercantile
 from shapely import MultiLineString, Point, LineString, Polygon, MultiPolygon, box, unary_union
+from ukc_core.quadkey_utils import zxy_to_quadkey
 
 class Classification(Enum):
     """Enum for classifying tile containment in a Polygon or MultiPolygon."""
@@ -212,7 +213,7 @@ def process_z13_tiles(poly: Polygon | MultiPolygon) -> tuple[list[int], list[mer
             case Classification.NO_INTERSECTION:
                 continue
             
-        cellstring_z13.append(encode_tile_xy_to_cellid(tile.x, tile.y, 13))
+        cellstring_z13.append(zxy_to_quadkey(13, tile.x, tile.y))
 
     return cellstring_z13, fully_contained_z13, partially_contained_z13
 
@@ -229,7 +230,7 @@ def process_z17_tiles(
     for tile in fully_contained_z13:
         children_z17 = get_all_children_at_zoom(tile, 17)
         for child in children_z17:
-            cellstring_z17.append(encode_tile_xy_to_cellid(child.x, child.y, 17))
+            cellstring_z17.append(zxy_to_quadkey(17, child.x, child.y))
             fully_contained_z17.append(child)
 
     for tile in partially_contained_z13:
@@ -245,7 +246,7 @@ def process_z17_tiles(
                 case Classification.NO_INTERSECTION:
                     continue
 
-            cellstring_z17.append(encode_tile_xy_to_cellid(child.x, child.y, 17))
+            cellstring_z17.append(zxy_to_quadkey(17, child.x, child.y))
             
     return cellstring_z17, fully_contained_z17, partially_contained_z17
 
@@ -260,7 +261,7 @@ def process_z21_tiles(
     for tile in fully_contained_z17:
         children_z21 = get_all_children_at_zoom(tile, 21)
         for child in children_z21:
-            cellstring_z21.append(encode_tile_xy_to_cellid(child.x, child.y, 21))
+            cellstring_z21.append(zxy_to_quadkey(21, child.x, child.y))
 
     for tile in partially_contained_z17:
         children_z21 = get_all_children_at_zoom(tile, 21)
@@ -269,7 +270,7 @@ def process_z21_tiles(
 
             match classification:
                 case Classification.FULLY_CONTAINED | Classification.PARTIALLY_CONTAINED:
-                    cellstring_z21.append(encode_tile_xy_to_cellid(child.x, child.y, 21))
+                    cellstring_z21.append(zxy_to_quadkey(21, child.x, child.y))
                 case Classification.NO_INTERSECTION:
                     continue
 

@@ -1,6 +1,7 @@
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 import duckdb
 import pyarrow as pa
+from ukc_core.quadkey_utils import quadkey_to_int
 from core.ls_poly_to_cs import ProcessResultStop, ProcessResultTraj, Row, process_stop_row, process_trajectory_row
 from db_setup.duckdb.pyarrow_schemas import STOP_CS_SCHEMA, TRAJ_CS_SCHEMA
 
@@ -14,6 +15,7 @@ def transform_ls_trajectories_to_cs(conn: duckdb.DuckDBPyConnection, db_schema: 
                                             batch_size: int = BATCH_SIZE):
     print(f"--- Processing trajectories with (using {max_workers} workers) ---")
     total_processed = 0
+    total_cells_inserted = 0
 
     conn.execute("LOAD spatial")
     print(f"Processing trajectories in batches of {batch_size}...")
@@ -50,20 +52,32 @@ def transform_ls_trajectories_to_cs(conn: duckdb.DuckDBPyConnection, db_schema: 
 
             print(f"Processed batch of {len(results)} trajectories, inserting into the database...")
 
-            arrow_table = pa.table({
-                "trajectory_id": pa.array([r[0] for r in results], type=pa.int32()),
-                "mmsi":          pa.array([r[1] for r in results], type=pa.int64()),
-                "ts_start":      pa.array([r[2] for r in results], type=pa.timestamp("us", tz="UTC")),
-                "ts_end":        pa.array([r[3] for r in results], type=pa.timestamp("us", tz="UTC")),
-                "cellstring_z13": pa.array([r[4] for r in results], type=pa.list_(pa.int32())),
-                "cellstring_z17": pa.array([r[5] for r in results], type=pa.list_(pa.int64())),
-                "cellstring_z21": pa.array([r[6] for r in results], type=pa.list_(pa.int64())),
-            }, schema=TRAJ_CS_SCHEMA)
-            conn.execute(f"INSERT INTO {db_schema}.trajectory_cs SELECT * FROM arrow_table")
+            # Flatten: one row per cell
+            trajectory_ids: list[int] = []
+            mmsis: list[int] = []
+            timestamps: list[int] = []
+            cells: list[int] = []
+
+            for trajectory_id, mmsi, ts, cell_list in results:
+                for cell in cell_list:
+                    trajectory_ids.append(trajectory_id)
+                    mmsis.append(mmsi)
+                    timestamps.append(ts)
+                    cells.append(quadkey_to_int(cell))
+
+            if cells:
+                arrow_table = pa.table({
+                    "trajectory_id": pa.array(trajectory_ids, type=pa.int32()),
+                    "mmsi":          pa.array(mmsis, type=pa.int64()),
+                    "ts":            pa.array(timestamps, type=pa.timestamp("us", tz="UTC")),
+                    "cell_z21":      pa.array(cells, type=pa.uint64()),
+                }, schema=TRAJ_CS_SCHEMA)
+                conn.execute(f"INSERT INTO {db_schema}.trajectory_cs SELECT * FROM arrow_table")
+                total_cells_inserted += len(cells)
 
             last_id = batch[-1][0]
             total_processed += len(results)
-            print(f"Inserted: {total_processed:,} trajectories in total")
+            print(f"Inserted: {total_processed:,} trajectories ({total_cells_inserted:,} cells)")
 
     print(f"Finished processing all trajectories ({total_processed:,} total)")
 
@@ -103,17 +117,31 @@ def transform_poly_stops_to_cs(conn: duckdb.DuckDBPyConnection, db_schema: str, 
                     results.append(future.result())
                 except Exception as e:
                     print(f"Worker error: {e}")
+                    
+            # Flatten: one row per cell
+            stop_ids: list[int] = []
+            mmsis: list[int] = []
+            ts_starts: list[int] = []
+            ts_ends: list[int] = []
+            cells: list[int] = []
 
-            arrow_table = pa.table({
-                "stop_id":        pa.array([r[0] for r in results], type=pa.int32()),
-                "mmsi":           pa.array([r[1] for r in results], type=pa.int64()),
-                "ts_start":       pa.array([r[2] for r in results], type=pa.timestamp("us", tz="UTC")),
-                "ts_end":         pa.array([r[3] for r in results], type=pa.timestamp("us", tz="UTC")),
-                "cellstring_z13": pa.array([r[4] for r in results], type=pa.list_(pa.int32())),
-                "cellstring_z17": pa.array([r[5] for r in results], type=pa.list_(pa.int64())),
-                "cellstring_z21": pa.array([r[6] for r in results], type=pa.list_(pa.int64())),
-            }, schema=STOP_CS_SCHEMA)
-            conn.execute(f"INSERT INTO {db_schema}.stop_cs SELECT * FROM arrow_table")
+            for stop_id, mmsi, ts_start, ts_end, cell_list in results:
+                for cell in cell_list:
+                    stop_ids.append(stop_id)
+                    mmsis.append(mmsi)
+                    ts_starts.append(ts_start)
+                    ts_ends.append(ts_end)
+                    cells.append(quadkey_to_int(cell))
+                    
+            if cells:
+                arrow_table = pa.table({
+                    "stop_id":        pa.array(stop_ids, type=pa.int32()),
+                    "mmsi":           pa.array(mmsis, type=pa.int64()),
+                    "ts_start":       pa.array(ts_starts, type=pa.timestamp("us", tz="UTC")),
+                    "ts_end":         pa.array(ts_ends, type=pa.timestamp("us", tz="UTC")),
+                    "cell_z21":       pa.array(cells, type=pa.uint64()),
+                }, schema=STOP_CS_SCHEMA)
+                conn.execute(f"INSERT INTO {db_schema}.stop_cs SELECT * FROM arrow_table")
 
             last_id = batch[-1][0]
             total_processed += len(results)
