@@ -3,6 +3,7 @@ from geopy.distance import geodesic
 from shapely import Polygon, Point, MultiPoint
 
 KNOT_AS_MPS = 0.514444      # 1 knot = 0.514444 m/s
+MIN_POINTS_IN_SEGMENT = 2   # Minimum number of points in a trajectory or stop segment
 
 def distance_m(p1: Point, p2: Point) -> float:
     """Return distance between two Shapely Points in meters."""
@@ -66,11 +67,12 @@ def add_connecting_point_to_segment(current_segment: list[Point], point: Point):
     if len(current_segment) == 0:
         current_segment.append(point)
 
-def append_and_clear_segment_if_nonempty(candidate_segments: list[list[Point]], current_segment: list[Point]):
-    """Append current segment to candidate segments if it has more than 1 point, then clear it. A segment can be a trajectory or a stop."""
-    if len(current_segment) > 1:
+def append_segment_if_nonempty_and_clear_segment(candidate_segments: list[list[Point]], current_segment: list[Point]):
+    """Appends current segment to candidate segments if it has at least 2 points. Finally, it clears the segment (regardless of whether it was appended). A segment can be a trajectory or a stop."""
+    if len(current_segment) >= MIN_POINTS_IN_SEGMENT:
         candidate_segments.append(current_segment.copy())  # snapshot
-        current_segment.clear()                            # empties in caller
+    
+    current_segment.clear() # empties in caller
 
 def try_merge_invalid_merged_stop_with_trajectories(trajs: list[list[Point]], invalid_merged_stop: list[Point], traj_max_speed_kn: float, traj_max_gap_s: float, min_ais_points_in_traj: int):
     """Insert or merge a non-valid stop with existing trajectories."""

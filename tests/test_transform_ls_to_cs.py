@@ -1,14 +1,16 @@
 import sys
 import os
+
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src'))
 
 import unittest
 import mercantile
-from shapely import LineString, Polygon
+from shapely import LineString, Point, Polygon
 from shapely.wkb import dumps
 
 from core.cellstring_utils import ENCODE_MULT_Z13, ENCODE_MULT_Z17, ENCODE_MULT_Z21, ENCODE_OFFSET_Z13, ENCODE_OFFSET_Z17, ENCODE_OFFSET_Z21, Classification, classify_tile_containment, encode_lonlat_to_cellid
 from core.ls_poly_to_cs import Row, convert_linestring_to_cellstring, convert_polygon_to_cellstrings, deprecated_convert_polygon_to_cellstring, process_trajectory_row
+from core.points_to_ls_poly import process_single_mmsi
 
 
 class TestEncodeLonLatToMVTCellId(unittest.TestCase):
@@ -372,6 +374,46 @@ class TestHierarchicalPolygonToCellString(unittest.TestCase):
         tile_outside = mercantile.tile(15.0, 60.0, 13)
         classification_outside = classify_tile_containment(polygon, tile_outside)
         self.assertEqual(classification_outside, Classification.NO_INTERSECTION)
+        
+    def make_point(self, lon, lat, ts):
+        from shapely.wkb import dumps
+        return dumps(Point(lon, lat, ts))
+    def test_single_point_leftover_does_not_connect(self):
+        mmsi = 123456789
+        points = []
+
+        start_ts = 1700000000
+
+        # Step 1: England trajectory (2 points)
+        points.append((self.make_point(-1.0, 52.0, start_ts), 12.0))
+        points.append((self.make_point(-0.99, 52.0, start_ts + 60), 12.0))
+
+        # Step 2: small gap > 1 hour to cut the first trajectory
+        gap1_ts = start_ts + 7200  # 2 hours later
+        points.append((self.make_point(-0.98, 52.0, gap1_ts), 12.0))  # leftover England point
+
+        # Step 3: big gap of 3 days before Germany points
+        gap2_ts = gap1_ts + 3 * 24 * 3600  # 3 days later
+
+        # Step 4: Germany points (enough to form a trajectory)
+        for i in range(11):
+            points.append((self.make_point(8.5 + i * 0.01, 53.5, gap2_ts + i * 60), 12.0))
+
+        # Run ETL
+        _, trajs, _ = process_single_mmsi(mmsi, points)
+
+        # Only Germany trajectory should remain (England trajectory is too short)
+        self.assertEqual(len(trajs), 1, "Only Germany trajectory should be kept")
+
+        # All points in trajectory must be Germany points
+        coords = list(trajs[0][3].coords)
+        for lon, lat, _ in coords:
+            self.assertGreater(lon, 8.0, "No England points should appear in Germany trajectory")
+            self.assertAlmostEqual(lat, 53.5, delta=0.01)
+
+        # First coordinate should be Germany, not England
+        first_lon, first_lat, _ = coords[0]
+        self.assertGreater(first_lon, 8.0, "Trajectory must start in Germany")
 
 
 if __name__ == "__main__":
