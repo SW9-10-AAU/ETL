@@ -16,6 +16,7 @@ def mat_points_view(conn: Connection, db_schema: str):
                 WHERE AIS.lat <> 91
                 AND LENGTH(V.mmsi::text) = 9
                 AND LEFT(V.mmsi::text, 1) BETWEEN '2' AND '7'
+                AND mmsi IN (219230000)
                 GROUP BY V.mmsi
                 HAVING COUNT(*) >= 10
             ),

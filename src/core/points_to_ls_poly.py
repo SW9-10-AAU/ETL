@@ -7,7 +7,7 @@ STOP_SOG_THRESHOLD = 1.0            # knots, vT (original = 1 knot)
 STOP_DISTANCE_THRESHOLD = 250       # meters, disT (original = 2 km)    CHANGED TO 250m
 STOP_TIME_THRESHOLD = 5400          # seconds, tT (original = 1.5 h)
 MIN_STOP_POINTS = 10                # Δn (original = 10 points)
-MIN_STOP_DURATION = 5400            # seconds, Δstopt (original = 1.5 h)
+MIN_STOP_DURATION = 600            # seconds, Δstopt (original = 1.5 h) CHANGED TO 10 min (600s)
 MERGE_DISTANCE_THRESHOLD = 50       # meters, Δd. (original = 2 km)     CHANGED TO 50m
 MERGE_TIME_THRESHOLD = 3600         # seconds, Δt (original = 1 h)
 MAX_MBR_AREA = 5_000_000            # 5 km², Maximum area of the Minimum Bounding Rectangle (MBR) for a valid stop polygon
