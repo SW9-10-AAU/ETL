@@ -2,8 +2,6 @@ import duckdb
 from db_setup.duckdb.create_duckdb_points import create_duckdb_points
 
 def create_duckdb_tables(conn: duckdb.DuckDBPyConnection, db_schema: str):
-    conn.execute("INSTALL spatial; LOAD spatial;")
-
     # create schema if not exists
     conn.execute(f"""CREATE SCHEMA IF NOT EXISTS {db_schema};""")
     print(f"Ensured duckDB schema {db_schema} exists.")
@@ -36,26 +34,21 @@ def create_duckdb_tables(conn: duckdb.DuckDBPyConnection, db_schema: str):
     # trajectory_cs
     conn.execute(f"""
         CREATE TABLE IF NOT EXISTS {db_schema}.trajectory_cs (
-            trajectory_id INTEGER PRIMARY KEY,
-            mmsi          BIGINT NOT NULL,
-            ts_start      TIMESTAMP NOT NULL,
-            ts_end        TIMESTAMP NOT NULL,
-            cellstring_z13 INTEGER[] NOT NULL,
-            cellstring_z17 BIGINT[]  NOT NULL,
-            cellstring_z21 BIGINT[]  NOT NULL
+            trajectory_id   INTEGER NOT NULL,
+            mmsi            BIGINT NOT NULL,
+            ts              TIMESTAMP NOT NULL,
+            cell_z21        UINT64 NOT NULL,
         );
     """)
 
     # stop_cs
     conn.execute(f"""
         CREATE TABLE IF NOT EXISTS {db_schema}.stop_cs (
-            stop_id    INTEGER PRIMARY KEY,
+            stop_id    INTEGER NOT NULL,
             mmsi       BIGINT NOT NULL,
             ts_start   TIMESTAMP NOT NULL,
             ts_end     TIMESTAMP NOT NULL,
-            cellstring_z13 INTEGER[] NOT NULL,
-            cellstring_z17 BIGINT[]  NOT NULL,
-            cellstring_z21 BIGINT[]  NOT NULL
+            cell_z21   UINT64 NOT NULL,
         );
     """)
     
@@ -64,9 +57,9 @@ def create_duckdb_tables(conn: duckdb.DuckDBPyConnection, db_schema: str):
         CREATE SEQUENCE IF NOT EXISTS {db_schema}.area_poly_seq START 1;
         CREATE TABLE IF NOT EXISTS {db_schema}.area_poly
         (
-            area_id INTEGER PRIMARY KEY DEFAULT nextval('{db_schema}.area_poly_seq'),
-            name TEXT NOT NULL,
-            geom GEOMETRY NOT NULL
+            area_id      INTEGER PRIMARY KEY DEFAULT nextval('{db_schema}.area_poly_seq'),
+            name         TEXT NOT NULL,
+            geom         GEOMETRY NOT NULL
         );
     """)
 
@@ -75,11 +68,9 @@ def create_duckdb_tables(conn: duckdb.DuckDBPyConnection, db_schema: str):
         CREATE SEQUENCE IF NOT EXISTS {db_schema}.area_cs_seq START 1;
         CREATE TABLE IF NOT EXISTS {db_schema}.area_cs
         (
-            area_id INTEGER PRIMARY KEY DEFAULT nextval('{db_schema}.area_cs_seq'),
-            name TEXT NOT NULL,
-            cellstring_z13 INTEGER[] NOT NULL,
-            cellstring_z17 BIGINT[] NOT NULL,
-            cellstring_z21 BIGINT[] NOT NULL
+            area_id      INTEGER PRIMARY KEY DEFAULT nextval('{db_schema}.area_cs_seq'),
+            name         TEXT NOT NULL,
+            cell_z21     UINT64 NOT NULL
         );
     """)
     
@@ -88,9 +79,9 @@ def create_duckdb_tables(conn: duckdb.DuckDBPyConnection, db_schema: str):
         CREATE SEQUENCE IF NOT EXISTS {db_schema}.crossing_ls_seq START 1;
         CREATE TABLE IF NOT EXISTS {db_schema}.crossing_ls
         (
-            crossing_id INTEGER PRIMARY KEY DEFAULT nextval('{db_schema}.crossing_ls_seq'),
-            name TEXT NOT NULL,
-            geom GEOMETRY NOT NULL
+            crossing_id  INTEGER PRIMARY KEY DEFAULT nextval('{db_schema}.crossing_ls_seq'),
+            name         TEXT NOT NULL,
+            geom         GEOMETRY NOT NULL
         );
     """)
     
@@ -99,11 +90,9 @@ def create_duckdb_tables(conn: duckdb.DuckDBPyConnection, db_schema: str):
         CREATE SEQUENCE IF NOT EXISTS {db_schema}.crossing_cs_seq START 1;
         CREATE TABLE IF NOT EXISTS {db_schema}.crossing_cs
         (
-            crossing_id INTEGER PRIMARY KEY DEFAULT nextval('{db_schema}.crossing_cs_seq'),
-            name TEXT NOT NULL,
-            cellstring_z13 INTEGER[] NOT NULL,
-            cellstring_z17 BIGINT[] NOT NULL,
-            cellstring_z21 BIGINT[] NOT NULL
+            crossing_id  INTEGER PRIMARY KEY DEFAULT nextval('{db_schema}.crossing_cs_seq'),
+            name         TEXT NOT NULL,
+            cell_z21     UINT64 NOT NULL
         );
     """)
 

@@ -1,21 +1,20 @@
 from typing import cast
 import mercantile
 from shapely import LineString, MultiPolygon, Polygon, box, from_wkb
+from ukc_core.quadkey_utils import zxy_to_quadkey
 
 from core.cellstring_utils import DEFAULT_ZOOM, convert_tiles_to_shapely_polygon, encode_tile_xy_to_cellid, find_noncontained_ls_segments, get_tile_xy, get_tiles_for_endpoints, process_z13_tiles, process_z17_tiles, process_z21_tiles, supercover
 
 Row = tuple[int, int, int, int, bytes]  # (trajectory_id/stop_id, mmsi, ts_start, ts_end, geom_wkb)
-ProcessResultTraj = tuple[int, int, int, int, list[int], list[int], list[int]]  # trajectory_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21
-ProcessResultStop = tuple[int, int, int, int, list[int], list[int], list[int]]  # stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21
+ProcessResultTraj = tuple[int, int, int, list[str]]  # trajectory_id, mmsi, ts, cell_z21(bitencoded)
+ProcessResultStop = tuple[int, int, int, int, list[str]]  # stop_id, mmsi, ts_start, ts_end, cell_z21(bitencoded)
 
 # --- Conversion Utilities ---
 
-def convert_linestring_to_cellstrings(ls: LineString) -> tuple[list[int], list[int], list[int]]:
-    """Convert a LineString to CellStrings at z13, z17, and z21."""
-    cellstring_z13 = convert_linestring_to_cellstring(ls, 13)
-    cellstring_z17 = convert_linestring_to_cellstring(ls, 17)
-    cellstring_z21 = convert_linestring_to_cellstring(ls, 21)
-    return cellstring_z13, cellstring_z17, cellstring_z21
+def convert_linestring_to_cellstrings(ls: LineString) -> list[int]:
+    """Convert a LineString to CellStrings at z21."""
+    cell_z21 = convert_linestring_to_cellstring(ls, 21)
+    return cell_z21
 
 def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -> list[int]:
     """Convert a LineString to CellString at the specified zoom level."""
@@ -59,12 +58,12 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -
             segment_tiles_poly = convert_tiles_to_shapely_polygon(segment_tiles, zoom)
             noncontained_ls_segments = find_noncontained_ls_segments(segment_ls, segment_tiles_poly)
 
-        # Convert segment tiles to cell IDs and append to cellstring
-        for x, y in segment_tiles:
-            cellstring.append(encode_tile_xy_to_cellid(x, y, zoom))
-    
-    deduplicated_cellstring = list(dict.fromkeys(cellstring))
-    return deduplicated_cellstring
+        # Convert segment tiles to bitencoded cell IDs and add to cellstring
+        segment_tiles_deduplicated = list(dict.fromkeys(segment_tiles)) # Remove duplicates while preserving order
+        for x, y in segment_tiles_deduplicated:
+            cellstring.append(zxy_to_quadkey(zoom, x, y))
+            
+    return cellstring
 
 def convert_polygon_to_cellstrings(poly: Polygon | MultiPolygon, skip_z21: bool = False) -> tuple[list[int], list[int], list[int]]:
     """
@@ -117,16 +116,17 @@ def deprecated_convert_polygon_to_cellstring(poly: Polygon | MultiPolygon, zoom:
 # --- Worker Functions ---
 
 def process_trajectory_row(row: Row) -> ProcessResultTraj:
-    trajectory_id, mmsi, ts_start, ts_end, geom_wkb = row
+    trajectory_id, mmsi, ts, _, geom_wkb = row
     linestring = cast(LineString, from_wkb(geom_wkb))
-    cellstring_z13, cellstring_z17, cellstring_z21= convert_linestring_to_cellstrings(linestring)
-    print(f"Processed trajectory_id {trajectory_id} with {len(cellstring_z13)} z13 cells, {len(cellstring_z17)} z17 cells, and {len(cellstring_z21)} z21 cells.")
+    cellstring_z21= convert_linestring_to_cellstrings(linestring)
+    print(f"Processed trajectory_id {trajectory_id} with {len(cellstring_z21)} z21 cells.")
   
-    return (trajectory_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21)
+    return (trajectory_id, mmsi, ts, cellstring_z21)
 
 def process_stop_row(row: Row) -> ProcessResultStop:
     stop_id, mmsi, ts_start, ts_end, geom_wkb = row
     polygon = cast(Polygon, from_wkb(geom_wkb))
 
-    cellstring_z13, cellstring_z17, cellstring_z21 = convert_polygon_to_cellstrings(polygon)
-    return stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21
+    _, _, cellstring_z21 = convert_polygon_to_cellstrings(polygon)
+   
+    return stop_id, mmsi, ts_start, ts_end, cellstring_z21
