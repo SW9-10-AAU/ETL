@@ -3,7 +3,7 @@ from typing import cast
 
 import mercantile
 from shapely import MultiLineString, Point, LineString, Polygon, MultiPolygon, box, unary_union
-from ukc_core.quadkey_utils import zxy_to_quadkey
+from ukc_core.quadkey_utils import quadkey_to_int, zxy_to_quadkey
 
 class Classification(Enum):
     """Enum for classifying tile containment in a Polygon or MultiPolygon."""
@@ -22,6 +22,9 @@ ENCODE_MULT_Z13 = 10_000
 
 
 # --- Encoding Utilities ---
+
+def xyz_to_quadkey_int(zoom: int, x: int, y: int) -> int:
+    return quadkey_to_int(zxy_to_quadkey(zoom, x, y))
 
 def encode_tile_xy_to_cellid(x: int, y: int, zoom: int = DEFAULT_ZOOM) -> int:
     if (zoom == 13):
@@ -213,7 +216,7 @@ def process_z13_tiles(poly: Polygon | MultiPolygon) -> tuple[list[int], list[mer
             case Classification.NO_INTERSECTION:
                 continue
             
-        cellstring_z13.append(zxy_to_quadkey(13, tile.x, tile.y))
+        cellstring_z13.append(xyz_to_quadkey_int(13, tile.x, tile.y))
 
     return cellstring_z13, fully_contained_z13, partially_contained_z13
 
@@ -230,7 +233,7 @@ def process_z17_tiles(
     for tile in fully_contained_z13:
         children_z17 = get_all_children_at_zoom(tile, 17)
         for child in children_z17:
-            cellstring_z17.append(zxy_to_quadkey(17, child.x, child.y))
+            cellstring_z17.append(xyz_to_quadkey_int(17, child.x, child.y))
             fully_contained_z17.append(child)
 
     for tile in partially_contained_z13:
@@ -246,7 +249,7 @@ def process_z17_tiles(
                 case Classification.NO_INTERSECTION:
                     continue
 
-            cellstring_z17.append(zxy_to_quadkey(17, child.x, child.y))
+            cellstring_z17.append(xyz_to_quadkey_int(17, child.x, child.y))
             
     return cellstring_z17, fully_contained_z17, partially_contained_z17
 
@@ -261,7 +264,7 @@ def process_z21_tiles(
     for tile in fully_contained_z17:
         children_z21 = get_all_children_at_zoom(tile, 21)
         for child in children_z21:
-            cellstring_z21.append(zxy_to_quadkey(21, child.x, child.y))
+            cellstring_z21.append(xyz_to_quadkey_int(21, child.x, child.y))
 
     for tile in partially_contained_z17:
         children_z21 = get_all_children_at_zoom(tile, 21)
@@ -270,7 +273,7 @@ def process_z21_tiles(
 
             match classification:
                 case Classification.FULLY_CONTAINED | Classification.PARTIALLY_CONTAINED:
-                    cellstring_z21.append(zxy_to_quadkey(21, child.x, child.y))
+                    cellstring_z21.append(xyz_to_quadkey_int(21, child.x, child.y))
                 case Classification.NO_INTERSECTION:
                     continue
 

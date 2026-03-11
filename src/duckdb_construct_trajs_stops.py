@@ -57,8 +57,8 @@ def construct_trajectories_and_stops(conn: duckdb.DuckDBPyConnection, db_schema:
     all_mmsis = get_mmsis_duckdb(conn, db_schema)
     
     insert_traj_query = f"""
-        INSERT INTO {db_schema}.trajectory_ls (mmsi, geom)
-        VALUES (?, ST_GeomFromWKB(?))
+        INSERT INTO {db_schema}.trajectory_ls (mmsi, ts_start, ts_end, geom)
+        VALUES (?, to_timestamp(?), to_timestamp(?), ST_GeomFromWKB(?))
     """
 
     insert_stop_query = f"""
@@ -110,7 +110,7 @@ def construct_trajectories_and_stops(conn: duckdb.DuckDBPyConnection, db_schema:
         if trajs_to_insert:
             conn.executemany(
                 insert_traj_query,
-                [(mmsi, linestring_to_wkb_linestring_m(geom)) for (mmsi, _, _, geom) in trajs_to_insert]
+                [(mmsi, ts_start, ts_end, linestring_to_wkb_linestring_m(geom)) for (mmsi, ts_start, ts_end, geom) in trajs_to_insert]
             )
 
         if stops_to_insert:

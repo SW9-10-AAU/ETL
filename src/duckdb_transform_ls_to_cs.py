@@ -2,7 +2,7 @@ from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 import duckdb
 import pyarrow as pa
 from ukc_core.quadkey_utils import quadkey_to_int
-from core.ls_poly_to_cs import ProcessResultStop, ProcessResultTraj, Row, process_stop_row, process_trajectory_row
+from core.ls_poly_to_cs import ProcessResultStop, ProcessResultTraj, StopRow, TrajRow, process_stop_row, process_trajectory_row
 from db_setup.duckdb.pyarrow_schemas import STOP_CS_SCHEMA, TRAJ_CS_SCHEMA
 
 FutureResultTraj = Future[ProcessResultTraj]
@@ -27,10 +27,10 @@ def transform_ls_trajectories_to_cs(conn: duckdb.DuckDBPyConnection, db_schema: 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         while True:
             print(f"Fetching batch of {batch_size} trajectories with trajectory_id > {last_id}...")
-            batch: list[Row] = [
-                (int(tid), int(mmsi), ts_start, ts_end, bytes(geom_wkb))
-                for tid, mmsi, ts_start, ts_end, geom_wkb in conn.execute(f"""
-                    SELECT trajectory_id, mmsi, ts_start, ts_end, ST_AsWKB(geom)
+            batch: list[TrajRow] = [
+                (int(tid), int(mmsi),  bytes(geom_wkb))
+                for tid, mmsi, geom_wkb in conn.execute(f"""
+                    SELECT trajectory_id, mmsi, ST_AsWKB(geom)
                     FROM {db_schema}.trajectory_ls
                     WHERE trajectory_id > ?
                     ORDER BY trajectory_id
@@ -58,18 +58,17 @@ def transform_ls_trajectories_to_cs(conn: duckdb.DuckDBPyConnection, db_schema: 
             timestamps: list[int] = []
             cells: list[int] = []
 
-            for trajectory_id, mmsi, ts, cell_list in results:
-                for cell in cell_list:
+            for trajectory_id, mmsi, cells_with_ts in results:
+                for cell, ts in cells_with_ts:
                     trajectory_ids.append(trajectory_id)
                     mmsis.append(mmsi)
-                    timestamps.append(ts)
-                    cells.append(quadkey_to_int(cell))
-
+                    timestamps.append(ts) #seconds
+                    cells.append(cell)
             if cells:
                 arrow_table = pa.table({
                     "trajectory_id": pa.array(trajectory_ids, type=pa.int32()),
                     "mmsi":          pa.array(mmsis, type=pa.int64()),
-                    "ts":            pa.array(timestamps, type=pa.timestamp("us", tz="UTC")),
+                    "ts":            pa.array(timestamps, type=pa.timestamp("s", tz="UTC")),
                     "cell_z21":      pa.array(cells, type=pa.uint64()),
                 }, schema=TRAJ_CS_SCHEMA)
                 conn.execute(f"INSERT INTO {db_schema}.trajectory_cs SELECT * FROM arrow_table")
@@ -97,7 +96,7 @@ def transform_poly_stops_to_cs(conn: duckdb.DuckDBPyConnection, db_schema: str, 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         while True:
             print(f"Fetching batch of {batch_size} stops with stop_id > {last_id}...")
-            batch: list[Row] = [
+            batch: list[StopRow] = [
                 (int(sid), int(mmsi), ts_start, ts_end, bytes(geom_wkb))
                 for sid, mmsi, ts_start, ts_end, geom_wkb in conn.execute(f"""
                     SELECT stop_id, mmsi, ts_start, ts_end, ST_AsWKB(geom)
@@ -131,14 +130,14 @@ def transform_poly_stops_to_cs(conn: duckdb.DuckDBPyConnection, db_schema: str, 
                     mmsis.append(mmsi)
                     ts_starts.append(ts_start)
                     ts_ends.append(ts_end)
-                    cells.append(quadkey_to_int(cell))
+                    cells.append(cell)
                     
             if cells:
                 arrow_table = pa.table({
                     "stop_id":        pa.array(stop_ids, type=pa.int32()),
                     "mmsi":           pa.array(mmsis, type=pa.int64()),
-                    "ts_start":       pa.array(ts_starts, type=pa.timestamp("us", tz="UTC")),
-                    "ts_end":         pa.array(ts_ends, type=pa.timestamp("us", tz="UTC")),
+                    "ts_start":       pa.array(ts_starts, type=pa.timestamp("s", tz="UTC")),
+                    "ts_end":         pa.array(ts_ends, type=pa.timestamp("s", tz="UTC")),
                     "cell_z21":       pa.array(cells, type=pa.uint64()),
                 }, schema=STOP_CS_SCHEMA)
                 conn.execute(f"INSERT INTO {db_schema}.stop_cs SELECT * FROM arrow_table")

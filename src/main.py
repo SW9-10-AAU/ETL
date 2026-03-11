@@ -34,11 +34,11 @@ def main_duckdb():
     create_duckdb_tables(connection, db_schema)
 
     # Construct LineString trajectories and Polygon stops from the Points table
-    #construct_trajectories_and_stops(connection, db_schema, num_workers)
+    construct_trajectories_and_stops(connection, db_schema, num_workers)
 
     # Transform LineString trajectories and Polygon stops to CellStrings
-    # transform_ls_trajectories_to_cs(connection, db_schema, num_workers, batch_size=2000)
-    # transform_poly_stops_to_cs(connection, db_schema, num_workers, batch_size=2000)
+    transform_ls_trajectories_to_cs(connection, db_schema, num_workers, batch_size=1000)
+    transform_poly_stops_to_cs(connection, db_schema, num_workers, batch_size=2000)
 
     connection.close()
 

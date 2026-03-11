@@ -15,6 +15,8 @@ def create_duckdb_tables(conn: duckdb.DuckDBPyConnection, db_schema: str):
         CREATE TABLE IF NOT EXISTS {db_schema}.trajectory_ls (
             trajectory_id INTEGER PRIMARY KEY DEFAULT nextval('{db_schema}.trajectory_ls_seq'),
             mmsi          BIGINT NOT NULL,
+            ts_start      TIMESTAMP NOT NULL,
+            ts_end        TIMESTAMP NOT NULL,
             geom          GEOMETRY NOT NULL
         );
     """)
