@@ -56,15 +56,16 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -
                     )
 
                     for x0_c, y0_c in start_tiles:
-                        for x1_c, y1_c in end_tiles:
+                        for x1_c, y1_c in end_tiles: 
                             segment_tiles.extend(supercover(x0_c, y0_c, x1_c, y1_c))
+                            #TODO instead of extend tiles should be placed in segmentiles where the new tiles are siblings
 
             segment_tiles_poly = convert_tiles_to_shapely_polygon(segment_tiles, zoom)
             noncontained_ls_segments = find_noncontained_ls_segments(segment_ls, segment_tiles_poly)
 
         # Deduplicate while preserving order
         segment_tiles_deduplicated = list(dict.fromkeys(segment_tiles))
-
+        
         # Linear interpolation of timestamps across all cells in this segment
         num_cells = len(segment_tiles_deduplicated)
         for idx, (x, y) in enumerate(segment_tiles_deduplicated):
