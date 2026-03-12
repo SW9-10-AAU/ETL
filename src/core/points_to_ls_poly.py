@@ -11,7 +11,7 @@ MIN_STOP_DURATION = 600             # seconds, Δstopt (original = 1.5 h) CHANGE
 MERGE_DISTANCE_THRESHOLD = 50       # meters, Δd. (original = 2 km)     CHANGED TO 50m
 MERGE_TIME_THRESHOLD = 3600         # seconds, Δt (original = 1 h)
 MAX_MBR_AREA = 5_000_000            # 5 km², Maximum area of the Minimum Bounding Rectangle (MBR) for a valid stop polygon
-STOP_POINT_BUFFER_DEG = 1e-5        # ~1 m radius buffer in WGS84 degrees, used when all stop points are coincident (e.g. null-SOG AtoN)
+STOP_POINT_BUFFER_DEG = 1e-5        # ~1 m radius buffer in WGS84 degrees, used when all stop points have same lat,lon (e.g. null-SOG stationary vessel)
 
 # Trajectories
 TRAJ_MAX_SPEED_KN = 50.0            # knots, used to filter out false AIS points (e.g. > 50 knots)
