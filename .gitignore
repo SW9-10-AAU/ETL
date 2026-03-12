@@ -215,3 +215,5 @@ ais_data/
 # GeoJSON files
 geojson/
 *.geojson
+*.duckdb
+*.pq

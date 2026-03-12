@@ -1,8 +1,9 @@
+import math
 from enum import Enum
-from typing import cast
 
 import mercantile
-from shapely import MultiLineString, Point, LineString, Polygon, MultiPolygon, box, unary_union
+from shapely import Polygon, MultiPolygon, box
+
 
 class Classification(Enum):
     """Enum for classifying tile containment in a Polygon or MultiPolygon."""
@@ -10,8 +11,9 @@ class Classification(Enum):
     PARTIALLY_CONTAINED = 2
     NO_INTERSECTION = 3
 
+
 # --- Constants ---
-DEFAULT_ZOOM = 21 # Default zoom level
+DEFAULT_ZOOM = 21  # Default zoom level
 ENCODE_OFFSET_Z21 = 100_000_000_000_000
 ENCODE_OFFSET_Z17 = 1_000_000_000_000
 ENCODE_OFFSET_Z13 = 100_000_000
@@ -31,115 +33,102 @@ def encode_tile_xy_to_cellid(x: int, y: int, zoom: int = DEFAULT_ZOOM) -> int:
 
     return ENCODE_OFFSET_Z21 + (x * ENCODE_MULT_Z21) + y
 
+
 def get_tile_xy(lon: float, lat: float, zoom: int = DEFAULT_ZOOM) -> tuple[int, int]:
     tile = mercantile.tile(lon, lat, zoom)
     return tile.x, tile.y
+
 
 def encode_lonlat_to_cellid(lon: float, lat: float, zoom: int = DEFAULT_ZOOM) -> int:
     x, y = get_tile_xy(lon, lat, zoom)
     return encode_tile_xy_to_cellid(x, y, zoom)
 
-# Supercover line drawing algorithm from https://dedu.fr/projects/bresenham/ 
-def supercover(x1: int, y1: int, x2: int, y2: int) -> list[tuple[int, int]]:
-    cells: list[tuple[int, int]] = []
-    dx, dy = x2 - x1, y2 - y1
-    x, y = x1, y1
 
-    xstep = 1 if dx >= 0 else -1
-    ystep = 1 if dy >= 0 else -1
-    dx, dy = abs(dx), abs(dy)
-    ddx, ddy = 2 * dx, 2 * dy
+def _point_to_tile_fraction(lon: float, lat: float, zoom: int) -> tuple[float, float]:
+    """Convert lon/lat to fractional tile coordinates at the given zoom level.
 
-    cells.append((x, y))
+    Adapted from Carto's quadbin ``point_to_tile_fraction``.
+    Returns only (x_frac, y_frac) – the zoom level is already known by the caller.
+    """
+    z2 = 1 << zoom
+    sinlat = math.sin(lat * math.pi / 180.0)
+    x = z2 * (lon / 360.0 + 0.5)
+    y_fraction = 0.5 - 0.25 * math.log((1 + sinlat) / (1 - sinlat)) / math.pi
+    y = max(0.0, min(z2 - 1, z2 * y_fraction))
+    # Wrap x into [0, z2)
+    x = x % z2
+    if x < 0:
+        x += z2
+    return x, y
 
-    if ddx >= ddy:
-        errorprev = error = dx
-        for _ in range(dx):
-            x += xstep
-            error += ddy
-            if error > ddx:
-                y += ystep
-                error -= ddx
-                # check for extra cells
-                if error + errorprev < ddx:
-                    cells.append((x, y - ystep))
-                elif error + errorprev > ddx:
-                    cells.append((x - xstep, y))
-                else:
-                    cells.append((x, y - ystep))
-                    cells.append((x - xstep, y))
-            cells.append((x, y))
-            errorprev = error
-    else:
-        errorprev = error = dy
-        for _ in range(dy):
-            y += ystep
-            error += ddx
-            if error > ddy:
-                x += xstep
-                error -= ddy
-                if error + errorprev < ddy:
-                    cells.append((x - xstep, y))
-                elif error + errorprev > ddy:
-                    cells.append((x, y - ystep))
-                else:
-                    cells.append((x - xstep, y))
-                    cells.append((x, y - ystep))
-            cells.append((x, y))
-            errorprev = error
 
-    return cells
+def linecover(
+        coords: list[tuple[float, ...]],
+        zoom: int = DEFAULT_ZOOM,
+) -> list[tuple[int, int]]:
+    """Return an ordered list of (x, y) tile coordinates that fully cover a line.
 
-def convert_tiles_to_shapely_polygon(segment_tiles: list[tuple[int, int]], zoom: int = DEFAULT_ZOOM) -> Polygon:
-    unique_tiles = set(segment_tiles)  # Remove duplicates to avoid redundant geometry creation
-    return cast(Polygon, unary_union([
-        box(*mercantile.bounds(x, y, zoom))
-        for x, y in unique_tiles
-    ]))
+    This is an adaptation of Carto's Quadbin ``line_cover`` algorithm
+    (https://github.com/CartoDB/quadbin-py) that uses Amanatides & Woo
+    style grid traversal.  It naturally preserves the temporal order of
+    tiles as the line is walked from coordinate to coordinate.
 
-def find_noncontained_ls_segments(ls: LineString, cellstring_poly: Polygon) -> list[LineString]:
-    # shrink the polygon slightly to avoid edge cases where the line just touches the cellstring boundary but isn't actually contained by it
-    eps = 1e-9
-    shrunk_cellstring_poly = cellstring_poly.buffer(-eps)
-    noncontained_ls_segments = ls.difference(shrunk_cellstring_poly)
-    
-    # LineString is fully contained
-    if noncontained_ls_segments.is_empty:
-        return []
+    Args:
+        coords: Ordered sequence of (lon, lat, …) coordinate tuples.
+        zoom:   Tile zoom level.
 
-    # A single noncontained LineString segment
-    if isinstance(noncontained_ls_segments, LineString):
-        return [noncontained_ls_segments]
+    Returns:
+        List of (x, y) tile coordinates in traversal order.
+        Consecutive duplicates are suppressed so the caller only sees
+        each tile once per contiguous run.
+    """
+    tiles: list[tuple[int, int]] = []
+    prev_x: int | None = None
+    prev_y: int | None = None
 
-    # Multiple noncontained LineString segments
-    if isinstance(noncontained_ls_segments, MultiLineString):
-        return list(noncontained_ls_segments.geoms)
+    for i in range(len(coords) - 1):
+        x0_f, y0_f = _point_to_tile_fraction(coords[i][0], coords[i][1], zoom)
+        x1_f, y1_f = _point_to_tile_fraction(coords[i + 1][0], coords[i + 1][1], zoom)
 
-    return []
+        dx = x1_f - x0_f
+        dy = y1_f - y0_f
 
-def buffer_point_to_poly(point: Point, buffer_distance = 1e-5) -> Polygon:
-    """Buffer a point by a small amount to ensure we capture edge cases where the line just touches the tile boundary."""
-    return cast(Polygon, point.buffer(buffer_distance).envelope)
+        if dx == 0 and dy == 0:
+            continue
 
-def get_intersecting_tiles_for_point(lon: float, lat: float, zoom: int) -> list[tuple[int, int]]:
-    """Return all tiles a point could touch, handling edges/corners."""
-    minx, miny, maxx, maxy = buffer_point_to_poly(Point(lon, lat)).bounds
-    return [(t.x, t.y) for t in mercantile.tiles(minx, miny, maxx, maxy, zoom)]
+        sx = 1 if dx > 0 else -1
+        sy = 1 if dy > 0 else -1
 
-def get_tiles_for_endpoints(start_coord: tuple[float, float], end_coord: tuple[float, float], zoom: int) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:  
-    start_tiles = [
-        (x, y)
-        for x, y in get_intersecting_tiles_for_point(start_coord[0], start_coord[1], zoom)
-        if box(*mercantile.bounds(x, y, zoom)).intersects(buffer_point_to_poly(Point(start_coord[:2])))
-    ]
-    
-    end_tiles = [
-        (x, y)
-        for x, y in get_intersecting_tiles_for_point(end_coord[0], end_coord[1], zoom)
-        if box(*mercantile.bounds(x, y, zoom)).intersects(buffer_point_to_poly(Point(end_coord[:2])))
-    ]
-    
-    return start_tiles, end_tiles
+        x = math.floor(x0_f)
+        y = math.floor(y0_f)
+
+        t_max_x = float("inf") if dx == 0 else abs(((1 if dx > 0 else 0) + x - x0_f) / dx)
+        t_max_y = float("inf") if dy == 0 else abs(((1 if dy > 0 else 0) + y - y0_f) / dy)
+        tdx = float("inf") if dx == 0 else abs(sx / dx)
+        tdy = float("inf") if dy == 0 else abs(sy / dy)
+
+        # Emit the starting tile (skip only if identical to the last
+        # tile of the previous segment, to avoid a spurious duplicate
+        # at segment boundaries where end == start).
+        if x != prev_x or y != prev_y:
+            tiles.append((x, y))
+        prev_x = x
+        prev_y = y
+
+        while t_max_x < 1 or t_max_y < 1:
+            if t_max_x < t_max_y:
+                t_max_x += tdx
+                x += sx
+            else:
+                t_max_y += tdy
+                y += sy
+
+            tiles.append((x, y))
+            prev_x = x
+            prev_y = y
+
+    return tiles
+
 
 def classify_tile_containment(poly: Polygon | MultiPolygon, tile: mercantile.Tile) -> Classification:
     """
@@ -163,6 +152,7 @@ def classify_tile_containment(poly: Polygon | MultiPolygon, tile: mercantile.Til
         return Classification.PARTIALLY_CONTAINED
     else:
         return Classification.NO_INTERSECTION
+
 
 def get_all_children_at_zoom(tile: mercantile.Tile, target_zoom: int) -> list[mercantile.Tile]:
     """
@@ -211,16 +201,16 @@ def process_z13_tiles(poly: Polygon | MultiPolygon) -> tuple[list[int], list[mer
                 partially_contained_z13.append(tile)
             case Classification.NO_INTERSECTION:
                 continue
-            
+
         cellstring_z13.append(encode_tile_xy_to_cellid(tile.x, tile.y, 13))
 
     return cellstring_z13, fully_contained_z13, partially_contained_z13
 
 
 def process_z17_tiles(
-    poly: Polygon | MultiPolygon,
-    fully_contained_z13: list[mercantile.Tile],
-    partially_contained_z13: list[mercantile.Tile],
+        poly: Polygon | MultiPolygon,
+        fully_contained_z13: list[mercantile.Tile],
+        partially_contained_z13: list[mercantile.Tile],
 ) -> tuple[list[int], list[mercantile.Tile], list[mercantile.Tile]]:
     cellstring_z17: list[int] = []
     fully_contained_z17: list[mercantile.Tile] = []
@@ -246,14 +236,14 @@ def process_z17_tiles(
                     continue
 
             cellstring_z17.append(encode_tile_xy_to_cellid(child.x, child.y, 17))
-            
+
     return cellstring_z17, fully_contained_z17, partially_contained_z17
 
 
 def process_z21_tiles(
-    poly: Polygon | MultiPolygon,
-    fully_contained_z17: list[mercantile.Tile],
-    partially_contained_z17: list[mercantile.Tile],
+        poly: Polygon | MultiPolygon,
+        fully_contained_z17: list[mercantile.Tile],
+        partially_contained_z17: list[mercantile.Tile],
 ) -> list[int]:
     cellstring_z21: list[int] = []
 
