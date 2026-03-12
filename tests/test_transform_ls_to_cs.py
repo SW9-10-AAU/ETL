@@ -10,7 +10,7 @@ from shapely.wkb import dumps
 
 from core.cellstring_utils import ENCODE_MULT_Z13, ENCODE_MULT_Z17, ENCODE_MULT_Z21, ENCODE_OFFSET_Z13, ENCODE_OFFSET_Z17, ENCODE_OFFSET_Z21, Classification, classify_tile_containment, encode_lonlat_to_cellid
 from core.ls_poly_to_cs import Row, convert_linestring_to_cellstring, convert_polygon_to_cellstrings, deprecated_convert_polygon_to_cellstring, process_trajectory_row
-from core.points_to_ls_poly import process_single_mmsi
+from core.points_to_ls_poly import AISPointWKB, process_single_mmsi
 
 
 class TestEncodeLonLatToMVTCellId(unittest.TestCase):
@@ -378,9 +378,10 @@ class TestHierarchicalPolygonToCellString(unittest.TestCase):
     def make_point(self, lon, lat, ts):
         from shapely.wkb import dumps
         return dumps(Point(lon, lat, ts))
+    
     def test_single_point_leftover_does_not_connect(self):
         mmsi = 123456789
-        points = []
+        points: list[AISPointWKB] = []
 
         start_ts = 1700000000
 
@@ -414,6 +415,49 @@ class TestHierarchicalPolygonToCellString(unittest.TestCase):
         # First coordinate should be Germany, not England
         first_lon, first_lat, _ = coords[0]
         self.assertGreater(first_lon, 8.0, "Trajectory must start in Germany")
+
+
+class TestProcessSingleMmsiCoincidentNullSog(unittest.TestCase):
+    """
+    Regression test: a vessel transmitting null SOG at a single fixed location
+    (e.g. an AtoN or moored vessel with constant lat/lon) must be classified as
+    a stop, NOT a trajectory.
+
+    Previously, concave_hull / envelope on coincident MultiPoint returned a Point
+    rather than a Polygon, causing the stop to fall through to
+    try_merge_invalid_merged_stop_with_trajectories which emitted it as a trajectory.
+    """
+
+    def make_point(self, lon, lat, ts):
+        from shapely.wkb import dumps
+        return dumps(Point(lon, lat, ts))
+
+    def test_coincident_null_sog_produces_stop_not_trajectory(self):
+        mmsi = 999000001
+        lon, lat = 10.383365, 57.056374
+        start_ts = 1700000000
+        n_points = 100  # 100 × 10 s = 990 s total (> MIN_STOP_DURATION=600 s)
+
+        # All points at the exact same location, SOG=None, 10-second intervals
+        wkb_points: list[AISPointWKB] = [
+            (self.make_point(lon, lat, start_ts + i * 10), None)  # SOG=12 every 10th point, None otherwise
+            for i in range(n_points)
+        ]
+
+        mmsi_out, trajs, stops = process_single_mmsi(mmsi, wkb_points)
+
+        self.assertEqual(mmsi_out, mmsi)
+        self.assertEqual(len(trajs), 0,
+                         "Coincident null-SOG points must not produce a trajectory")
+        self.assertEqual(len(stops), 1,
+                         "Coincident null-SOG points must produce exactly one stop")
+
+        # Stop bounds should be very close to the fixed location
+        _, ts_start, ts_end, geom = stops[0]
+        self.assertEqual(ts_start, float(start_ts))
+        self.assertEqual(ts_end, float(start_ts + (n_points - 1) * 10))
+        self.assertAlmostEqual(geom.centroid.x, lon, places=2)
+        self.assertAlmostEqual(geom.centroid.y, lat, places=2)
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ def mat_points_view(conn: Connection, db_schema: str):
                 FROM fact.ais_point_fact AIS
                 JOIN dim.vessel_dim V ON AIS.vessel_id = V.vessel_id
                 WHERE AIS.lat <> 91
+                AND AIS.transponder_type_id = 5 -- Class A
                 AND LENGTH(V.mmsi::text) = 9
                 AND LEFT(V.mmsi::text, 1) BETWEEN '2' AND '7'
                 GROUP BY V.mmsi
