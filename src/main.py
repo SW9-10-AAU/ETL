@@ -24,10 +24,10 @@ def main_duckdb():
     connection = duckdb.connect(database=db_path)
 
     # Drop tables
-    # drop_duckdb_tables(connection, db_schema)
+    drop_duckdb_tables(connection, db_schema)
 
     # Create tables
-    # create_duckdb_tables(connection, db_schema)
+    create_duckdb_tables(connection, db_schema)
 
     # Install and load spatial extension
     connection.execute("INSTALL spatial;")
