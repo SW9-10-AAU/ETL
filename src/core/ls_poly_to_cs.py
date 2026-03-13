@@ -5,11 +5,8 @@ from shapely import LineString, MultiPolygon, Polygon, box, from_wkb
 from core.cellstring_utils import DEFAULT_ZOOM, encode_tile_xy_to_cellid, linecover, process_z13_tiles, process_z17_tiles, process_z21_tiles
 
 Row = tuple[int, int, int, int, bytes]  # (trajectory_id/stop_id, mmsi, ts_start, ts_end, geom_wkb)
-ProcessResultTraj = tuple[int, int, int, int, list[int], list[int], list[
-    int]]  # trajectory_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21
-ProcessResultStop = tuple[int, int, int, int, list[int], list[int], list[
-    int]]  # stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21
-
+ProcessResultTraj = tuple[int, int, int, int, list[int], list[int], list[int]]  # trajectory_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21
+ProcessResultStop = tuple[int, int, int, int, list[int], list[int], list[int]]  # stop_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21
 
 # --- Conversion Utilities ---
 
