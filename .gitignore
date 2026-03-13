@@ -217,3 +217,4 @@ geojson/
 *.geojson
 *.duckdb
 *.pq
+*.wal
