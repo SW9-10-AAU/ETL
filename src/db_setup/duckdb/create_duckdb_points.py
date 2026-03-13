@@ -12,7 +12,6 @@ def create_duckdb_points(conn: duckdb.DuckDBPyConnection, db_schema: str):
               AND LENGTH(CAST(mmsi AS VARCHAR)) = 9
               AND CAST(mmsi AS VARCHAR)[1] BETWEEN '2' AND '7'
               AND transponder_type = 'class a'
-              AND mmsi = 265610950
             GROUP BY mmsi
             HAVING COUNT(*) >= 10
         ),
