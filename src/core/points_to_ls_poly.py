@@ -7,10 +7,11 @@ STOP_SOG_THRESHOLD = 1.0            # knots, vT (original = 1 knot)
 STOP_DISTANCE_THRESHOLD = 250       # meters, disT (original = 2 km)    CHANGED TO 250m
 STOP_TIME_THRESHOLD = 5400          # seconds, tT (original = 1.5 h)
 MIN_STOP_POINTS = 10                # Δn (original = 10 points)
-MIN_STOP_DURATION = 5400            # seconds, Δstopt (original = 1.5 h)
+MIN_STOP_DURATION = 600             # seconds, Δstopt (original = 1.5 h) CHANGED TO 10 min (600s)
 MERGE_DISTANCE_THRESHOLD = 50       # meters, Δd. (original = 2 km)     CHANGED TO 50m
 MERGE_TIME_THRESHOLD = 3600         # seconds, Δt (original = 1 h)
 MAX_MBR_AREA = 5_000_000            # 5 km², Maximum area of the Minimum Bounding Rectangle (MBR) for a valid stop polygon
+STOP_POINT_BUFFER_DEG = 1e-5        # ~1 m radius buffer in WGS84 degrees, used when all stop points have same lat,lon (e.g. null-SOG stationary vessel)
 
 # Trajectories
 TRAJ_MAX_SPEED_KN = 50.0            # knots, used to filter out false AIS points (e.g. > 50 knots)
@@ -51,7 +52,7 @@ def process_single_mmsi(mmsi: int, wkb_points: list[AISPointWKB]) -> ProcessResu
         
         # Initialization of first point
         if prev_point is None:
-            if sog is not None and sog < STOP_SOG_THRESHOLD:
+            if sog is None or sog < STOP_SOG_THRESHOLD:
                 current_stop.append(current_point)
             else:
                 current_traj.append(current_point) 
@@ -115,8 +116,12 @@ def process_single_mmsi(mmsi: int, wkb_points: list[AISPointWKB]) -> ProcessResu
             envelope = geom_points.envelope
             
             # Use the envelope (MBR) if the hull is not Polygon
-            stop_geom = hull if hull.geom_type == "Polygon" else envelope 
-            
+            stop_geom = hull if hull.geom_type == "Polygon" else envelope
+
+            # We use a buffer for null-SOG stationary vessel (all points have same lat,lon).
+            if stop_geom.geom_type == "Point":
+                stop_geom = geom_points.centroid.buffer(STOP_POINT_BUFFER_DEG)
+
             if (stop_geom.geom_type == "Polygon"):
                 stop_poly = cast(Polygon, stop_geom) 
                 mbr_area = compute_mbr_area(stop_poly)
