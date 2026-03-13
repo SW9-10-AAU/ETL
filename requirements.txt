@@ -1,17 +1,12 @@
 click==8.3.0
 duckdb==1.5.0
-flake8==7.3.0
 geographiclib==2.1
 geopy==2.4.1
-mccabe==0.7.0
 mercantile==1.2.1
 numpy==2.3.3
 psycopg==3.2.10
 pyarrow==23.0.1
-pycodestyle==2.14.0
-pyflakes==3.4.0
 python-dotenv==1.1.1
-quadbin==0.2.2
 shapely==2.1.1
 typing_extensions==4.15.0
 tzdata==2025.2
