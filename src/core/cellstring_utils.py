@@ -70,7 +70,7 @@ def linecover(
         ls: LineString,
         zoom: int = DEFAULT_ZOOM,
 ) -> list[tuple[int, int]]:
-    """Return an ordered list of (x, y) tile coordinates that fully cover a line.
+    """Return an list of (cell_id, epoch_timestamp) tuples that fully cover a LineString.
 
     This is an adaptation of Carto's Quadbin ``line_cover`` algorithm
     (https://github.com/CartoDB/quadbin-py) that uses Amanatides & Woo
@@ -82,18 +82,21 @@ def linecover(
         zoom:   Tile zoom level.
 
     Returns:
-        List of (x, y) tile coordinates in traversal order.
+        List of (cell_id, epoch_timestamp) tuples, temporally ordered.
         Consecutive duplicates are suppressed so the caller only sees
         each tile once per contiguous run.
     """
-    tiles: list[tuple[int, int]] = []
-    prev_x: int | None = None
-    prev_y: int | None = None
+    cells_with_time: list[tuple[int, int]] = []
 
     coords = list(ls.coords)
     for i in range(len(coords) - 1):
         x0_f, y0_f = _point_to_tile_fraction(coords[i][0], coords[i][1], zoom)
         x1_f, y1_f = _point_to_tile_fraction(coords[i + 1][0], coords[i + 1][1], zoom)
+        
+        segment_cells: list[int] = []
+        
+        ts_segment_start = int(coords[i][2])
+        ts_segment_end = int(coords[i + 1][2])
 
         dx = x1_f - x0_f
         dy = y1_f - y0_f
@@ -112,14 +115,6 @@ def linecover(
         tdx = float("inf") if dx == 0 else abs(sx / dx)
         tdy = float("inf") if dy == 0 else abs(sy / dy)
 
-        # Emit the starting tile (skip only if identical to the last
-        # tile of the previous segment, to avoid a spurious duplicate
-        # at segment boundaries where end == start).
-        if x != prev_x or y != prev_y:
-            tiles.append((x, y))
-        prev_x = x
-        prev_y = y
-
         while t_max_x < 1 or t_max_y < 1:
             if t_max_x < t_max_y:
                 t_max_x += tdx
@@ -128,11 +123,24 @@ def linecover(
                 t_max_y += tdy
                 y += sy
 
-            tiles.append((x, y))
-            prev_x = x
-            prev_y = y
+            segment_cells.append(xyz_to_quadkey_int(zoom, x, y))
+        
+        # Linear interpolation of timestamps across all cells in this segment
+        num_cells = len(segment_cells)
+        for idx, cell_id in enumerate(segment_cells):
+            if num_cells == 1: # If the start and end points are in the same cell, we duplicate the cell, but with different timestamps
+                cells_with_time.extend([(cell_id, ts_segment_start), (cell_id, ts_segment_end)])
+                continue # Important to skip the rest of the loop
+            else:
+                # Linear interpolation: first cell gets ts0, last cell gets ts1
+                progress = idx / (num_cells - 1)
+                interpolated_ts = round(ts_segment_start + progress * (ts_segment_end - ts_segment_start))
+            cells_with_time.append((cell_id, interpolated_ts))
 
-    return tiles
+    # Deduplicate cells that have the same cell_id and timestamp
+    deduplicate_cells_with_time = list(dict.fromkeys(cells_with_time))
+
+    return deduplicate_cells_with_time
 
 
 def classify_tile_containment(poly: Polygon | MultiPolygon, tile: mercantile.Tile) -> Classification:

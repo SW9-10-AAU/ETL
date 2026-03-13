@@ -2,10 +2,10 @@ from typing import cast
 import mercantile
 from shapely import LineString, MultiPolygon, Polygon, box, from_wkb
 
-from core.cellstring_utils import DEFAULT_ZOOM, encode_tile_xy_to_cellid, linecover, process_z13_tiles, process_z17_tiles, process_z21_tiles, xyz_to_quadkey_int
+from core.cellstring_utils import DEFAULT_ZOOM, encode_tile_xy_to_cellid, linecover, process_z13_tiles, process_z17_tiles, process_z21_tiles
 
-TrajRow = tuple[int, int, bytes]  # (trajectory_id/stop_id, mmsi, geom_wkb)
-StopRow = tuple[int, int, int, int, bytes]  # (trajectory_id/stop_id, mmsi, ts_start, ts_end, geom_wkb)
+TrajRow = tuple[int, int, bytes]  # (trajectory_id, mmsi, geom_wkb)
+StopRow = tuple[int, int, int, int, bytes]  # (stop_id, mmsi, ts_start, ts_end, geom_wkb)
 ProcessResultTraj = tuple[int, int, list[tuple[int, int]]]  # trajectory_id, mmsi, [(cell_z21, ts)]
 ProcessResultStop = tuple[int, int, int, int, list[int]]  # stop_id, mmsi, ts_start, ts_end, cell_z21
 
