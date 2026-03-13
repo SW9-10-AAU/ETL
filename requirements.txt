@@ -4,7 +4,6 @@ mercantile==1.2.1
 numpy==2.3.3
 psycopg-binary==3.2.10
 psycopg==3.2.10
-pyarrow==23.0.1
 python-dotenv==1.1.1
 shapely==2.1.1
 typing_extensions==4.15.0
