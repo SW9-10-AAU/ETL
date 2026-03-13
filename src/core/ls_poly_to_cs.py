@@ -2,8 +2,7 @@ from typing import cast
 import mercantile
 from shapely import LineString, MultiPolygon, Polygon, box, from_wkb
 
-from core.cellstring_utils import DEFAULT_ZOOM, encode_tile_xy_to_cellid, linecover, process_z13_tiles, \
-    process_z17_tiles, process_z21_tiles
+from core.cellstring_utils import DEFAULT_ZOOM, encode_tile_xy_to_cellid, linecover, process_z13_tiles, process_z17_tiles, process_z21_tiles
 
 Row = tuple[int, int, int, int, bytes]  # (trajectory_id/stop_id, mmsi, ts_start, ts_end, geom_wkb)
 ProcessResultTraj = tuple[int, int, int, int, list[int], list[int], list[
@@ -23,18 +22,11 @@ def convert_linestring_to_cellstrings(ls: LineString) -> tuple[list[int], list[i
 
 
 def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -> list[int]:
-    """Convert a LineString to CellString at the specified zoom level.
-
-    Uses the Amanatides & Woo grid-traversal algorithm (via ``linecover``)
-    which guarantees full coverage of every segment without gap-checking.
-    Every cell is preserved in traversal order — no deduplication is
-    performed — so that the full temporal sequence of tile visits is kept.
-    """
+    """Convert a LineString to CellString at the specified zoom level."""
     if ls.is_empty:
         return []
 
-    coords = list(ls.coords)
-    tiles = linecover(coords, zoom)
+    tiles = linecover(ls, zoom)
 
     return [encode_tile_xy_to_cellid(x, y, zoom) for x, y in tiles]
 
@@ -54,8 +46,7 @@ def convert_polygon_to_cellstrings(poly: Polygon | MultiPolygon, skip_z21: bool 
         return ([], [], [])
 
     cellstring_z13, fully_contained_z13, partially_contained_z13 = process_z13_tiles(poly)
-    cellstring_z17, fully_contained_z17, partially_contained_z17 = process_z17_tiles(poly, fully_contained_z13,
-                                                                                     partially_contained_z13)
+    cellstring_z17, fully_contained_z17, partially_contained_z17 = process_z17_tiles(poly, fully_contained_z13, partially_contained_z13)
     cellstring_z21 = [] if skip_z21 else process_z21_tiles(poly, fully_contained_z17, partially_contained_z17)
 
     return cellstring_z13, cellstring_z17, cellstring_z21

@@ -2,7 +2,7 @@ import math
 from enum import Enum
 
 import mercantile
-from shapely import Polygon, MultiPolygon, box
+from shapely import LineString, Polygon, MultiPolygon, box
 
 
 class Classification(Enum):
@@ -63,18 +63,18 @@ def _point_to_tile_fraction(lon: float, lat: float, zoom: int) -> tuple[float, f
 
 
 def linecover(
-        coords: list[tuple[float, ...]],
+        ls: LineString,
         zoom: int = DEFAULT_ZOOM,
 ) -> list[tuple[int, int]]:
     """Return an ordered list of (x, y) tile coordinates that fully cover a line.
 
     This is an adaptation of Carto's Quadbin ``line_cover`` algorithm
     (https://github.com/CartoDB/quadbin-py) that uses Amanatides & Woo
-    style grid traversal.  It naturally preserves the temporal order of
+    style grid traversal. It naturally preserves the temporal order of
     tiles as the line is walked from coordinate to coordinate.
 
     Args:
-        coords: Ordered sequence of (lon, lat, …) coordinate tuples.
+        ls:     A Shapely LineString.
         zoom:   Tile zoom level.
 
     Returns:
@@ -86,6 +86,7 @@ def linecover(
     prev_x: int | None = None
     prev_y: int | None = None
 
+    coords = list(ls.coords)
     for i in range(len(coords) - 1):
         x0_f, y0_f = _point_to_tile_fraction(coords[i][0], coords[i][1], zoom)
         x1_f, y1_f = _point_to_tile_fraction(coords[i + 1][0], coords[i + 1][1], zoom)
