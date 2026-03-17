@@ -31,7 +31,7 @@ def transform_ls_trajectories_to_cs(connection: Connection, db_schema: str, max_
     total_processed = 0
     insert_traj_query = sql.SQL("""
                 INSERT INTO {db_schema}.trajectory_cs (trajectory_id, mmsi, ts_start, ts_end, cellstring_z13, cellstring_z17, cellstring_z21)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), %s, %s, %s)
                 """).format(db_schema=sql.Identifier(db_schema))
                 
     with connection.cursor() as cur:
@@ -53,8 +53,8 @@ def transform_ls_trajectories_to_cs(connection: Connection, db_schema: str, max_
 
             with connection.cursor() as insert_cur:
                 insert_cur.executemany(insert_traj_query,
-                                       [(trajectory_id, mmsi, start_time, end_time, cellstring_z13, cellstring_z17, cellstring_z21) for
-                                        (trajectory_id, mmsi, start_time, end_time, cellstring_z13, cellstring_z17, cellstring_z21) in
+                                       [(trajectory_id, mmsi, cellstring_z21[0][1], cellstring_z21[-1][1], [], [], [cells for cells, _ in cellstring_z21]) for
+                                        (trajectory_id, mmsi, cellstring_z21) in
                                         results])
             connection.commit()
 
@@ -89,8 +89,8 @@ def transform_poly_stops_to_cs(connection: Connection, db_schema: str, max_worke
                         print(f"Worker error: {e}")
 
             with connection.cursor() as insert_cur:
-                insert_cur.executemany(insert_stop_query, [(stop_id, mmsi, start_time, end_time, cellstring_z13, cellstring_z17, cellstring_z21) for
-                                                      (stop_id, mmsi, start_time, end_time, cellstring_z13, cellstring_z17, cellstring_z21) in results])
+                insert_cur.executemany(insert_stop_query, [(stop_id, mmsi, start_time, end_time, [], [], cellstring_z21) for
+                                                      (stop_id, mmsi, start_time, end_time, cellstring_z21) in results])
             connection.commit()
 
             total_processed += len(results)
