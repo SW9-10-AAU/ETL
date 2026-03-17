@@ -1,5 +1,5 @@
 from shapely import LineString
-from core.ls_poly_to_cs import convert_linestring_to_cellstrings
+from core.ls_poly_to_cs import convert_linestring_to_cellids
 from db_setup.utils.db_utils import get_db_backend, get_db_path_or_url, get_db_schema
 
 # PostgreSQL implementation
@@ -24,7 +24,10 @@ def convert_crossing_linestring_to_cs_postgres(linestring: LineString, name: str
     
     # Convert crossing to cellstring and insert into table 
     print("Converting crossing to cellstrings")
-    cellstring_z13, cellstring_z17, cellstring_z21 = convert_linestring_to_cellstrings(linestring)
+    cellstring_z13 = convert_linestring_to_cellids(linestring, 13)
+    cellstring_z17 = convert_linestring_to_cellids(linestring, 17)
+    cellstring_z21 = convert_linestring_to_cellids(linestring, 21)
+    
     print(f"Conversion succeeded with {len(cellstring_z13)} cells (zoom 13), {len(cellstring_z17)} cells (zoom 17), and {len(cellstring_z21)} cells (zoom 21).")
     
     cur.execute(sql.SQL("""
@@ -52,42 +55,32 @@ def convert_crossing_linestring_to_cs_duckdb(linestring: LineString, name: str):
 
     # Insert crossing as linestring into table
     conn.execute("LOAD spatial;")
-    conn.execute(
+    crossing_row = conn.execute(
         f"""INSERT INTO {db_schema}.crossing_ls (name, geom)
-           VALUES (?, ST_GeomFromWKB(?))""",
+           VALUES (?, ST_GeomFromWKB(?))
+           RETURNING crossing_id""",
         [name, linestring.wkb],
-    )
+    ).fetchone()
+    if crossing_row is None:
+        raise RuntimeError("Failed to insert crossing geometry into DuckDB")
+
+    crossing_id = int(crossing_row[0])
     print("Inserted crossing linestring into DuckDB table")
 
     print("Converting crossing to cellstrings")
-    cellstring_z13, cellstring_z17, cellstring_z21 = (
-        convert_linestring_to_cellstrings(linestring)
-    )
-    print(
-        f"Conversion succeeded with {len(cellstring_z13)} cells (zoom 13), "
-        f"{len(cellstring_z17)} cells (zoom 17), and {len(cellstring_z21)} cells "
-        f"(zoom 21)."
-    )
-    
-    arrow_table = pa.table({
-            "crossing_id": pa.array([None], type=pa.int32()),
-            "name": pa.array([name], type=pa.string()),
-            "cellstring_z13": pa.array([cellstring_z13], type=pa.list_(pa.int32())),
-            "cellstring_z17": pa.array([cellstring_z17], type=pa.list_(pa.int64())),
-            "cellstring_z21": pa.array([cellstring_z21], type=pa.list_(pa.int64())),
-        }, schema=CROSSING_CS_SCHEMA)
-    conn.execute(
-        f"""INSERT INTO {db_schema}.crossing_cs 
-            (crossing_id, name, cellstring_z13, cellstring_z17, cellstring_z21)
-            SELECT 
-                nextval('{db_schema}.crossing_cs_seq'), 
-                name, 
-                cellstring_z13, 
-                cellstring_z17, 
-                cellstring_z21 
-            FROM arrow_table""",
-    )
-    print("Inserted crossing cellstrings into DuckDB table")
+    cellstring_z21 = convert_linestring_to_cellids(linestring, 21)
+    print(f"Conversion succeeded with {len(cellstring_z21)} cells (zoom 21).")
+
+    if cellstring_z21:
+        arrow_table = pa.table({
+                "crossing_id": pa.array([crossing_id] * len(cellstring_z21), type=pa.int32()),
+                "name": pa.array([name] * len(cellstring_z21), type=pa.string()),
+                "cell_z21": pa.array(cellstring_z21, type=pa.uint64()),
+            }, schema=CROSSING_CS_SCHEMA)
+        conn.execute(f"INSERT INTO {db_schema}.crossing_cs SELECT * FROM arrow_table")
+        print("Inserted crossing cellstrings into DuckDB table")
+    else:
+        print("No crossing cells to insert into DuckDB table")
     conn.close()
 
     print(f"Crossing ({name}) uploaded to {db_schema} schema in database")

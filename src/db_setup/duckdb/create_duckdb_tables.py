@@ -67,10 +67,9 @@ def create_duckdb_tables(conn: duckdb.DuckDBPyConnection, db_schema: str):
 
     # area cs
     conn.execute(f"""
-        CREATE SEQUENCE IF NOT EXISTS {db_schema}.area_cs_seq START 1;
         CREATE TABLE IF NOT EXISTS {db_schema}.area_cs
         (
-            area_id      INTEGER PRIMARY KEY DEFAULT nextval('{db_schema}.area_cs_seq'),
+            area_id      INTEGER NOT NULL,
             name         TEXT NOT NULL,
             cell_z21     UINT64 NOT NULL
         );
@@ -89,10 +88,9 @@ def create_duckdb_tables(conn: duckdb.DuckDBPyConnection, db_schema: str):
     
     # crossing cs
     conn.execute(f"""
-        CREATE SEQUENCE IF NOT EXISTS {db_schema}.crossing_cs_seq START 1;
         CREATE TABLE IF NOT EXISTS {db_schema}.crossing_cs
         (
-            crossing_id  INTEGER PRIMARY KEY DEFAULT nextval('{db_schema}.crossing_cs_seq'),
+            crossing_id  INTEGER NOT NULL,
             name         TEXT NOT NULL,
             cell_z21     UINT64 NOT NULL
         );

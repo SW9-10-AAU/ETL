@@ -18,6 +18,10 @@ def convert_area_geojson_to_cs(geojson_path: str, name: str, skip_z21: bool = Fa
         name: Name to store the area under in the database
     """
     db_backend = get_db_backend()
+
+    if db_backend == 'duckdb' and skip_z21:
+        print("DuckDB requires z21 cells; overriding skip_z21=False.")
+        skip_z21 = False
     
     # Load GeoJSON file
     geojson_file = Path(geojson_path)

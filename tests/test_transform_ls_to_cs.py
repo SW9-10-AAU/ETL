@@ -8,7 +8,7 @@ import mercantile
 from shapely import LineString, Point, Polygon
 
 from core.cellstring_utils import Classification, classify_tile_containment, deprecated_encode_lonlat_to_cellid
-from core.ls_poly_to_cs import convert_linestring_to_cellstring, convert_polygon_to_cellstrings, \
+from core.ls_poly_to_cs import convert_linestring_to_cellids, convert_linestring_to_cellstring, convert_polygon_to_cellstrings, \
     deprecated_convert_polygon_to_cellstring
 from core.points_to_ls_poly import AISPointWKB, process_single_mmsi
 
@@ -132,6 +132,18 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
             len(cellstring), len(set((cell_id for cell_id, _ in cellstring))),
             "Self-intersecting trajectory should have duplicate cells"
         )
+
+    def test_2d_linestring_conversion_without_timestamps(self):
+        linestring = LineString([
+            (10.0, 55.0),
+            (10.1, 55.0),
+            (10.2, 55.0),
+        ])
+
+        cell_ids = convert_linestring_to_cellids(linestring, zoom=13)
+
+        self.assertGreater(len(cell_ids), 0)
+        self.assertIsInstance(cell_ids[0], int)
 
 
 class TestPolygonToCellStrings(unittest.TestCase):

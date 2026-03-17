@@ -26,6 +26,21 @@ def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -
 
     return linecover(ls, zoom)
 
+def convert_linestring_to_cellids(ls: LineString, zoom: int = DEFAULT_ZOOM) -> list[int]:
+    """Convert a LineString to CellString (list of cell IDs) at the specified zoom level without timestamps.
+    
+    Args:
+        ls: A Shapely LineString to convert
+        zoom: Zoom level for tiles (default: 21)
+    
+    Returns:
+        List of integer cell IDs representing tiles that intersect the geometry, in no particular order.
+    """
+    cellstring_with_timestamps = convert_linestring_to_cellstring(ls, zoom)
+    
+    cell_ids = [cell_id for cell_id, _ in cellstring_with_timestamps]
+    return cell_ids
+
 
 def convert_polygon_to_cellstrings(poly: Polygon | MultiPolygon, skip_z21: bool = False) -> tuple[
     list[int], list[int], list[int]]:

@@ -8,7 +8,7 @@ from shapely import LineString
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src'))
 
 from core.cellstring_utils import _point_to_tile_fraction
-from core.ls_poly_to_cs import convert_linestring_to_cellstring
+from core.ls_poly_to_cs import convert_linestring_to_cellids, convert_linestring_to_cellstring
 
 
 class TestLinecoverSameCell(unittest.TestCase):
@@ -48,6 +48,30 @@ class TestLinecoverSameCell(unittest.TestCase):
         self.assertNotEqual((x0_tile, y0_tile), (x1_tile, y1_tile)) # Different tiles
         
         self.assertNotEqual(pointA, pointB)
+
+    def test_2d_linestring_same_cell_returns_single_cell(self):
+        linestring = LineString([
+            (10.0, 55.0),
+            (10.0000001, 55.0000001),
+        ])
+
+        cells = convert_linestring_to_cellids(linestring, zoom=21)
+
+        self.assertEqual(len(cells), 1)
+
+    def test_2d_linestring_revisit_removes_duplicates(self):
+        linestring = LineString([
+            (10.0, 55.0),
+            (10.1, 55.1),
+            (10.2, 55.0),
+            (10.1, 54.9),
+            (10.0, 55.0),
+        ])
+
+        cells = convert_linestring_to_cellids(linestring, zoom=13)
+
+        self.assertGreater(len(cells), 0)
+        self.assertEqual(len(cells), len(set(cells)))
 
 if __name__ == '__main__':
     unittest.main()

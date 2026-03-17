@@ -68,8 +68,9 @@ def linecover(
         
         segment_cells: list[int] = []
         
-        ts_segment_start = int(coords[i][2])
-        ts_segment_end = int(coords[i + 1][2])
+        has_z = len(coords[i]) > 2 and len(coords[i + 1]) > 2
+        ts_segment_start = int(coords[i][2]) if has_z else 0
+        ts_segment_end = int(coords[i + 1][2]) if has_z else 0
 
         dx = x1_f - x0_f
         dy = y1_f - y0_f
