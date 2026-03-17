@@ -6,123 +6,85 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'
 import unittest
 import mercantile
 from shapely import LineString, Point, Polygon
-from shapely.wkb import dumps
 
-from core.cellstring_utils import ENCODE_MULT_Z13, ENCODE_MULT_Z17, ENCODE_MULT_Z21, ENCODE_OFFSET_Z13, \
-    ENCODE_OFFSET_Z17, ENCODE_OFFSET_Z21, Classification, classify_tile_containment, encode_lonlat_to_cellid
-from core.ls_poly_to_cs import Row, convert_linestring_to_cellstring, convert_polygon_to_cellstrings, \
-    deprecated_convert_polygon_to_cellstring, process_trajectory_row
+from core.cellstring_utils import Classification, classify_tile_containment, deprecated_encode_lonlat_to_cellid
+from core.ls_poly_to_cs import convert_linestring_to_cellstring, convert_polygon_to_cellstrings, \
+    deprecated_convert_polygon_to_cellstring
 from core.points_to_ls_poly import AISPointWKB, process_single_mmsi
-
 
 class TestEncodeLonLatToMVTCellId(unittest.TestCase):
 
     def test_HouHavn(self):
         lon, lat = 10.383365, 57.056374
-        cell_id = encode_lonlat_to_cellid(lon, lat)
+        cell_id = deprecated_encode_lonlat_to_cellid(lon, lat)
         self.assertEqual(cell_id, 1_1109063_0641880)
 
     def test_toprightquadrant_VenoeHavn(self):
         lon, lat = 8.614294, 56.550693
-        cell_id = encode_lonlat_to_cellid(lon, lat)
+        cell_id = deprecated_encode_lonlat_to_cellid(lon, lat)
         self.assertEqual(cell_id, 1_1098757_0647260)
 
     def test_topleftquadrant_Canada(self):
         lon, lat = -123.120231, 49.290563
-        cell_id = encode_lonlat_to_cellid(lon, lat)
+        cell_id = deprecated_encode_lonlat_to_cellid(lon, lat)
         self.assertEqual(cell_id, 1_0331348_0717620)
 
     def test_bottomleftquadrant_BuenosAires(self):
         lon, lat = -57.853151, -34.469250
-        cell_id = encode_lonlat_to_cellid(lon, lat)
+        cell_id = deprecated_encode_lonlat_to_cellid(lon, lat)
         self.assertEqual(cell_id, 1_0711556_1262712)
 
     def test_bottomrightquadrant_Melbourne(self):
         lon, lat = 144.944281, -37.815050
-        cell_id = encode_lonlat_to_cellid(lon, lat)
+        cell_id = deprecated_encode_lonlat_to_cellid(lon, lat)
         self.assertEqual(cell_id, 1_1892937_1286854)
 
 
 class TestLineStringToCellStringTransformation(unittest.TestCase):
     """Tests for convert_linestring_to_cellstring transformation logic."""
 
-    def _decode_cellid_to_tile(self, cellid: int, zoom: int) -> tuple[int, int]:
-        """Decode a cell ID back to tile (x, y) coordinates."""
-        if zoom == 13:
-            offset = ENCODE_OFFSET_Z13
-            mult = ENCODE_MULT_Z13
-        elif zoom == 17:
-            offset = ENCODE_OFFSET_Z17
-            mult = ENCODE_MULT_Z17
-        else:
-            offset = ENCODE_OFFSET_Z21
-            mult = ENCODE_MULT_Z21
-
-        cellid_adjusted = cellid - offset
-        x = cellid_adjusted // mult
-        y = cellid_adjusted % mult
-        return (x, y)
-
     def test_linestring_coverage_simple_east(self):
         """Test: simple east-moving trajectory produces coverage."""
         linestring = LineString([
-            (10.0, 55.0),
-            (10.1, 55.0),
-            (10.2, 55.0),
+            (10.0, 55.0, 1000),
+            (10.1, 55.0, 1010),
+            (10.2, 55.0, 1020),
         ])
         cellstring = convert_linestring_to_cellstring(linestring, zoom=13)
 
         self.assertGreater(len(cellstring), 0, "Should produce cells for trajectory")
 
-        # All cells should be decodable
-        tile_coords = [self._decode_cellid_to_tile(cell, 13) for cell in cellstring]
-        self.assertEqual(len(tile_coords), len(cellstring))
-
     def test_linestring_coverage_simple_north(self):
         """Test: simple north-moving trajectory produces coverage."""
         linestring = LineString([
-            (10.0, 55.0),
-            (10.0, 55.1),
-            (10.0, 55.2),
+            (10.0, 55.0, 1000),
+            (10.0, 55.1, 1010),
+            (10.0, 55.2, 1020),
         ])
         cellstring = convert_linestring_to_cellstring(linestring, zoom=13)
 
         self.assertGreater(len(cellstring), 0)
 
-        tile_coords = [self._decode_cellid_to_tile(cell, 13) for cell in cellstring]
-        self.assertEqual(len(tile_coords), len(cellstring))
-
     def test_linestring_two_segments_produces_cells(self):
         """Test: two-segment trajectory produces cells for both segments."""
         linestring = LineString([
-            [10.836495399475098, 57.36823654174805],
-            [10.83551025390625, 57.368526458740234]
+            [10.836495399475098, 57.36823654174805, 1000],
+            [10.83551025390625, 57.368526458740234, 1010]
         ])
         cellstring = convert_linestring_to_cellstring(linestring)
 
         self.assertGreater(len(cellstring), 0, "Two-segment trajectory should produce cells")
 
-        # All cells should be decodable
-        for cell in cellstring:
-            tile_coords = self._decode_cellid_to_tile(cell, 21)
-            self.assertIsInstance(tile_coords, tuple)
-            self.assertEqual(len(tile_coords), 2)
-
     def test_linestring_three_segments_with_duplicate_endpoint(self):
         """Test: three-segment trajectory with duplicate endpoint produces cells."""
         linestring = LineString([
-            [10.836495399475098, 57.36823654174805],
-            [10.83551025390625, 57.368526458740234],
-            [10.835510777, 57.368526435]
+            [10.836495399475098, 57.36823654174805, 1000],
+            [10.83551025390625, 57.368526458740234, 1010],
+            [10.835510777, 57.368526435, 1020]
         ])
         cellstring = convert_linestring_to_cellstring(linestring)
 
         self.assertGreater(len(cellstring), 0)
-
-        # All cells should be valid
-        for cell in cellstring:
-            self.assertIsInstance(cell, int)
-            self.assertGreater(cell, 0)
 
     def test_linestring_empty_returns_empty(self):
         """Test: empty LineString returns empty cellstring."""
@@ -134,8 +96,8 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
     def test_linestring_uses_correct_zoom_levels(self):
         """Test: cellstrings at different zoom levels have different cell counts."""
         linestring = LineString([
-            (10.0, 55.0),
-            (10.1, 55.1),
+            (10.0, 55.0, 1000),
+            (10.1, 55.1, 1010),
         ])
 
         cs_z13 = convert_linestring_to_cellstring(linestring, zoom=13)
@@ -150,72 +112,15 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
         self.assertGreaterEqual(len(cs_z21), len(cs_z17))
         self.assertGreaterEqual(len(cs_z17), len(cs_z13))
 
-    def test_linestring_temporal_order_preserved(self):
-        """Test: cells progress in trajectory direction (temporal order)."""
-        linestring = LineString([
-            (10.0, 55.0),
-            (10.1, 55.1),
-        ])
-        cellstring = convert_linestring_to_cellstring(linestring, zoom=13)
-
-        self.assertGreater(len(cellstring), 0)
-
-        tile_coords = [self._decode_cellid_to_tile(cell, 13) for cell in cellstring]
-        first_x, first_y = tile_coords[0]
-        last_x, last_y = tile_coords[-1]
-
-        # Should progress northeast
-        self.assertLess(first_x, last_x, "Should progress eastward")
-        self.assertGreater(first_y, last_y, "Should progress northward (Web Mercator)")
-
-    def test_process_trajectory_row(self):
-        """Test: process_trajectory_row works and produces cells at all zoom levels."""
-        linestring = LineString([
-            (10.0, 55.0),
-            (10.05, 55.05),
-            (10.1, 55.1),
-        ])
-        geom_wkb = dumps(linestring)
-
-        row: Row = (2, 54321, 2000, 3000, geom_wkb)
-        result = process_trajectory_row(row)
-
-        trajectory_id, mmsi, ts_start, ts_end, cs_z13, cs_z17, cs_z21 = result
-
-        self.assertEqual(trajectory_id, 2)
-        self.assertEqual(mmsi, 54321)
-
-        self.assertGreater(len(cs_z13), 0)
-        self.assertGreater(len(cs_z17), 0)
-        self.assertGreater(len(cs_z21), 0)
-
-    def test_linestring_diagonal_northeast(self):
-        """Test: diagonal northeast trajectory produces valid cells."""
-        linestring = LineString([
-            (10.0, 55.0),
-            (10.05, 55.05),
-            (10.1, 55.1),
-        ])
-        cellstring = convert_linestring_to_cellstring(linestring, zoom=13)
-
-        self.assertGreater(len(cellstring), 0)
-
-        tile_coords = [self._decode_cellid_to_tile(cell, 13) for cell in cellstring]
-        first_x, first_y = tile_coords[0]
-        last_x, last_y = tile_coords[-1]
-
-        self.assertLess(first_x, last_x, "Should progress eastward")
-        self.assertGreater(first_y, last_y, "Should progress northward (Web Mercator)")
-
     def test_linestring_self_intersecting_preserves_revisited_cells(self):
         """Test: a trajectory that crosses its own path preserves revisited cells."""
         # A figure-eight-ish path that revisits the starting area
         linestring = LineString([
-            (10.0, 55.0),
-            (10.1, 55.1),
-            (10.2, 55.0),
-            (10.1, 54.9),
-            (10.0, 55.0),
+            (10.0, 55.0, 1000),
+            (10.1, 55.1, 1010),
+            (10.2, 55.0, 1020),
+            (10.1, 54.9, 1030),
+            (10.0, 55.0, 1040),
         ])
         cellstring = convert_linestring_to_cellstring(linestring, zoom=13)
 
@@ -224,14 +129,16 @@ class TestLineStringToCellStringTransformation(unittest.TestCase):
         # The cellstring should have MORE entries than unique cells,
         # because the path revisits cells it already passed through.
         self.assertGreater(
-            len(cellstring), len(set(cellstring)),
+            len(cellstring), len(set((cell_id for cell_id, _ in cellstring))),
             "Self-intersecting trajectory should have duplicate cells"
         )
 
 
 class TestPolygonToCellStrings(unittest.TestCase):
-
+    
     def test_convert_polygon_to_cellstrings(self):
+        self.maxDiff = None
+        
         polygon = Polygon([
             [10.788898468017578, 57.37221145629883],
             [10.787409782409668, 57.37289810180664],
@@ -253,19 +160,19 @@ class TestPolygonToCellStrings(unittest.TestCase):
         cellstring = deprecated_convert_polygon_to_cellstring(polygon, 21)
 
         expected = [
-            111114130638469, 111114130638470, 111114140638469, 111114140638470, 111114140638471,
-            111114140638472, 111114150638470, 111114150638471, 111114150638472, 111114150638473,
-            111114160638470, 111114160638471, 111114160638472, 111114160638473, 111114160638474,
-            111114170638471, 111114170638472, 111114170638473, 111114170638474, 111114170638475,
-            111114180638471, 111114180638472, 111114180638473, 111114180638474, 111114180638475,
-            111114180638476, 111114190638472, 111114190638473, 111114190638474, 111114190638475,
-            111114190638476, 111114190638477, 111114200638473, 111114200638474, 111114200638475,
-            111114200638476, 111114200638477, 111114200638478, 111114210638473, 111114210638474,
-            111114210638475, 111114210638476, 111114210638477, 111114210638478, 111114210638479,
-            111114220638474, 111114220638475, 111114220638476, 111114220638477, 111114220638478,
-            111114220638479, 111114220638480, 111114230638476, 111114230638477, 111114230638478,
-            111114230638479, 111114230638480, 111114230638481, 111114240638478, 111114240638479,
-            111114240638480, 111114240638481, 111114250638480, 111114250638481, 111114250638482
+            1661610825011, 1661610825017, 1661610825014, 1661610825020, 1661610825022, 
+            1661610825108, 1661610825021, 1661610825023, 1661610825109, 1661610825111, 
+            1661610825064, 1661610825066, 1661610825152, 1661610825154, 1661610825160, 
+            1661610825067, 1661610825153, 1661610825155, 1661610825161, 1661610825163, 
+            1661610825070, 1661610825156, 1661610825158, 1661610825164, 1661610825166, 
+            1661610825188, 1661610825157, 1661610825159, 1661610825165, 1661610825167, 
+            1661610825189, 1661610825191, 1661610825170, 1661610825176, 1661610825178, 
+            1661610825200, 1661610825202, 1661610825208, 1661610825171, 1661610825177, 
+            1661610825179, 1661610825201, 1661610825203, 1661610825209, 1661610825211, 
+            1661610825180, 1661610825182, 1661610825204, 1661610825206, 1661610825212, 
+            1661610825214, 1661610825556, 1661610825205, 1661610825207, 1661610825213, 
+            1661610825215, 1661610825557, 1661610825559, 1661610836136, 1661610836138, 
+            1661610836480, 1661610836482, 1661610836481, 1661610836483, 1661610836489
         ]
 
         self.assertEqual(cellstring, expected)

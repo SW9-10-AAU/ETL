@@ -2,23 +2,25 @@ from typing import cast
 import mercantile
 from shapely import LineString, MultiPolygon, Polygon, box, from_wkb
 
-from core.cellstring_utils import DEFAULT_ZOOM, encode_tile_xy_to_cellid, linecover, process_z13_tiles, process_z17_tiles, process_z21_tiles
+from core.cellstring_utils import DEFAULT_ZOOM, linecover, process_z13_tiles, process_z17_tiles, process_z21_tiles, xyz_to_quadkey_int
 
-TrajRow = tuple[int, int, bytes]  # (trajectory_id, mmsi, geom_wkb)
+TrajRow = tuple[int, int, int, int, bytes]  # (trajectory_id, mmsi, ts_start, ts_end, geom_wkb)
 StopRow = tuple[int, int, int, int, bytes]  # (stop_id, mmsi, ts_start, ts_end, geom_wkb)
 ProcessResultTraj = tuple[int, int, list[tuple[int, int]]]  # trajectory_id, mmsi, [(cell_z21, ts)]
 ProcessResultStop = tuple[int, int, int, int, list[int]]  # stop_id, mmsi, ts_start, ts_end, cell_z21
 
 # --- Conversion Utilities ---
 
-def convert_linestring_to_cellstrings(ls: LineString) -> list[tuple[int, int]]:
-    """Convert a LineString to CellStrings at z21 with timestamps."""
-    cells_with_time = convert_linestring_to_cellstring(ls, 21)
-    return cells_with_time
-
-
 def convert_linestring_to_cellstring(ls: LineString, zoom: int = DEFAULT_ZOOM) -> list[tuple[int, int]]:
-    """Convert a LineString to CellString at the specified zoom level with interpolated timestamps."""
+    """Convert a LineString to CellString (list of tuple(cell_id, timestamp)) at the specified zoom level with interpolated timestamps.
+    
+    Args:
+        ls: A Shapely LineString to convert
+        zoom: Zoom level for tiles (default: 21)
+    
+    Returns:
+        List of (cell_id, epoch_timestamp) tuples, temporally ordered.
+    """
     if ls.is_empty:
         return []
 
@@ -71,17 +73,16 @@ def deprecated_convert_polygon_to_cellstring(poly: Polygon | MultiPolygon, zoom:
         bounds = mercantile.bounds(tile)
         tile_poly: Polygon = box(bounds.west, bounds.south, bounds.east, bounds.north)
         if poly.intersects(tile_poly):
-            cellstring.append(encode_tile_xy_to_cellid(tile.x, tile.y, zoom))
+            cellstring.append(xyz_to_quadkey_int(zoom, tile.x, tile.y))
     return cellstring
 
 
 # --- Worker Functions ---
 
 def process_trajectory_row(row: TrajRow) -> ProcessResultTraj:
-    trajectory_id, mmsi, geom_wkb = row
+    trajectory_id, mmsi, _, _, geom_wkb = row
     linestring = cast(LineString, from_wkb(geom_wkb))
-    cells_with_timestamps = convert_linestring_to_cellstrings(linestring)
-    print(f"Trajectory {trajectory_id}: Converted to {len(cells_with_timestamps)} cells")
+    cells_with_timestamps = convert_linestring_to_cellstring(linestring, 21)
     return (trajectory_id, mmsi, cells_with_timestamps)
 
 def process_stop_row(row: StopRow) -> ProcessResultStop:

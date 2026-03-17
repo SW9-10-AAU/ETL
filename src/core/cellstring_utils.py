@@ -15,44 +15,17 @@ class Classification(Enum):
 
 # --- Constants ---
 DEFAULT_ZOOM = 21  # Default zoom level
-ENCODE_OFFSET_Z21 = 100_000_000_000_000
-ENCODE_OFFSET_Z17 = 1_000_000_000_000
-ENCODE_OFFSET_Z13 = 100_000_000
-ENCODE_MULT_Z21 = 10_000_000
-ENCODE_MULT_Z17 = 1_000_000
-ENCODE_MULT_Z13 = 10_000
-
 
 # --- Encoding Utilities ---
 
 def xyz_to_quadkey_int(zoom: int, x: int, y: int) -> int:
     return quadkey_to_int(zxy_to_quadkey(zoom, x, y))
 
-def encode_tile_xy_to_cellid(x: int, y: int, zoom: int = DEFAULT_ZOOM) -> int:
-    if (zoom == 13):
-        return ENCODE_OFFSET_Z13 + (x * ENCODE_MULT_Z13) + y
-
-    if (zoom == 17):
-        return ENCODE_OFFSET_Z17 + (x * ENCODE_MULT_Z17) + y
-
-    return ENCODE_OFFSET_Z21 + (x * ENCODE_MULT_Z21) + y
-
-
-def get_tile_xy(lon: float, lat: float, zoom: int = DEFAULT_ZOOM) -> tuple[int, int]:
-    tile = mercantile.tile(lon, lat, zoom)
-    return tile.x, tile.y
-
-
-def encode_lonlat_to_cellid(lon: float, lat: float, zoom: int = DEFAULT_ZOOM) -> int:
-    x, y = get_tile_xy(lon, lat, zoom)
-    return encode_tile_xy_to_cellid(x, y, zoom)
-
-
 def _point_to_tile_fraction(lon: float, lat: float, zoom: int) -> tuple[float, float]:
     """Convert lon/lat to fractional tile coordinates at the given zoom level.
 
     Adapted from Carto's quadbin ``point_to_tile_fraction``.
-    Returns only (x_frac, y_frac) – the zoom level is already known by the caller.
+    Returns (x_frac, y_frac).
     """
     z2 = 1 << zoom
     sinlat = math.sin(lat * math.pi / 180.0)
@@ -114,6 +87,9 @@ def linecover(
         t_max_y = float("inf") if dy == 0 else abs(((1 if dy > 0 else 0) + y - y0_f) / dy)
         tdx = float("inf") if dx == 0 else abs(sx / dx)
         tdy = float("inf") if dy == 0 else abs(sy / dy)
+
+        # Emit the first cell
+        segment_cells.append(xyz_to_quadkey_int(zoom, x, y))
 
         while t_max_x < 1 or t_max_y < 1:
             if t_max_x < t_max_y:
@@ -277,3 +253,46 @@ def process_z21_tiles(
                     continue
 
     return cellstring_z21
+
+
+# ---- Deprecated encoding functions ----
+ENCODE_OFFSET_Z21 = 100_000_000_000_000
+ENCODE_OFFSET_Z17 = 1_000_000_000_000
+ENCODE_OFFSET_Z13 = 100_000_000
+ENCODE_MULT_Z21 = 10_000_000
+ENCODE_MULT_Z17 = 1_000_000
+ENCODE_MULT_Z13 = 10_000
+
+def deprecated_get_tile_xy(lon: float, lat: float, zoom: int = DEFAULT_ZOOM) -> tuple[int, int]:
+    tile = mercantile.tile(lon, lat, zoom)
+    return tile.x, tile.y
+
+def deprecated_encode_tile_xy_to_cellid(x: int, y: int, zoom: int = DEFAULT_ZOOM) -> int:
+    if (zoom == 13):
+        return ENCODE_OFFSET_Z13 + (x * ENCODE_MULT_Z13) + y
+
+    if (zoom == 17):
+        return ENCODE_OFFSET_Z17 + (x * ENCODE_MULT_Z17) + y
+
+    return ENCODE_OFFSET_Z21 + (x * ENCODE_MULT_Z21) + y
+
+def deprecated_encode_lonlat_to_cellid(lon: float, lat: float, zoom: int = DEFAULT_ZOOM) -> int:
+    x, y = deprecated_get_tile_xy(lon, lat, zoom)
+    return deprecated_encode_tile_xy_to_cellid(x, y, zoom)
+
+def deprecated_decode_cellid_to_tile(cellid: int, zoom: int = DEFAULT_ZOOM) -> tuple[int, int]:
+        """Decode a cell ID back to tile (x, y) coordinates."""
+        if zoom == 13:
+            offset = ENCODE_OFFSET_Z13
+            mult = ENCODE_MULT_Z13
+        elif zoom == 17:
+            offset = ENCODE_OFFSET_Z17
+            mult = ENCODE_MULT_Z17
+        else:
+            offset = ENCODE_OFFSET_Z21
+            mult = ENCODE_MULT_Z21
+
+        cellid_adjusted = cellid - offset
+        x = cellid_adjusted // mult
+        y = cellid_adjusted % mult
+        return (x, y)

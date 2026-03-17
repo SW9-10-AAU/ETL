@@ -20,22 +20,32 @@ def transform_ls_trajectories_to_cs(conn: duckdb.DuckDBPyConnection, db_schema: 
     conn.execute("LOAD spatial")
     print(f"Processing trajectories in batches of {batch_size}...")
     
-    # Use last processed trajectory as last_id
-    max_id = conn.execute(f"""SELECT MAX(trajectory_id) FROM {db_schema}.trajectory_cs""").fetchone()
-    last_id: int = max_id[0] if max_id and max_id[0] is not None else 0
+    traj_ids_to_process: list[int] = [row[0] for row in conn.execute(f"""
+                SELECT trajectory_id FROM {db_schema}.trajectory_ls
+                EXCEPT
+                SELECT trajectory_id FROM {db_schema}.trajectory_cs
+                ORDER BY trajectory_id;""").fetchall()]
     
+    print(f"Found {len(traj_ids_to_process)} LineString trajectories to convert to CellString. Starting processing...")
+    next_index = 0
+
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        while True:
-            print(f"Fetching batch of {batch_size} trajectories with trajectory_id > {last_id}...")
+        while next_index < len(traj_ids_to_process):
+            batch_ids = traj_ids_to_process[next_index:next_index + batch_size]
+            next_index += len(batch_ids)
+
+            if not batch_ids:
+                break
+
+            print(f"Fetching batch of {len(batch_ids)} LineString trajectories...")
             batch: list[TrajRow] = [
-                (int(tid), int(mmsi),  bytes(geom_wkb))
-                for tid, mmsi, geom_wkb in conn.execute(f"""
-                    SELECT trajectory_id, mmsi, ST_AsWKB(geom)
+                (int(tid), int(mmsi), ts_start, ts_end, bytes(geom_wkb))
+                for tid, mmsi, ts_start, ts_end, geom_wkb in conn.execute(f"""
+                    SELECT trajectory_id, mmsi, ts_start, ts_end, ST_AsWKB(geom)
                     FROM {db_schema}.trajectory_ls
-                    WHERE trajectory_id > ?
-                    ORDER BY trajectory_id
-                    LIMIT ?
-                """, [last_id, batch_size]).fetchall()
+                    WHERE trajectory_id IN ({','.join(map(str, batch_ids))})
+                    ORDER BY trajectory_id;
+                """).fetchall()
             ]
             if not batch:
                 break
@@ -72,39 +82,50 @@ def transform_ls_trajectories_to_cs(conn: duckdb.DuckDBPyConnection, db_schema: 
                     "cell_z21":      pa.array(cells, type=pa.uint64()),
                 }, schema=TRAJ_CS_SCHEMA)
                 conn.execute(f"INSERT INTO {db_schema}.trajectory_cs SELECT * FROM arrow_table")
+                print(f"Inserted batch of {len(results)} trajectories ({len(cells)} cells).")
                 total_cells_inserted += len(cells)
-
-            last_id = batch[-1][0]
+            
             total_processed += len(results)
-            print(f"Inserted: {total_processed:,} trajectories ({total_cells_inserted:,} cells)")
+            print(f"Progress ({total_processed/len(traj_ids_to_process):.2%}): {total_processed:,} of {len(traj_ids_to_process):,} trajectories ({total_cells_inserted:,} cells)")
 
-    print(f"Finished processing all trajectories ({total_processed:,} total)")
+    print(f"Finished processing all trajectories ({total_processed:,} trajectories, {total_cells_inserted:,} cells)")
 
 
 def transform_poly_stops_to_cs(conn: duckdb.DuckDBPyConnection, db_schema: str, max_workers: int = MAX_WORKERS,
                                      batch_size: int = BATCH_SIZE):
     print(f"--- Processing stops (using {max_workers} workers) ---")
     total_processed = 0
+    total_cells_inserted = 0
 
     conn.execute("LOAD spatial")
     print(f"Processing stops in batches of {batch_size}...")
     
-    # Use last processed stop as last_id
-    max_id = conn.execute(f"""SELECT MAX(stop_id) FROM {db_schema}.stop_cs""").fetchone()
-    last_id: int = max_id[0] if max_id and max_id[0] is not None else 0
+    stop_ids_to_process: list[int] = [row[0] for row in conn.execute(f"""
+                SELECT stop_id FROM {db_schema}.stop_poly
+                EXCEPT
+                SELECT stop_id FROM {db_schema}.stop_cs
+                ORDER BY stop_id;""").fetchall()]
+    
+    print(f"Found {len(stop_ids_to_process)} Polygon stops to convert to CellString. Starting processing...")
+    next_index = 0
     
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        while True:
-            print(f"Fetching batch of {batch_size} stops with stop_id > {last_id}...")
+        while next_index < len(stop_ids_to_process):
+            batch_ids = stop_ids_to_process[next_index:next_index + batch_size]
+            next_index += len(batch_ids)
+            
+            if not batch_ids:
+                break
+            
+            print(f"Fetching batch of {len(batch_ids)} Polygon stops...")
             batch: list[StopRow] = [
                 (int(sid), int(mmsi), ts_start, ts_end, bytes(geom_wkb))
                 for sid, mmsi, ts_start, ts_end, geom_wkb in conn.execute(f"""
                     SELECT stop_id, mmsi, ts_start, ts_end, ST_AsWKB(geom)
                     FROM {db_schema}.stop_poly
-                    WHERE stop_id > ?
-                    ORDER BY stop_id
-                    LIMIT ?
-                """, [last_id, batch_size]).fetchall()
+                    WHERE stop_id IN ({','.join(map(str, batch_ids))})
+                    ORDER BY stop_id;
+                """).fetchall()
             ]
             if not batch:
                 break
@@ -141,9 +162,10 @@ def transform_poly_stops_to_cs(conn: duckdb.DuckDBPyConnection, db_schema: str, 
                     "cell_z21":       pa.array(cells, type=pa.uint64()),
                 }, schema=STOP_CS_SCHEMA)
                 conn.execute(f"INSERT INTO {db_schema}.stop_cs SELECT * FROM arrow_table")
-
-            last_id = batch[-1][0]
+                print(f"Inserted batch of {len(results)} stops ({len(cells)} cells).")
+                total_cells_inserted += len(cells)
+                
             total_processed += len(results)
-            print(f"Inserted: {total_processed:,} stops in total")
+            print(f"Progress ({total_processed/len(stop_ids_to_process):.2%}): {total_processed:,} of {len(stop_ids_to_process):,} stops ({total_cells_inserted:,} cells)")
 
-    print(f"Finished processing all stops ({total_processed:,} total)")
+    print(f"Finished processing all stops ({total_processed:,} stops, {total_cells_inserted:,} cells)")
