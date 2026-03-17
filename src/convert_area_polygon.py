@@ -59,44 +59,39 @@ def convert_area_polygon_to_cs_duckdb(polygon: Polygon | MultiPolygon, name: str
     duckdb_path = get_db_path_or_url("duckdb")
     conn = duckdb.connect(duckdb_path)
 
+    if skip_z21:
+      print("DuckDB requires z21 cells; ignoring skip_z21=True.")
+      skip_z21 = False
+
     # Insert area polygon as geom from WKB
     conn.execute("LOAD SPATIAL;")
-    conn.execute(
+    area_row = conn.execute(
         f"""INSERT INTO {db_schema}.area_poly (name, geom)
-           VALUES (?, ST_GeomFromWKB(?))""",
+         VALUES (?, ST_GeomFromWKB(?))
+         RETURNING area_id""",
         [name, polygon.wkb],
-    )
+    ).fetchone()
+    if area_row is None:
+      raise RuntimeError("Failed to insert area geometry into DuckDB")
+
+    area_id = int(area_row[0])
     print("Inserted area polygon into DuckDB table")
 
     print("Converting polygon to cellstrings")
-    cellstring_z13, cellstring_z17, cellstring_z21 = (
-        convert_polygon_to_cellstrings(polygon, skip_z21=skip_z21)
-    )
-    print(
-        f"Conversion succeeded with {len(cellstring_z13)} cells (zoom 13), "
-        f"{len(cellstring_z17)} cells (zoom 17), and {len(cellstring_z21)} cells (zoom 21)."
-    )
+    _, _, cellstring_z21 = convert_polygon_to_cellstrings(polygon, skip_z21=skip_z21)
+    print(f"Conversion succeeded with {len(cellstring_z21)} cells (zoom 21).")
 
-    arrow_table = pa.table({
-            "area_id": pa.array([None], type=pa.int32()),
-            "name": pa.array([name], type=pa.string()),
-            "cellstring_z13": pa.array([cellstring_z13], type=pa.list_(pa.int32())),
-            "cellstring_z17": pa.array([cellstring_z17], type=pa.list_(pa.int64())),
-            "cellstring_z21": pa.array([cellstring_z21], type=pa.list_(pa.int64())),
+    if cellstring_z21:
+      arrow_table = pa.table({
+          "area_id": pa.array([area_id] * len(cellstring_z21), type=pa.int32()),
+          "name": pa.array([name] * len(cellstring_z21), type=pa.string()),
+          "cell_z21": pa.array(cellstring_z21, type=pa.uint64()),
         }, schema=AREA_CS_SCHEMA)
-    conn.execute(f"""
-        INSERT INTO {db_schema}.area_cs 
-        (area_id, name, cellstring_z13, cellstring_z17, cellstring_z21)
-        SELECT 
-            nextval('{db_schema}.area_cs_seq'), 
-            name, 
-            cellstring_z13, 
-            cellstring_z17, 
-            cellstring_z21 
-        FROM arrow_table
-        """)
-    
-    print("Inserted area cellstrings into DuckDB table")
+      conn.execute(f"INSERT INTO {db_schema}.area_cs SELECT * FROM arrow_table")
+      print("Inserted area cellstrings into DuckDB table")
+    else:
+      print("No area cells to insert into DuckDB table")
+
     conn.close()
 
     print(f"Area ({name}) uploaded to {db_schema} schema in database")

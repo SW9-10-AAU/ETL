@@ -77,18 +77,19 @@ def convert_area_polygons_to_cs_duckdb():
 
         # Convert polygon to cellstring and insert into table 
         print("Converting polygon to cellstrings")
-        cellstring_z13, cellstring_z17, cellstring_z21 = convert_polygon_to_cellstrings(polygon, skip_z21=True)
-        print(f"Conversion of {name} succeeded with {len(cellstring_z13)} cells (zoom 13), {len(cellstring_z17)} cells (zoom 17), and {len(cellstring_z21)} cells (zoom 21).")
+        _, _, cellstring_z21 = convert_polygon_to_cellstrings(polygon, skip_z21=False)
+        print(f"Conversion of {name} succeeded with {len(cellstring_z21)} cells (zoom 21).")
 
-        arrow_table = pa.table({
-            "area_id": pa.array([area_id], type=pa.int32()),
-            "name": pa.array([name], type=pa.string()),
-            "cellstring_z13": pa.array([cellstring_z13], type=pa.list_(pa.int32())),
-            "cellstring_z17": pa.array([cellstring_z17], type=pa.list_(pa.int64())),
-            "cellstring_z21": pa.array([cellstring_z21], type=pa.list_(pa.int64())),
-        }, schema=AREA_CS_SCHEMA)
-        conn.execute(f"INSERT INTO {db_schema}.area_cs SELECT * FROM arrow_table")
-        print(f"Inserted area cellstrings for {name} into DuckDB table")
+        if cellstring_z21:
+            arrow_table = pa.table({
+                "area_id": pa.array([area_id] * len(cellstring_z21), type=pa.int32()),
+                "name": pa.array([name] * len(cellstring_z21), type=pa.string()),
+                "cell_z21": pa.array(cellstring_z21, type=pa.uint64()),
+            }, schema=AREA_CS_SCHEMA)
+            conn.execute(f"INSERT INTO {db_schema}.area_cs SELECT * FROM arrow_table")
+            print(f"Inserted area cellstrings for {name} into DuckDB table")
+        else:
+            print(f"No area cells to insert for {name}")
 
     print("Converted all area polygons to cellstrings and uploaded to DuckDB.")
     conn.close()

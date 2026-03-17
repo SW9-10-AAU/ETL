@@ -4,6 +4,7 @@ from enum import Enum
 import mercantile
 from shapely import LineString, Polygon, MultiPolygon, box
 
+from ukc_core.quadkey_utils import quadkey_to_int, zxy_to_quadkey
 
 class Classification(Enum):
     """Enum for classifying tile containment in a Polygon or MultiPolygon."""
@@ -14,41 +15,17 @@ class Classification(Enum):
 
 # --- Constants ---
 DEFAULT_ZOOM = 21  # Default zoom level
-ENCODE_OFFSET_Z21 = 100_000_000_000_000
-ENCODE_OFFSET_Z17 = 1_000_000_000_000
-ENCODE_OFFSET_Z13 = 100_000_000
-ENCODE_MULT_Z21 = 10_000_000
-ENCODE_MULT_Z17 = 1_000_000
-ENCODE_MULT_Z13 = 10_000
-
 
 # --- Encoding Utilities ---
 
-def encode_tile_xy_to_cellid(x: int, y: int, zoom: int = DEFAULT_ZOOM) -> int:
-    if (zoom == 13):
-        return ENCODE_OFFSET_Z13 + (x * ENCODE_MULT_Z13) + y
-
-    if (zoom == 17):
-        return ENCODE_OFFSET_Z17 + (x * ENCODE_MULT_Z17) + y
-
-    return ENCODE_OFFSET_Z21 + (x * ENCODE_MULT_Z21) + y
-
-
-def get_tile_xy(lon: float, lat: float, zoom: int = DEFAULT_ZOOM) -> tuple[int, int]:
-    tile = mercantile.tile(lon, lat, zoom)
-    return tile.x, tile.y
-
-
-def encode_lonlat_to_cellid(lon: float, lat: float, zoom: int = DEFAULT_ZOOM) -> int:
-    x, y = get_tile_xy(lon, lat, zoom)
-    return encode_tile_xy_to_cellid(x, y, zoom)
-
+def xyz_to_quadkey_int(zoom: int, x: int, y: int) -> int:
+    return quadkey_to_int(zxy_to_quadkey(zoom, x, y))
 
 def _point_to_tile_fraction(lon: float, lat: float, zoom: int) -> tuple[float, float]:
     """Convert lon/lat to fractional tile coordinates at the given zoom level.
 
     Adapted from Carto's quadbin ``point_to_tile_fraction``.
-    Returns only (x_frac, y_frac) – the zoom level is already known by the caller.
+    Returns (x_frac, y_frac).
     """
     z2 = 1 << zoom
     sinlat = math.sin(lat * math.pi / 180.0)
@@ -66,7 +43,7 @@ def linecover(
         ls: LineString,
         zoom: int = DEFAULT_ZOOM,
 ) -> list[tuple[int, int]]:
-    """Return an ordered list of (x, y) tile coordinates that fully cover a line.
+    """Return an list of (cell_id, epoch_timestamp) tuples that fully cover a LineString.
 
     This is an adaptation of Carto's Quadbin ``line_cover`` algorithm
     (https://github.com/CartoDB/quadbin-py) that uses Amanatides & Woo
@@ -78,18 +55,22 @@ def linecover(
         zoom:   Tile zoom level.
 
     Returns:
-        List of (x, y) tile coordinates in traversal order.
+        List of (cell_id, epoch_timestamp) tuples, temporally ordered.
         Consecutive duplicates are suppressed so the caller only sees
         each tile once per contiguous run.
     """
-    tiles: list[tuple[int, int]] = []
-    prev_x: int | None = None
-    prev_y: int | None = None
+    cells_with_time: list[tuple[int, int]] = []
 
     coords = list(ls.coords)
     for i in range(len(coords) - 1):
         x0_f, y0_f = _point_to_tile_fraction(coords[i][0], coords[i][1], zoom)
         x1_f, y1_f = _point_to_tile_fraction(coords[i + 1][0], coords[i + 1][1], zoom)
+        
+        segment_cells: list[int] = []
+        
+        has_z = len(coords[i]) > 2 and len(coords[i + 1]) > 2
+        ts_segment_start = int(coords[i][2]) if has_z else 0
+        ts_segment_end = int(coords[i + 1][2]) if has_z else 0
 
         dx = x1_f - x0_f
         dy = y1_f - y0_f
@@ -108,13 +89,8 @@ def linecover(
         tdx = float("inf") if dx == 0 else abs(sx / dx)
         tdy = float("inf") if dy == 0 else abs(sy / dy)
 
-        # Emit the starting tile (skip only if identical to the last
-        # tile of the previous segment, to avoid a spurious duplicate
-        # at segment boundaries where end == start).
-        if x != prev_x or y != prev_y:
-            tiles.append((x, y))
-        prev_x = x
-        prev_y = y
+        # Emit the first cell
+        segment_cells.append(xyz_to_quadkey_int(zoom, x, y))
 
         while t_max_x < 1 or t_max_y < 1:
             if t_max_x < t_max_y:
@@ -124,11 +100,24 @@ def linecover(
                 t_max_y += tdy
                 y += sy
 
-            tiles.append((x, y))
-            prev_x = x
-            prev_y = y
+            segment_cells.append(xyz_to_quadkey_int(zoom, x, y))
+        
+        # Linear interpolation of timestamps across all cells in this segment
+        num_cells = len(segment_cells)
+        for idx, cell_id in enumerate(segment_cells):
+            if num_cells == 1: # If the start and end points are in the same cell, we duplicate the cell, but with different timestamps
+                cells_with_time.extend([(cell_id, ts_segment_start), (cell_id, ts_segment_end)])
+                continue # Important to skip the rest of the loop
+            else:
+                # Linear interpolation: first cell gets ts0, last cell gets ts1
+                progress = idx / (num_cells - 1)
+                interpolated_ts = round(ts_segment_start + progress * (ts_segment_end - ts_segment_start))
+            cells_with_time.append((cell_id, interpolated_ts))
 
-    return tiles
+    # Deduplicate cells that have the same cell_id and timestamp
+    deduplicate_cells_with_time = list(dict.fromkeys(cells_with_time))
+
+    return deduplicate_cells_with_time
 
 
 def classify_tile_containment(poly: Polygon | MultiPolygon, tile: mercantile.Tile) -> Classification:
@@ -202,8 +191,8 @@ def process_z13_tiles(poly: Polygon | MultiPolygon) -> tuple[list[int], list[mer
                 partially_contained_z13.append(tile)
             case Classification.NO_INTERSECTION:
                 continue
-
-        cellstring_z13.append(encode_tile_xy_to_cellid(tile.x, tile.y, 13))
+            
+        cellstring_z13.append(xyz_to_quadkey_int(13, tile.x, tile.y))
 
     return cellstring_z13, fully_contained_z13, partially_contained_z13
 
@@ -220,7 +209,7 @@ def process_z17_tiles(
     for tile in fully_contained_z13:
         children_z17 = get_all_children_at_zoom(tile, 17)
         for child in children_z17:
-            cellstring_z17.append(encode_tile_xy_to_cellid(child.x, child.y, 17))
+            cellstring_z17.append(xyz_to_quadkey_int(17, child.x, child.y))
             fully_contained_z17.append(child)
 
     for tile in partially_contained_z13:
@@ -236,8 +225,8 @@ def process_z17_tiles(
                 case Classification.NO_INTERSECTION:
                     continue
 
-            cellstring_z17.append(encode_tile_xy_to_cellid(child.x, child.y, 17))
-
+            cellstring_z17.append(xyz_to_quadkey_int(17, child.x, child.y))
+            
     return cellstring_z17, fully_contained_z17, partially_contained_z17
 
 
@@ -251,7 +240,7 @@ def process_z21_tiles(
     for tile in fully_contained_z17:
         children_z21 = get_all_children_at_zoom(tile, 21)
         for child in children_z21:
-            cellstring_z21.append(encode_tile_xy_to_cellid(child.x, child.y, 21))
+            cellstring_z21.append(xyz_to_quadkey_int(21, child.x, child.y))
 
     for tile in partially_contained_z17:
         children_z21 = get_all_children_at_zoom(tile, 21)
@@ -260,8 +249,51 @@ def process_z21_tiles(
 
             match classification:
                 case Classification.FULLY_CONTAINED | Classification.PARTIALLY_CONTAINED:
-                    cellstring_z21.append(encode_tile_xy_to_cellid(child.x, child.y, 21))
+                    cellstring_z21.append(xyz_to_quadkey_int(21, child.x, child.y))
                 case Classification.NO_INTERSECTION:
                     continue
 
     return cellstring_z21
+
+
+# ---- Deprecated encoding functions ----
+ENCODE_OFFSET_Z21 = 100_000_000_000_000
+ENCODE_OFFSET_Z17 = 1_000_000_000_000
+ENCODE_OFFSET_Z13 = 100_000_000
+ENCODE_MULT_Z21 = 10_000_000
+ENCODE_MULT_Z17 = 1_000_000
+ENCODE_MULT_Z13 = 10_000
+
+def deprecated_get_tile_xy(lon: float, lat: float, zoom: int = DEFAULT_ZOOM) -> tuple[int, int]:
+    tile = mercantile.tile(lon, lat, zoom)
+    return tile.x, tile.y
+
+def deprecated_encode_tile_xy_to_cellid(x: int, y: int, zoom: int = DEFAULT_ZOOM) -> int:
+    if (zoom == 13):
+        return ENCODE_OFFSET_Z13 + (x * ENCODE_MULT_Z13) + y
+
+    if (zoom == 17):
+        return ENCODE_OFFSET_Z17 + (x * ENCODE_MULT_Z17) + y
+
+    return ENCODE_OFFSET_Z21 + (x * ENCODE_MULT_Z21) + y
+
+def deprecated_encode_lonlat_to_cellid(lon: float, lat: float, zoom: int = DEFAULT_ZOOM) -> int:
+    x, y = deprecated_get_tile_xy(lon, lat, zoom)
+    return deprecated_encode_tile_xy_to_cellid(x, y, zoom)
+
+def deprecated_decode_cellid_to_tile(cellid: int, zoom: int = DEFAULT_ZOOM) -> tuple[int, int]:
+        """Decode a cell ID back to tile (x, y) coordinates."""
+        if zoom == 13:
+            offset = ENCODE_OFFSET_Z13
+            mult = ENCODE_MULT_Z13
+        elif zoom == 17:
+            offset = ENCODE_OFFSET_Z17
+            mult = ENCODE_MULT_Z17
+        else:
+            offset = ENCODE_OFFSET_Z21
+            mult = ENCODE_MULT_Z21
+
+        cellid_adjusted = cellid - offset
+        x = cellid_adjusted // mult
+        y = cellid_adjusted % mult
+        return (x, y)

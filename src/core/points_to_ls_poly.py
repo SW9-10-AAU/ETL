@@ -69,8 +69,8 @@ def process_single_mmsi(mmsi: int, wkb_points: list[AISPointWKB]) -> ProcessResu
         # Compute differences between previous and current point
         time_diff, dist_diff, avg_vessel_speed = compute_motion(prev_point, current_point)
         
-        # Use SOG if not null, otherwise use the computed average speed between points
-        current_speed = sog if sog is not None else avg_vessel_speed 
+        # Use minimum of SOG or average speed if SOG is not null, otherwise use the computed average speed between points
+        current_speed = min(sog, avg_vessel_speed) if sog is not None else avg_vessel_speed
         
         # Candidate stop condition 
         if current_speed < STOP_SOG_THRESHOLD and time_diff < STOP_TIME_THRESHOLD and dist_diff < STOP_DISTANCE_THRESHOLD:

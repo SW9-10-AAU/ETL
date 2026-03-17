@@ -5,6 +5,7 @@ from psycopg import Connection, Cursor
 from psycopg import sql
 from psycopg.sql import SQL
 from core.points_to_ls_poly import AISPointRow, DictAISPointWKB, ProcessResult, Stop, Traj, process_single_mmsi
+from duckdb_construct_trajs_stops import linestring_to_wkb_linestring_m
 
 BATCH_SIZE = 50 # Number of MMSIs to process in parallel
 FutureResult = Future[ProcessResult] # Future returning ProcessResult
@@ -17,7 +18,7 @@ def construct_trajectories_and_stops(conn: Connection, db_schema: str, max_worke
     
     insert_traj_query = sql.SQL("""
             INSERT INTO {db_schema}.trajectory_ls (mmsi, ts_start, ts_end, geom)
-            VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_Force2D(ST_GeomFromWKB(%s, 4326)))
+            VALUES (%s, TO_TIMESTAMP(%s), TO_TIMESTAMP(%s), ST_GeomFromWKB(%s, 4326))
         """).format(db_schema=sql.Identifier(db_schema))
 
     insert_stop_query = sql.SQL("""
@@ -40,7 +41,7 @@ def construct_trajectories_and_stops(conn: Connection, db_schema: str, max_worke
             batch_num = batch_start//batch_size + 1
             num_batches = (num_mmsis + batch_size - 1) // batch_size
             batch_start_time = time.perf_counter()
-            print(f"\n--- Processing batch {batch_num} of {num_batches} ({batch_size} MMSIs: {mmsis_in_batch[0]} to {mmsis_in_batch[-1]}) ---")
+            print(f"\n--- Processing batch {batch_num} of {num_batches} ({len(mmsis_in_batch)} MMSIs: {mmsis_in_batch[0]} to {mmsis_in_batch[-1]}) ---")
             
             # Retrieve points for all MMSIs in the batch
             print(f"Fetching points for MMSIs in batch {batch_num}...")
@@ -69,7 +70,7 @@ def construct_trajectories_and_stops(conn: Connection, db_schema: str, max_worke
                 if trajs_to_insert:
                     insert_cur.executemany(
                         insert_traj_query,
-                        [(mmsi, ts_start, ts_end, geom.wkb) for (mmsi, ts_start, ts_end, geom) in trajs_to_insert]
+                        [(mmsi, ts_start, ts_end, linestring_to_wkb_linestring_m(geom)) for (mmsi, ts_start, ts_end, geom) in trajs_to_insert]
                     )
 
                 if stops_to_insert:
