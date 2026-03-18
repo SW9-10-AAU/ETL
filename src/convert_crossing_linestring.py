@@ -83,7 +83,7 @@ def convert_crossing_linestring_to_cs_duckdb(linestring: LineString, name: str):
         print("No crossing cells to insert into DuckDB table")
     conn.close()
 
-    print(f"Crossing ({name}) uploaded to {db_schema} schema in database")
+    print(f"Crossing ({name}, crossing_id: {crossing_id}) uploaded to {db_schema} schema in database")
 
 def main():
     """

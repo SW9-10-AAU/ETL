@@ -1,7 +1,6 @@
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 import duckdb
 import pyarrow as pa
-from ukc_core.quadkey_utils import quadkey_to_int
 from core.ls_poly_to_cs import ProcessResultStop, ProcessResultTraj, StopRow, TrajRow, process_stop_row, process_trajectory_row
 from db_setup.duckdb.pyarrow_schemas import STOP_CS_SCHEMA, TRAJ_CS_SCHEMA
 
