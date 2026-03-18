@@ -1,6 +1,6 @@
 from math import inf
 from geopy.distance import geodesic
-from shapely import Polygon, Point, MultiPoint
+from shapely import Polygon, Point, MultiPoint, from_wkt
 
 KNOT_AS_MPS = 0.514444      # 1 knot = 0.514444 m/s
 MIN_POINTS_IN_SEGMENT = 2   # Minimum number of points in a trajectory or stop segment
@@ -10,8 +10,8 @@ def distance_m(p1: Point, p2: Point) -> float:
     return geodesic((p1.y, p1.x), (p2.y, p2.x)).meters # x and y is swapped because this is (lat,lon), and Shapely/PostGIS is (lon,lat)
 
 def extract_time_s(p: Point) -> float:
-    """Extract time in seconds from the Z dimension of a Shapely Point."""
-    return p.coords[0][2]
+    """Extract time in seconds from the M dimension of a Shapely Point."""
+    return p.m
 
 def extract_start_end_time_s(points: list[Point]) -> tuple[float, float]:
     """Extract start and end time in seconds from a list of Shapely Points."""
@@ -95,7 +95,7 @@ def try_merge_invalid_merged_stop_with_trajectories(trajs: list[list[Point]], in
         first_traj_pt = traj[0]
         last_traj_pt = traj[-1]
 
-        # Compare full (x, y, z) - exact equality
+        # Compare full (x, y, m) - exact equality
         if (last_traj_pt.coords[0] == first_stop_pt.coords[0]):
             traj_before_idx = i
         if (first_traj_pt.coords[0] == last_stop_pt.coords[0]):
@@ -126,3 +126,10 @@ def try_merge_invalid_merged_stop_with_trajectories(trajs: list[list[Point]], in
     # Case 4: No merge possible = treat as new trajectory (if it has enough points)
     if (len(invalid_merged_stop) >= min_ais_points_in_traj):
         trajs.append(invalid_merged_stop)
+        
+        
+def points_to_linestringm_as_wkb(points: list[Point]) -> bytes:
+    """Build a LineStringM, treating the third coordinate as M (epoch timestamp) from a list of Points. Returns the LineStringM as WKB."""
+    coords_m = " , ".join(f"{p.x} {p.y} {int(p.m)}" for p in points)
+    
+    return from_wkt(f"LINESTRING M ({coords_m})").wkb

@@ -1,8 +1,17 @@
 import os
+import sys
 from db_setup.utils.db_utils import get_db_backend, get_db_path_or_url, get_db_schema
 
 def main():
     backend = get_db_backend()
+
+    print(f"Running ETL with database backend: '{backend}' and schema: '{get_db_schema(backend)}'")
+
+    confirm = input("Confirm execution? [Y/n]: ").strip().lower()
+
+    if confirm in ['n', 'no']:
+        print("Aborting execution.")
+        sys.exit(0)
 
     if backend == 'duckdb':
         main_duckdb()
@@ -15,6 +24,7 @@ def main_duckdb():
     import duckdb
     from db_setup.duckdb.drop_duckdb_tables import drop_duckdb_tables
     from db_setup.duckdb.create_duckdb_tables import create_duckdb_tables
+    from db_setup.duckdb.create_duckdb_points import create_duckdb_points
     from duckdb_construct_trajs_stops import construct_trajectories_and_stops
     from duckdb_transform_ls_to_cs import transform_ls_trajectories_to_cs, transform_poly_stops_to_cs
 
@@ -28,10 +38,13 @@ def main_duckdb():
     connection.execute("LOAD spatial;")
     
     # Drop tables
-    drop_duckdb_tables(connection, db_schema)
+    # drop_duckdb_tables(connection, db_schema)
 
     # Create tables
-    create_duckdb_tables(connection, db_schema)
+    # create_duckdb_tables(connection, db_schema)
+    
+    # Create points
+    create_duckdb_points(connection, db_schema)
 
     # Construct LineString trajectories and Polygon stops from the Points table
     construct_trajectories_and_stops(connection, db_schema, num_workers)

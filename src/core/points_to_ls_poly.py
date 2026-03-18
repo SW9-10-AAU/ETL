@@ -1,6 +1,6 @@
 from typing import cast
 from shapely import Polygon, from_wkb, Point, LineString, MultiPoint, concave_hull
-from core.utils import add_connecting_point_to_segment, append_segment_if_nonempty_and_clear_segment, compute_mbr_area, compute_motion, extract_start_end_time_s, extract_time_s, merge_candidate_stops, try_merge_invalid_merged_stop_with_trajectories
+from core.utils import add_connecting_point_to_segment, append_segment_if_nonempty_and_clear_segment, compute_mbr_area, compute_motion, extract_start_end_time_s, extract_time_s, merge_candidate_stops, points_to_linestringm_as_wkb, try_merge_invalid_merged_stop_with_trajectories
 
 # Stops
 STOP_SOG_THRESHOLD = 1.0            # knots, vT (original = 1 knot)
@@ -20,8 +20,8 @@ MIN_AIS_POINTS_IN_TRAJ = 10         # Minimum AIS messages required to record a 
 
 AISPointWKB = tuple[bytes, float | None]            # (geom as WKB, sog)
 AISPoint = tuple[Point, float | None]               # (geom as Point, sog)
-Traj = tuple[int, float, float, LineString]         # (mmsi, ts_start, ts_end, geom)
-Stop = tuple[int, float, float, Polygon]            # (mmsi, ts_start, ts_end, geom)
+Traj = tuple[int, float, float, bytes]              # (mmsi, ts_start, ts_end, geom as WKB)
+Stop = tuple[int, float, float, bytes]              # (mmsi, ts_start, ts_end, geom as WKB)
 ProcessResult = tuple[int, list[Traj], list[Stop]]  # (mmsi, trajs_to_insert, stops_to_insert)
 
 AISPointRow = tuple[int, bytes, float | None]       # (mmsi, geom as WKB, sog)
@@ -128,7 +128,7 @@ def process_single_mmsi(mmsi: int, wkb_points: list[AISPointWKB]) -> ProcessResu
             
                 if mbr_area <= MAX_MBR_AREA:
                     # Fully valid stop
-                    stops_to_insert.append((mmsi, ts_start, ts_end, stop_poly))
+                    stops_to_insert.append((mmsi, ts_start, ts_end, stop_poly.wkb))
                     continue  # Skip fallback
 
         # Fallback: Try to merge invalid merged stop with trajectories
@@ -143,7 +143,7 @@ def process_single_mmsi(mmsi: int, wkb_points: list[AISPointWKB]) -> ProcessResu
     for trajectory in candidate_trajs:
         ts_start, ts_end = extract_start_end_time_s(trajectory)
         if len(trajectory) >= MIN_AIS_POINTS_IN_TRAJ and ts_end > ts_start:
-            trajs_to_insert.append((mmsi, ts_start, ts_end, LineString(trajectory)))
+            trajs_to_insert.append((mmsi, ts_start, ts_end, points_to_linestringm_as_wkb(trajectory)))
     
     print(
         f"[MMSI: {mmsi}] ({len(points)} points, {len(trajs_to_insert)} trajectories, {len(stops_to_insert)} stops)",

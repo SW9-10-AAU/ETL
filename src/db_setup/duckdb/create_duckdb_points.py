@@ -26,9 +26,10 @@ def create_duckdb_points(conn: duckdb.DuckDBPyConnection, db_schema: str):
             FROM ais_data a
             JOIN valid_mmsi v ON a.mmsi = v.mmsi
             WHERE a.lat != 91
-            ORDER BY a.mmsi, a.lat, a.lon, a.timestamp
+            ORDER BY a.mmsi, a.timestamp, a.lat, a.lon
         )
-        SELECT * FROM dedup;
+        SELECT * FROM dedup 
+        ORDER BY mmsi, epoch_ts;
     """)
 
     print(f"Created table 'points' in DuckDB schema '{db_schema}'.")

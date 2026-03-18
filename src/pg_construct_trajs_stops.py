@@ -5,7 +5,6 @@ from psycopg import Connection, Cursor
 from psycopg import sql
 from psycopg.sql import SQL
 from core.points_to_ls_poly import AISPointRow, DictAISPointWKB, ProcessResult, Stop, Traj, process_single_mmsi
-from duckdb_construct_trajs_stops import linestring_to_wkb_linestring_m
 
 BATCH_SIZE = 50 # Number of MMSIs to process in parallel
 FutureResult = Future[ProcessResult] # Future returning ProcessResult
@@ -64,19 +63,21 @@ def construct_trajectories_and_stops(conn: Connection, db_schema: str, max_worke
                     except Exception as e:
                         print(f"Error processing MMSI {mmsi}: {e}")
                         continue
+            
+            print(f"Batch {batch_num} processed: {len(trajs_to_insert)} trajectories, {len(stops_to_insert)} stops. Inserting into database...")
 
             # Batch insert trajectories and stops into the database
             with conn.cursor() as insert_cur:
                 if trajs_to_insert:
                     insert_cur.executemany(
                         insert_traj_query,
-                        [(mmsi, ts_start, ts_end, linestring_to_wkb_linestring_m(geom)) for (mmsi, ts_start, ts_end, geom) in trajs_to_insert]
+                        [(mmsi, ts_start, ts_end, geom_wkb) for (mmsi, ts_start, ts_end, geom_wkb) in trajs_to_insert]
                     )
 
                 if stops_to_insert:
                     insert_cur.executemany(
                         insert_stop_query,
-                        [(mmsi, ts_start, ts_end, geom.wkb) for (mmsi, ts_start, ts_end, geom) in stops_to_insert]
+                        [(mmsi, ts_start, ts_end, geom_wkb) for (mmsi, ts_start, ts_end, geom_wkb) in stops_to_insert]
                     )
 
             conn.commit()

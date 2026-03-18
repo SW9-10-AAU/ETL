@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'
 
 import unittest
 import mercantile
-from shapely import LineString, Point, Polygon
+from shapely import LineString, Point, Polygon, from_wkb, from_wkt
 
 from core.cellstring_utils import Classification, classify_tile_containment, deprecated_encode_lonlat_to_cellid
 from core.ls_poly_to_cs import convert_linestring_to_cellids, convert_linestring_to_cellstring, convert_polygon_to_cellstrings, \
@@ -300,9 +300,8 @@ class TestHierarchicalPolygonToCellString(unittest.TestCase):
         classification_outside = classify_tile_containment(polygon, tile_outside)
         self.assertEqual(classification_outside, Classification.NO_INTERSECTION)
 
-    def make_point(self, lon, lat, ts):
-        from shapely.wkb import dumps
-        return dumps(Point(lon, lat, ts))
+    def make_point(self, lon: float, lat: float, epoch_ts: int):
+        return from_wkt(f"POINT M ({lon} {lat} {int(epoch_ts)})").wkb
 
 
     def test_single_point_leftover_does_not_connect(self):
@@ -333,7 +332,8 @@ class TestHierarchicalPolygonToCellString(unittest.TestCase):
         self.assertEqual(len(trajs), 1, "Only Germany trajectory should be kept")
 
         # All points in trajectory must be Germany points
-        coords = list(trajs[0][3].coords)
+        _, _, _, geom_wkb = trajs[0]
+        coords = list(from_wkb(geom_wkb).coords)
         for lon, lat, _ in coords:
             self.assertGreater(lon, 8.0, "No England points should appear in Germany trajectory")
             self.assertAlmostEqual(lat, 53.5, delta=0.01)
@@ -354,9 +354,8 @@ class TestProcessSingleMmsiCoincidentNullSog(unittest.TestCase):
     try_merge_invalid_merged_stop_with_trajectories which emitted it as a trajectory.
     """
 
-    def make_point(self, lon, lat, ts):
-        from shapely.wkb import dumps
-        return dumps(Point(lon, lat, ts))
+    def make_point(self, lon: float, lat: float, epoch_ts: int):
+        return from_wkt(f"POINT M ({lon} {lat} {int(epoch_ts)})").wkb
 
     def test_coincident_null_sog_produces_stop_not_trajectory(self):
         mmsi = 999000001
@@ -379,11 +378,11 @@ class TestProcessSingleMmsiCoincidentNullSog(unittest.TestCase):
                          "Coincident null-SOG points must produce exactly one stop")
 
         # Stop bounds should be very close to the fixed location
-        _, ts_start, ts_end, geom = stops[0]
+        _, ts_start, ts_end, geom_wkb = stops[0]
         self.assertEqual(ts_start, float(start_ts))
         self.assertEqual(ts_end, float(start_ts + (n_points - 1) * 10))
-        self.assertAlmostEqual(geom.centroid.x, lon, places=2)
-        self.assertAlmostEqual(geom.centroid.y, lat, places=2)
+        self.assertAlmostEqual(from_wkb(geom_wkb).centroid.x, lon, places=2)
+        self.assertAlmostEqual(from_wkb(geom_wkb).centroid.y, lat, places=2)
 
 
 if __name__ == "__main__":
