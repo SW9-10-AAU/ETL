@@ -91,7 +91,7 @@ def process_single_mmsi(mmsi: int, wkb_points: list[AISPointWKB]) -> ProcessResu
                     append_segment_if_nonempty_and_clear_segment(candidate_trajs, current_traj)
             else: 
                 continue # Don't update previous point to the skewed AIS point
-            
+
             # Append candidate stop (if any)
             append_segment_if_nonempty_and_clear_segment(candidate_stops, current_stop)
                 
@@ -103,7 +103,7 @@ def process_single_mmsi(mmsi: int, wkb_points: list[AISPointWKB]) -> ProcessResu
     append_segment_if_nonempty_and_clear_segment(candidate_stops, current_stop)
 
     # Merge nearby candidate stops
-    merged_stops = merge_candidate_stops(candidate_stops, MERGE_DISTANCE_THRESHOLD, MERGE_TIME_THRESHOLD)
+    merged_stops = merge_candidate_stops(candidate_stops, MERGE_TIME_THRESHOLD, MERGE_DISTANCE_THRESHOLD)
 
     # Validate and insert stops (fallback to merging invalid stops with trajectories)
     for merged_stop in merged_stops:
