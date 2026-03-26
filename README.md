@@ -2,15 +2,6 @@
 
 ETL pipeline for AIS trajectory processing with support for both PostgreSQL/PostGIS and DuckDB.
 
-## What changed since last semester
-
-- Added DuckDB backend support alongside PostgreSQL.
-- Reorganized shared logic into `src/core/` modules used by both backend implementations.
-- Refactored backend-specific setup and execution into `src/db_setup/duckdb/` and `src/db_setup/postgresql/`.
-- Added step-level confirmations and environment-based step toggles in `src/main.py`.
-- Added schema split support so source data and CellString outputs can be stored separately.
-- Added performance-focused batching/parallel processing paths and Arrow-based DuckDB inserts for CellString transforms.
-
 ## Repository structure
 
 ```text
@@ -63,7 +54,7 @@ ETL/
 
 ## Prerequisites
 
-1. Python 3.11 or 3.12
+1. Python 3.11+
 2. Create and activate virtual environment
    - Windows: `python -m venv .venv` and `.\.venv\Scripts\Activate.ps1`
    - macOS/Linux: `python3 -m venv .venv` and `source .venv/bin/activate`
@@ -92,8 +83,8 @@ Schema settings:
 
 - Base (backward-compatible): `DUCKDB_SCHEMA`, `POSTGRESQL_SCHEMA`
 - Optional split schema setup:
-  - `DUCKDB_SOURCE_SCHEMA`, `POSTGRESQL_SOURCE_SCHEMA` for `points`, `trajectory_ls`, `stop_poly`
-  - `DUCKDB_CS_SCHEMA`, `POSTGRESQL_CS_SCHEMA` for `trajectory_cs`, `stop_cs`
+  - `DUCKDB_SOURCE_SCHEMA`, `POSTGRESQL_SOURCE_SCHEMA` for `points`, `trajectory_ls`, `stop_poly`, `area_poly`, and `crossing_ls`
+  - `DUCKDB_CS_SCHEMA`, `POSTGRESQL_CS_SCHEMA` for `trajectory_cs`, `stop_cs`, `area_cs`, and `crossing_cs`
 
 If split schema vars are not set, they fall back to backend base schema vars.
 
@@ -129,17 +120,13 @@ Set these env vars to bypass prompts for specific steps:
 
 Accepted values: `y`, `yes`, `1`, `true`, `n`, `no`, `0`, `false`.
 
-## Validation
+## Run tests
 
-Run the same checks as CI:
-
-- `flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics`
-- `flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics`
 - `python -m unittest discover -s tests`
 
 ## Draw areas and crossings
 
-Use https://geojson.io/#map=6.47/55.777/10.723 to create polygon/linestring inputs.
+Use [geojson.io](https://geojson.io/#map=6.47/55.777/10.723) to create polygon/linestring inputs.
 
 Relevant scripts:
 
