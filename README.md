@@ -1,64 +1,149 @@
 # ETL
 
-ETL for trajectories
+ETL pipeline for AIS trajectory processing with support for both PostgreSQL/PostGIS and DuckDB.
+
+## What changed since last semester
+
+- Added DuckDB backend support alongside PostgreSQL.
+- Reorganized shared logic into `src/core/` modules used by both backend implementations.
+- Refactored backend-specific setup and execution into `src/db_setup/duckdb/` and `src/db_setup/postgresql/`.
+- Added step-level confirmations and environment-based step toggles in `src/main.py`.
+- Added schema split support so source data and CellString outputs can be stored separately.
+- Added performance-focused batching/parallel processing paths and Arrow-based DuckDB inserts for CellString transforms.
+
+## Repository structure
+
+```text
+ETL/
+├── .github/
+│   ├── copilot-instructions.md
+│   └── workflows/
+│       └── python-app.yml
+├── ais_data/
+├── geojson/
+├── src/
+│   ├── main.py
+│   ├── duckdb_construct_trajs_stops.py
+│   ├── duckdb_transform_ls_to_cs.py
+│   ├── pg_construct_trajs_stops.py
+│   ├── pg_transform_ls_to_cs.py
+│   ├── convert_area_geojson.py
+│   ├── convert_area_polygon.py
+│   ├── convert_area_polygons_to_cellstring.py
+│   ├── convert_crossing_linestring.py
+│   ├── core/
+│   │   ├── cellstring_utils.py
+│   │   ├── ls_poly_to_cs.py
+│   │   ├── points_to_ls_poly.py
+│   │   └── utils.py
+│   └── db_setup/
+│       ├── duckdb/
+│       │   ├── create_duckdb_points.py
+│       │   ├── create_duckdb_tables.py
+│       │   ├── drop_duckdb_tables.py
+│       │   └── pyarrow_schemas.py
+│       ├── postgresql/
+│       │   ├── create_postgresql_tables.py
+│       │   ├── create_ls_traj_stop_tables.py
+│       │   ├── create_cs_traj_stop_tables.py
+│       │   ├── create_area_tables.py
+│       │   ├── create_crossing_tables.py
+│       │   ├── mat_points_view.py
+│       │   └── drop_postgresql_tables.py
+│       └── utils/
+│           ├── connect.py
+│           └── db_utils.py
+├── tests/
+│   ├── test_connect.py
+│   ├── test_linecover_same_cell.py
+│   └── test_transform_ls_to_cs.py
+├── requirements.txt
+└── README.md
+```
 
 ## Prerequisites
 
-1. Install PostgreSQL
-   - Win: You need to add the PostgreSQL bin folder (which contains libpq.dll) to your system's PATH
-2. Create a virtual environment: `python -m venv .venv`
-3. Activate environment
-   - Win: `.\.venv\Scripts\Activate.ps1`
-   - Mac: `source .venv/bin/activate`
-4. Install requirements: `pip install -r requirements.txt`
+1. Python 3.11 or 3.12
+2. Create and activate virtual environment
+   - Windows: `python -m venv .venv` and `.\.venv\Scripts\Activate.ps1`
+   - macOS/Linux: `python3 -m venv .venv` and `source .venv/bin/activate`
+3. Install dependencies: `pip install -r requirements.txt`
 
-## Run
+Backend-specific prerequisites:
 
-1. Activate environment
-   - Win: `.\.venv\Scripts\Activate.ps1`
-   - Mac: `source .venv/bin/activate`
-2. Run script:
-   - Win: `python ./src/main.py`
-   - Mac: `python3 ./src/main.py`
+- PostgreSQL backend (`DB_BACKEND=postgresql`):
+  - PostgreSQL + PostGIS available
+  - On Windows, PostgreSQL `bin` (contains `libpq.dll`) must be in `PATH`
+- DuckDB backend (`DB_BACKEND=duckdb`):
+  - No database server required
+  - DuckDB spatial extension is installed/loaded by the pipeline
 
-## Functions
+## Configuration
 
-- [`main.py`](/src/main.py): Main script to run all steps
-- [`drop_all_tables.py`](/src/tables/drop_all_tables.py): Drops all tables in the schema
-- [`mat_points_view.py`](/src/tables/mat_points_view.py): Creates a Materialized View for points
-- [`create_cs_traj_stop_tables.py`](/src/tables/create_cs_traj_stop_tables.py): Creates CS tables for trajectory with stops
+Copy `.env.example` to `.env` and configure values.
 
-### [`main.py`](/src/main.py)
+Required core settings:
 
-Main script to run all steps in order: drop tables, create materialized view, create trajectory and stop tables.
+- `DB_BACKEND`: `duckdb` or `postgresql`
+- `DUCKDB_PATH` when using DuckDB
+- `POSTGRESQL_URL` when using PostgreSQL
 
-#### Run
+Schema settings:
 
-- Win: `python ./src/main.py`
-- Mac: `python3 src/main.py`
+- Base (backward-compatible): `DUCKDB_SCHEMA`, `POSTGRESQL_SCHEMA`
+- Optional split schema setup:
+  - `DUCKDB_SOURCE_SCHEMA`, `POSTGRESQL_SOURCE_SCHEMA` for `points`, `trajectory_ls`, `stop_poly`
+  - `DUCKDB_CS_SCHEMA`, `POSTGRESQL_CS_SCHEMA` for `trajectory_cs`, `stop_cs`
 
-### [`drop_all_tables.py`](/src/tables/drop_all_tables.py)
+If split schema vars are not set, they fall back to backend base schema vars.
 
-Drops all tables in the PostgreSQL database (dw/{schema_name}/trajectory_cs, dw/{schema_name}/stop_cs, dw/{schema_name}/trajectory_ls, dw/{schema_name}/stop_poly, dw/{schema_name}/points).
+This supports creating multiple CellString variants in separate schemas without re-running construction of LS trajectories/stops.
 
-### [`mat_points_view.py`](/src/tables/mat_points_view.py)
+## Run ETL
 
-Creates a materialized view named `points` in the PostgreSQL database (dw/{schema_name}/points). This view aggregates AIS points from a single MMSI taken from the `dw.fact.ais_point_fact` table. The resulting view contains six columns: `mmsi`, `geom` containing x, y, timestamp, `sog`, `cog`, `delta_sog`, `delta_depth_draught`.
+- Windows: `python ./src/main.py`
+- macOS/Linux: `python3 ./src/main.py`
 
-This prepares points that can then be used for trajectory generation with stops.
+Execution is step-driven with confirm/skip prompts:
 
-### [`create_cs_traj_stop_tables.py`](/src/tables/create_cs_traj_stop_tables.py)
+1. Drop source/LS tables
+2. Drop CellString tables
+3. Create schema(s)
+4. Create tables
+5. Create points table/materialized view
+6. Construct trajectories and stops
+7. Transform trajectories/stops to CellStrings
 
-Creates one table for trajectory and one table for stops in the PostgreSQL database (dw/{schema_name}/trajectory_cs).
+## Optional non-interactive step toggles
+
+Set these env vars to bypass prompts for specific steps:
+
+- `ETL_DROP` (legacy fallback; applies to both drop prompts)
+- `ETL_DROP_LS`
+- `ETL_DROP_CS`
+- `ETL_CREATE_SCHEMA`
+- `ETL_CREATE_TABLES`
+- `ETL_CREATE_POINTS`
+- `ETL_CONSTRUCT`
+- `ETL_TRANSFORM`
+
+Accepted values: `y`, `yes`, `1`, `true`, `n`, `no`, `0`, `false`.
+
+## Validation
+
+Run the same checks as CI:
+
+- `flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics`
+- `flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics`
+- `python -m unittest discover -s tests`
 
 ## Draw areas and crossings
 
-Use this tool to draw an area (Polygon) or a crossing (LineString): https://geojson.io/#map=6.47/55.777/10.723
+Use https://geojson.io/#map=6.47/55.777/10.723 to create polygon/linestring inputs.
 
-### [`convert_area_polygon_to_cs.py`](/src/tables/convert_area_polygon_to_cs.py)
+Relevant scripts:
 
-Converts an area (Polygon) to a CellString and uploads both Polygon and CellString to the PostgreSQL database (benchmark.area_poly, benchmark.area_cs).
-
-### [`convert_crossing_linestring.py`](/src/convert_crossing_linestring.py)
-
-Converts a crossing (LineString) to a CellString and uploads both LineString and CellString to the PostgreSQL database (benchmark.crossing_ls, benchmark.crossing_cs).
+- `src/convert_area_geojson.py`
+- `src/convert_area_polygon.py`
+- `src/convert_area_polygons_to_cellstring.py`
+- `src/convert_crossing_linestring.py`
