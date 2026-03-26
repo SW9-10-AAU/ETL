@@ -97,7 +97,9 @@ def main_duckdb():
             should_drop_cs_tables,
         )
 
-    if should_run_step("ETL_CREATE_SCHEMA", "Do you want to create schema(s)?"):
+    if should_run_step(
+        "ETL_CREATE_SCHEMA", "Do you want to create/ensure schemas exist?"
+    ):
         _ensure_schema_names(connection, "duckdb", source_schema, cs_schema)
 
     if should_run_step("ETL_CREATE_TABLES", "Do you want to create all tables?"):
@@ -163,7 +165,9 @@ def main_postgres():
             should_drop_cs_tables,
         )
 
-    if should_run_step("ETL_CREATE_SCHEMA", "Do you want to create schema(s)?"):
+    if should_run_step(
+        "ETL_CREATE_SCHEMA", "Do you want to create/ensure schemas exist?"
+    ):
         _ensure_schema_names(connection, "postgresql", source_schema, cs_schema)
 
     if should_run_step("ETL_CREATE_TABLES", "Do you want to create all tables?"):
