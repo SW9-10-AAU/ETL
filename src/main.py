@@ -1,3 +1,4 @@
+import math
 import os
 import sys
 
@@ -8,6 +9,17 @@ from db_setup.utils.db_utils import (
     get_source_schema,
 )
 from prompt_utils import should_run_step, should_run_step_with_fallback
+
+
+def _get_num_workers() -> int:
+    """Determine the number of worker processes to use for parallel processing, based on the total number of CPU cores available."""
+
+    num_cores = os.cpu_count() or 4
+
+    if num_cores <= 16:
+        return min(num_cores, 16)
+    else:
+        return math.floor(num_cores * 0.95)  # Use 95% of cores
 
 
 def _ensure_schema_names(connection, backend: str, source_schema: str, cs_schema: str):
@@ -69,7 +81,7 @@ def main_duckdb():
     db_path = get_db_path_or_url("duckdb")
     source_schema = get_source_schema("duckdb")
     cs_schema = get_cs_schema("duckdb")
-    num_workers = min(os.cpu_count() or 4, 16)
+    num_workers = _get_num_workers()
     connection = duckdb.connect(database=db_path)
 
     # Install and load spatial extension
