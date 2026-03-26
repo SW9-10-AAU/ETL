@@ -113,6 +113,23 @@ def create_duckdb_tables(
     """
     )
 
+    # Spatial indexes on geometry columns
+    conn.execute(
+        f"""
+        CREATE INDEX IF NOT EXISTS trajectory_ls_geom_rtree_idx
+        ON {source_schema}.trajectory_ls USING RTREE (geom);
+
+        CREATE INDEX IF NOT EXISTS stop_poly_geom_rtree_idx
+        ON {source_schema}.stop_poly USING RTREE (geom);
+
+        CREATE INDEX IF NOT EXISTS area_poly_geom_rtree_idx
+        ON {source_schema}.area_poly USING RTREE (geom);
+
+        CREATE INDEX IF NOT EXISTS crossing_ls_geom_rtree_idx
+        ON {source_schema}.crossing_ls USING RTREE (geom);
+    """
+    )
+
     print(
         f"Created DuckDB tables (trajectory_ls, stop_poly, area_poly, crossing_ls) in source schema '{source_schema}' and CellString tables (trajectory_cs, stop_cs, area_cs, crossing_cs) in schema '{cs_schema}'."
     )
