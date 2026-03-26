@@ -218,3 +218,6 @@ geojson/
 *.duckdb
 *.pq
 *.wal
+
+# Claude
+.claude
