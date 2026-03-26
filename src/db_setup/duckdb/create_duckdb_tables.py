@@ -7,15 +7,15 @@ def create_duckdb_schema(conn: duckdb.DuckDBPyConnection, db_schema: str):
 
 
 def create_duckdb_tables(
-    conn: duckdb.DuckDBPyConnection, source_schema: str, cs_schema: str
+    conn: duckdb.DuckDBPyConnection, ls_schema: str, cs_schema: str
 ):
 
     # trajectory_ls
     conn.execute(
         f"""
-        CREATE SEQUENCE IF NOT EXISTS {source_schema}.trajectory_ls_seq START 1;
-        CREATE TABLE IF NOT EXISTS {source_schema}.trajectory_ls (
-            trajectory_id INTEGER PRIMARY KEY DEFAULT nextval('{source_schema}.trajectory_ls_seq'),
+        CREATE SEQUENCE IF NOT EXISTS {ls_schema}.trajectory_ls_seq START 1;
+        CREATE TABLE IF NOT EXISTS {ls_schema}.trajectory_ls (
+            trajectory_id INTEGER PRIMARY KEY DEFAULT nextval('{ls_schema}.trajectory_ls_seq'),
             mmsi          BIGINT NOT NULL,
             ts_start      TIMESTAMP NOT NULL,
             ts_end        TIMESTAMP NOT NULL,
@@ -27,9 +27,9 @@ def create_duckdb_tables(
     # stop_poly
     conn.execute(
         f"""
-        CREATE SEQUENCE IF NOT EXISTS {source_schema}.stop_poly_seq START 1;
-        CREATE TABLE IF NOT EXISTS {source_schema}.stop_poly (
-            stop_id  INTEGER PRIMARY KEY DEFAULT nextval('{source_schema}.stop_poly_seq'),
+        CREATE SEQUENCE IF NOT EXISTS {ls_schema}.stop_poly_seq START 1;
+        CREATE TABLE IF NOT EXISTS {ls_schema}.stop_poly (
+            stop_id  INTEGER PRIMARY KEY DEFAULT nextval('{ls_schema}.stop_poly_seq'),
             mmsi     BIGINT NOT NULL,
             ts_start TIMESTAMP NOT NULL,
             ts_end   TIMESTAMP NOT NULL,
@@ -66,10 +66,10 @@ def create_duckdb_tables(
     # area poly
     conn.execute(
         f"""
-        CREATE SEQUENCE IF NOT EXISTS {source_schema}.area_poly_seq START 1;
-        CREATE TABLE IF NOT EXISTS {source_schema}.area_poly
+        CREATE SEQUENCE IF NOT EXISTS {ls_schema}.area_poly_seq START 1;
+        CREATE TABLE IF NOT EXISTS {ls_schema}.area_poly
         (
-            area_id      INTEGER PRIMARY KEY DEFAULT nextval('{source_schema}.area_poly_seq'),
+            area_id      INTEGER PRIMARY KEY DEFAULT nextval('{ls_schema}.area_poly_seq'),
             name         TEXT NOT NULL,
             geom         GEOMETRY NOT NULL
         );
@@ -91,10 +91,10 @@ def create_duckdb_tables(
     # crossing ls
     conn.execute(
         f"""
-        CREATE SEQUENCE IF NOT EXISTS {source_schema}.crossing_ls_seq START 1;
-        CREATE TABLE IF NOT EXISTS {source_schema}.crossing_ls
+        CREATE SEQUENCE IF NOT EXISTS {ls_schema}.crossing_ls_seq START 1;
+        CREATE TABLE IF NOT EXISTS {ls_schema}.crossing_ls
         (
-            crossing_id  INTEGER PRIMARY KEY DEFAULT nextval('{source_schema}.crossing_ls_seq'),
+            crossing_id  INTEGER PRIMARY KEY DEFAULT nextval('{ls_schema}.crossing_ls_seq'),
             name         TEXT NOT NULL,
             geom         GEOMETRY NOT NULL
         );
@@ -117,19 +117,19 @@ def create_duckdb_tables(
     conn.execute(
         f"""
         CREATE INDEX IF NOT EXISTS trajectory_ls_geom_rtree_idx
-        ON {source_schema}.trajectory_ls USING RTREE (geom);
+        ON {ls_schema}.trajectory_ls USING RTREE (geom);
 
         CREATE INDEX IF NOT EXISTS stop_poly_geom_rtree_idx
-        ON {source_schema}.stop_poly USING RTREE (geom);
+        ON {ls_schema}.stop_poly USING RTREE (geom);
 
         CREATE INDEX IF NOT EXISTS area_poly_geom_rtree_idx
-        ON {source_schema}.area_poly USING RTREE (geom);
+        ON {ls_schema}.area_poly USING RTREE (geom);
 
         CREATE INDEX IF NOT EXISTS crossing_ls_geom_rtree_idx
-        ON {source_schema}.crossing_ls USING RTREE (geom);
+        ON {ls_schema}.crossing_ls USING RTREE (geom);
     """
     )
 
     print(
-        f"Created DuckDB tables (trajectory_ls, stop_poly, area_poly, crossing_ls) in source schema '{source_schema}' and CellString tables (trajectory_cs, stop_cs, area_cs, crossing_cs) in schema '{cs_schema}'."
+        f"Created DuckDB tables (trajectory_ls, stop_poly, area_poly, crossing_ls) in schema '{ls_schema}' and CellString tables (trajectory_cs, stop_cs, area_cs, crossing_cs) in schema '{cs_schema}'."
     )

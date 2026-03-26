@@ -69,15 +69,13 @@ def get_db_backend() -> str:
     return backend
 
 
-def get_source_schema(db_type: str) -> str:
+def get_ls_schema(db_type: str) -> str:
     load_dotenv()
 
     if db_type == "postgresql":
-        return _get_schema_with_fallback(
-            "POSTGRESQL_SOURCE_SCHEMA", "POSTGRESQL_SCHEMA"
-        )
+        return _get_schema_with_fallback("POSTGRESQL_LS_SCHEMA", "POSTGRESQL_SCHEMA")
     if db_type == "duckdb":
-        return _get_schema_with_fallback("DUCKDB_SOURCE_SCHEMA", "DUCKDB_SCHEMA")
+        return _get_schema_with_fallback("DUCKDB_LS_SCHEMA", "DUCKDB_SCHEMA")
 
     raise ValueError(f"Unsupported database type: {db_type}")
 

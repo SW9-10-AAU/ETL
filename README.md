@@ -83,7 +83,7 @@ Schema settings:
 
 - Base (backward-compatible): `DUCKDB_SCHEMA`, `POSTGRESQL_SCHEMA`
 - Optional split schema setup:
-  - `DUCKDB_SOURCE_SCHEMA`, `POSTGRESQL_SOURCE_SCHEMA` for `points`, `trajectory_ls`, `stop_poly`, `area_poly`, and `crossing_ls`
+  - `DUCKDB_LS_SCHEMA`, `POSTGRESQL_LS_SCHEMA` for `points`, `trajectory_ls`, `stop_poly`, `area_poly`, and `crossing_ls`
   - `DUCKDB_CS_SCHEMA`, `POSTGRESQL_CS_SCHEMA` for `trajectory_cs`, `stop_cs`, `area_cs`, and `crossing_cs`
 
 If split schema vars are not set, they fall back to backend base schema vars.
@@ -97,7 +97,7 @@ This supports creating multiple CellString variants in separate schemas without 
 
 Execution is step-driven with confirm/skip prompts:
 
-1. Drop source/LS tables
+1. Drop LineString tables
 2. Drop CellString tables
 3. Create schema(s)
 4. Create tables

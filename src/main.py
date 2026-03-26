@@ -6,7 +6,7 @@ from db_setup.utils.db_utils import (
     get_cs_schema,
     get_db_backend,
     get_db_path_or_url,
-    get_source_schema,
+    get_ls_schema,
 )
 from prompt_utils import should_run_step, should_run_step_with_fallback
 
@@ -22,10 +22,8 @@ def _get_num_workers() -> int:
         return math.floor(num_cores * 0.95)  # Use 95% of cores
 
 
-def _ensure_schema_names(connection, backend: str, source_schema: str, cs_schema: str):
-    schema_set = (
-        [source_schema] if source_schema == cs_schema else [source_schema, cs_schema]
-    )
+def _ensure_schema_names(connection, backend: str, ls_schema: str, cs_schema: str):
+    schema_set = [ls_schema] if ls_schema == cs_schema else [ls_schema, cs_schema]
     if backend == "duckdb":
         from db_setup.duckdb.create_duckdb_tables import create_duckdb_schema
 
@@ -47,11 +45,11 @@ def _ensure_schema_names(connection, backend: str, source_schema: str, cs_schema
 
 def main():
     backend = get_db_backend()
-    source_schema = get_source_schema(backend)
+    ls_schema = get_ls_schema(backend)
     cs_schema = get_cs_schema(backend)
 
     print(
-        f"Running ETL with backend='{backend}', source_schema='{source_schema}', cs_schema='{cs_schema}'"
+        f"Running ETL with backend='{backend}', ls_schema='{ls_schema}', cs_schema='{cs_schema}'"
     )
 
     if not should_run_step("ETL_PROCEED", "Do you want to proceed?", default_yes=True):
@@ -79,7 +77,7 @@ def main_duckdb():
     )
 
     db_path = get_db_path_or_url("duckdb")
-    source_schema = get_source_schema("duckdb")
+    ls_schema = get_ls_schema("duckdb")
     cs_schema = get_cs_schema("duckdb")
     num_workers = _get_num_workers()
     connection = duckdb.connect(database=db_path)
@@ -88,57 +86,55 @@ def main_duckdb():
     connection.execute("INSTALL spatial;")
     connection.execute("LOAD spatial;")
 
-    should_drop_source_tables = should_run_step_with_fallback(
+    should_drop_ls_tables = should_run_step_with_fallback(
         env_var="ETL_DROP_LS",
         fallback_env_var="ETL_DROP",
-        prompt_text="Do you want to drop source/LS tables?",
+        prompt_text="Do you want to drop LineString tables (points, trajectory_ls, stop_poly, area_poly, crossing_ls)?",
         default_yes=False,
     )
     should_drop_cs_tables = should_run_step_with_fallback(
         env_var="ETL_DROP_CS",
         fallback_env_var="ETL_DROP",
-        prompt_text="Do you want to drop CellString tables?",
+        prompt_text="Do you want to drop CellString tables (trajectory_cs, stop_cs, area_cs, crossing_cs)?",
         default_yes=False,
     )
-    if should_drop_source_tables or should_drop_cs_tables:
+    if should_drop_ls_tables or should_drop_cs_tables:
         drop_duckdb_tables(
             connection,
-            source_schema,
+            ls_schema,
             cs_schema,
-            should_drop_source_tables,
+            should_drop_ls_tables,
             should_drop_cs_tables,
         )
 
     if should_run_step(
         "ETL_CREATE_SCHEMA", "Do you want to create/ensure schemas exist?"
     ):
-        _ensure_schema_names(connection, "duckdb", source_schema, cs_schema)
+        _ensure_schema_names(connection, "duckdb", ls_schema, cs_schema)
 
     if should_run_step("ETL_CREATE_TABLES", "Do you want to create all tables?"):
-        create_duckdb_tables(connection, source_schema, cs_schema)
+        create_duckdb_tables(connection, ls_schema, cs_schema)
 
     if should_run_step(
         "ETL_CREATE_POINTS",
         "Do you want to create points table?",
         default_yes=False,
     ):
-        create_duckdb_points(connection, source_schema)
+        create_duckdb_points(connection, ls_schema)
 
     if should_run_step(
         "ETL_CONSTRUCT", "Do you want to construct trajectories and stops?"
     ):
-        construct_trajectories_and_stops(
-            connection, source_schema, source_schema, num_workers
-        )
+        construct_trajectories_and_stops(connection, ls_schema, ls_schema, num_workers)
 
     if should_run_step(
         "ETL_TRANSFORM", "Do you want to transform trajectories/stops to CellStrings?"
     ):
         transform_ls_trajectories_to_cs(
-            connection, source_schema, cs_schema, num_workers, batch_size=2000
+            connection, ls_schema, cs_schema, num_workers, batch_size=2000
         )
         transform_poly_stops_to_cs(
-            connection, source_schema, cs_schema, num_workers, batch_size=2000
+            connection, ls_schema, cs_schema, num_workers, batch_size=2000
         )
 
     connection.close()
@@ -157,62 +153,60 @@ def main_postgres():
         transform_poly_stops_to_cs,
     )
 
-    source_schema = get_source_schema("postgresql")
+    ls_schema = get_ls_schema("postgresql")
     cs_schema = get_cs_schema("postgresql")
     num_workers = min(os.cpu_count() or 4, 16)
     connection = connect_to_postgres_db()
 
-    should_drop_source_tables = should_run_step_with_fallback(
+    should_drop_ls_tables = should_run_step_with_fallback(
         env_var="ETL_DROP_LS",
         fallback_env_var="ETL_DROP",
-        prompt_text="Do you want to drop source/LS tables?",
+        prompt_text="Do you want to drop LineString tables (points, trajectory_ls, stop_poly, area_poly, crossing_ls)?",
         default_yes=False,
     )
     should_drop_cs_tables = should_run_step_with_fallback(
         env_var="ETL_DROP_CS",
         fallback_env_var="ETL_DROP",
-        prompt_text="Do you want to drop CellString tables?",
+        prompt_text="Do you want to drop CellString tables (trajectory_cs, stop_cs, area_cs, crossing_cs)?",
         default_yes=False,
     )
-    if should_drop_source_tables or should_drop_cs_tables:
+    if should_drop_ls_tables or should_drop_cs_tables:
         drop_postgresql_tables(
             connection,
-            source_schema,
+            ls_schema,
             cs_schema,
-            should_drop_source_tables,
+            should_drop_ls_tables,
             should_drop_cs_tables,
         )
 
     if should_run_step(
         "ETL_CREATE_SCHEMA", "Do you want to create/ensure schemas exist?"
     ):
-        _ensure_schema_names(connection, "postgresql", source_schema, cs_schema)
+        _ensure_schema_names(connection, "postgresql", ls_schema, cs_schema)
 
     if should_run_step("ETL_CREATE_TABLES", "Do you want to create all tables?"):
-        create_postgresql_tables(connection, source_schema, cs_schema)
+        create_postgresql_tables(connection, ls_schema, cs_schema)
 
     if should_run_step(
         "ETL_CREATE_POINTS",
         "Do you want to create points materialized view?",
         default_yes=False,
     ):
-        create_postgresql_points(connection, source_schema)
+        create_postgresql_points(connection, ls_schema)
 
     if should_run_step(
         "ETL_CONSTRUCT", "Do you want to construct trajectories and stops?"
     ):
-        construct_trajectories_and_stops(
-            connection, source_schema, source_schema, num_workers
-        )
+        construct_trajectories_and_stops(connection, ls_schema, ls_schema, num_workers)
 
     if should_run_step(
         "ETL_TRANSFORM", "Do you want to transform trajectories/stops to CellStrings?"
     ):
         transform_ls_trajectories_to_cs(
-            connection, source_schema, cs_schema, num_workers, batch_size=2000
+            connection, ls_schema, cs_schema, num_workers, batch_size=2000
         )
         transform_poly_stops_to_cs(
-            connection, source_schema, cs_schema, num_workers, batch_size=2000
+            connection, ls_schema, cs_schema, num_workers, batch_size=2000
         )
 
     connection.close()

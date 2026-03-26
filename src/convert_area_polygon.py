@@ -3,7 +3,7 @@ from db_setup.utils.db_utils import (
     get_cs_schema,
     get_db_backend,
     get_db_path_or_url,
-    get_source_schema,
+    get_ls_schema,
 )
 from core.ls_poly_to_cs import convert_polygon_to_cellstrings
 
@@ -24,18 +24,18 @@ def convert_area_polygon_to_cs_postgresql(
 
     conn = connect_to_postgres_db()
     cur = conn.cursor()
-    source_schema = get_source_schema("postgresql")
+    ls_schema = get_ls_schema("postgresql")
     cs_schema = get_cs_schema("postgresql")
 
     # Insert area as polygon into table
     cur.execute(
         sql.SQL(
             """
-            INSERT INTO {source_schema}.area_poly (name, geom)
+            INSERT INTO {ls_schema}.area_poly (name, geom)
             VALUES (%s, ST_GeomFromWKB(%s, 4326))
             RETURNING area_id
         """
-        ).format(source_schema=sql.Identifier(source_schema)),
+        ).format(ls_schema=sql.Identifier(ls_schema)),
         (name, polygon.wkb),
     )
     area_row = cur.fetchone()
@@ -68,7 +68,7 @@ def convert_area_polygon_to_cs_postgresql(
     cur.close()
 
     print(
-        f"Area ({name}, area_id: {area_id}) uploaded with geometry in '{source_schema}' and cellstrings in '{cs_schema}'."
+        f"Area ({name}, area_id: {area_id}) uploaded with geometry in '{ls_schema}' and cellstrings in '{cs_schema}'."
     )
 
 
@@ -88,7 +88,7 @@ def convert_area_polygon_to_cs_duckdb(
     import pyarrow as pa
     from db_setup.duckdb.pyarrow_schemas import AREA_CS_SCHEMA
 
-    source_schema = get_source_schema("duckdb")
+    ls_schema = get_ls_schema("duckdb")
     cs_schema = get_cs_schema("duckdb")
     duckdb_path = get_db_path_or_url("duckdb")
     conn = duckdb.connect(duckdb_path)
@@ -100,7 +100,7 @@ def convert_area_polygon_to_cs_duckdb(
     # Insert area polygon as geom from WKB
     conn.execute("LOAD SPATIAL;")
     area_row = conn.execute(
-        f"""INSERT INTO {source_schema}.area_poly (name, geom)
+        f"""INSERT INTO {ls_schema}.area_poly (name, geom)
          VALUES (?, ST_GeomFromWKB(?))
          RETURNING area_id""",
         [name, polygon.wkb],
@@ -134,7 +134,7 @@ def convert_area_polygon_to_cs_duckdb(
     conn.close()
 
     print(
-        f"Area ({name}, area_id: {area_id}) uploaded with geometry in '{source_schema}' and cellstring(s) in '{cs_schema}'."
+        f"Area ({name}, area_id: {area_id}) uploaded with geometry in '{ls_schema}' and cellstring(s) in '{cs_schema}'."
     )
 
 

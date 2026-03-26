@@ -9,7 +9,7 @@ This repository contains an ETL pipeline for AIS (Automatic Identification Syste
 
 The pipeline:
 
-- Builds/refreshes source points datasets
+- Builds/refreshes points datasets
 - Constructs LineString trajectories and Polygon stops from AIS points
 - Transforms LineString/Polygon outputs into CellString representations
 - Persists outputs to backend-specific schemas/tables
@@ -122,7 +122,7 @@ Core selectors:
 Schema routing:
 
 - Base schemas: `DUCKDB_SCHEMA`, `POSTGRESQL_SCHEMA`
-- Optional source schemas: `DUCKDB_SOURCE_SCHEMA`, `POSTGRESQL_SOURCE_SCHEMA`
+- Optional LineString schemas: `DUCKDB_LS_SCHEMA`, `POSTGRESQL_LS_SCHEMA`
 - Optional CellString schemas: `DUCKDB_CS_SCHEMA`, `POSTGRESQL_CS_SCHEMA`
 
 Source schema stores:
@@ -136,7 +136,7 @@ CellString schema stores:
 - `trajectory_cs`
 - `stop_cs`
 
-If source/CS schema variables are unset, code falls back to base schema variables.
+If LineString/CellString schema variables are unset, code falls back to base schema variables.
 
 ## Step execution controls
 
@@ -153,12 +153,12 @@ Control methods:
 
 - Interactive prompt per step
 - Optional env overrides:
-  - `ETL_DROP`
-  - `ETL_CREATE_SCHEMA`
-  - `ETL_CREATE_TABLES`
-  - `ETL_CREATE_POINTS`
-  - `ETL_CONSTRUCT`
-  - `ETL_TRANSFORM`
+    - `ETL_DROP`
+    - `ETL_CREATE_SCHEMA`
+    - `ETL_CREATE_TABLES`
+    - `ETL_CREATE_POINTS`
+    - `ETL_CONSTRUCT`
+    - `ETL_TRANSFORM`
 
 Accepted boolean values:
 
@@ -213,7 +213,7 @@ Avoid regressions that force row-by-row processing unless explicitly requested.
 1. Keep shared logic in `src/core` when backend-neutral
 2. Keep backend-specific SQL and DDL in corresponding backend modules
 3. Do not reintroduce old `src/tables` paths; they are obsolete
-4. Keep schema routing explicit (source vs CS)
+4. Keep schema routing explicit (LineString vs CellString)
 5. If modifying orchestration, keep per-step controls consistent across both backends
 
 ## Testing guidance for agents
@@ -223,7 +223,7 @@ After changes:
 1. Run critical flake8 check
 2. Run tests in `tests/`
 3. If touching backend-specific SQL paths, ensure no syntax/identifier drift
-4. If modifying schema routing, verify references still point to correct source or CS schema role
+4. If modifying schema routing, verify references still point to correct LineString or CellString schema role
 
 ## Trust these instructions
 

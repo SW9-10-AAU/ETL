@@ -1,20 +1,20 @@
 from psycopg import Connection, sql
 
 
-def create_area_tables(conn: Connection, source_schema: str, cs_schema: str):
+def create_area_tables(conn: Connection, ls_schema: str, cs_schema: str):
     cur = conn.cursor()
 
     cur.execute(
         sql.SQL(
             """
-            CREATE TABLE IF NOT EXISTS {source_schema}.area_poly
+            CREATE TABLE IF NOT EXISTS {ls_schema}.area_poly
             (
                 area_id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL,
                 geom geometry(GEOMETRY, 4326) NOT NULL
             );
         """
-        ).format(source_schema=sql.Identifier(source_schema))
+        ).format(ls_schema=sql.Identifier(ls_schema))
     )
 
     cur.execute(
@@ -37,10 +37,10 @@ def create_area_tables(conn: Connection, source_schema: str, cs_schema: str):
         sql.SQL(
             """
             CREATE INDEX IF NOT EXISTS area_poly_geom_idx
-            ON {source_schema}.area_poly 
+            ON {ls_schema}.area_poly 
             USING GIST (geom);
         """
-        ).format(source_schema=sql.Identifier(source_schema))
+        ).format(ls_schema=sql.Identifier(ls_schema))
     )
     cur.execute(
         sql.SQL(
@@ -72,5 +72,5 @@ def create_area_tables(conn: Connection, source_schema: str, cs_schema: str):
     conn.commit()
 
     print(
-        f"Ensured area tables exist with area_poly in source schema '{source_schema}' and area_cs in schema '{cs_schema}'."
+        f"Ensured area tables exist with area_poly in schema '{ls_schema}' and area_cs in schema '{cs_schema}'."
     )

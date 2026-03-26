@@ -3,30 +3,30 @@ from duckdb import DuckDBPyConnection
 
 def drop_duckdb_tables(
     conn: DuckDBPyConnection,
-    source_schema: str,
+    ls_schema: str,
     cs_schema: str,
-    drop_source_tables: bool = True,
+    drop_ls_tables: bool = True,
     drop_cs_tables: bool = True,
 ):
     cur = conn.cursor()
 
-    if drop_source_tables:
-        cur.execute(f"DROP TABLE IF EXISTS {source_schema}.points;")
+    if drop_ls_tables:
+        cur.execute(f"DROP TABLE IF EXISTS {ls_schema}.points;")
 
-        cur.execute(f"DROP TABLE IF EXISTS {source_schema}.trajectory_ls;")
-        cur.execute(f"DROP TABLE IF EXISTS {source_schema}.stop_poly;")
+        cur.execute(f"DROP TABLE IF EXISTS {ls_schema}.trajectory_ls;")
+        cur.execute(f"DROP TABLE IF EXISTS {ls_schema}.stop_poly;")
 
-        cur.execute(f"DROP SEQUENCE IF EXISTS {source_schema}.trajectory_ls_seq;")
-        cur.execute(f"DROP SEQUENCE IF EXISTS {source_schema}.stop_poly_seq;")
+        cur.execute(f"DROP SEQUENCE IF EXISTS {ls_schema}.trajectory_ls_seq;")
+        cur.execute(f"DROP SEQUENCE IF EXISTS {ls_schema}.stop_poly_seq;")
 
-        cur.execute(f"DROP TABLE IF EXISTS {source_schema}.area_poly;")
-        cur.execute(f"DROP SEQUENCE IF EXISTS {source_schema}.area_poly_seq;")
+        cur.execute(f"DROP TABLE IF EXISTS {ls_schema}.area_poly;")
+        cur.execute(f"DROP SEQUENCE IF EXISTS {ls_schema}.area_poly_seq;")
 
-        cur.execute(f"DROP TABLE IF EXISTS {source_schema}.crossing_ls;")
-        cur.execute(f"DROP SEQUENCE IF EXISTS {source_schema}.crossing_ls_seq;")
+        cur.execute(f"DROP TABLE IF EXISTS {ls_schema}.crossing_ls;")
+        cur.execute(f"DROP SEQUENCE IF EXISTS {ls_schema}.crossing_ls_seq;")
 
         print(
-            f"Dropped source/LS tables and sequences in DuckDB schema '{source_schema}'."
+            f"Dropped LineString tables and sequences in DuckDB schema '{ls_schema}'."
         )
 
     if drop_cs_tables:

@@ -1,20 +1,20 @@
 from psycopg import Connection, sql
 
 
-def create_crossing_tables(conn: Connection, source_schema: str, cs_schema: str):
+def create_crossing_tables(conn: Connection, ls_schema: str, cs_schema: str):
     cur = conn.cursor()
 
     cur.execute(
         sql.SQL(
             """
-            CREATE TABLE IF NOT EXISTS {source_schema}.crossing_ls
+            CREATE TABLE IF NOT EXISTS {ls_schema}.crossing_ls
             (
                 crossing_id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL,
                 geom geometry(LINESTRING, 4326) NOT NULL
             );
         """
-        ).format(source_schema=sql.Identifier(source_schema))
+        ).format(ls_schema=sql.Identifier(ls_schema))
     )
     cur.execute(
         sql.SQL(
@@ -36,10 +36,10 @@ def create_crossing_tables(conn: Connection, source_schema: str, cs_schema: str)
         sql.SQL(
             """
             CREATE INDEX IF NOT EXISTS crossing_ls_geom_idx
-            ON {source_schema}.crossing_ls 
+            ON {ls_schema}.crossing_ls 
             USING GIST (geom);
         """
-        ).format(source_schema=sql.Identifier(source_schema))
+        ).format(ls_schema=sql.Identifier(ls_schema))
     )
     cur.execute(
         sql.SQL(
@@ -71,5 +71,5 @@ def create_crossing_tables(conn: Connection, source_schema: str, cs_schema: str)
     conn.commit()
 
     print(
-        f"Ensured crossing tables exist with crossing_ls in source schema '{source_schema}' and crossing_cs in schema '{cs_schema}'."
+        f"Ensured crossing tables exist with crossing_ls in schema '{ls_schema}' and crossing_cs in schema '{cs_schema}'."
     )

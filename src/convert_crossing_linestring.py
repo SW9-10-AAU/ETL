@@ -5,7 +5,7 @@ from db_setup.utils.db_utils import (
     get_cs_schema,
     get_db_backend,
     get_db_path_or_url,
-    get_source_schema,
+    get_ls_schema,
 )
 
 
@@ -20,18 +20,18 @@ def convert_crossing_linestring_to_cs_postgres(linestring: LineString, name: str
 
     conn = connect_to_postgres_db()
     cur = conn.cursor()
-    source_schema = get_source_schema("postgresql")
+    ls_schema = get_ls_schema("postgresql")
     cs_schema = get_cs_schema("postgresql")
 
     # Insert crossing as linestring into table
     cur.execute(
         sql.SQL(
             """
-            INSERT INTO {source_schema}.crossing_ls (name, geom)
+            INSERT INTO {ls_schema}.crossing_ls (name, geom)
             VALUES (%s, ST_GeomFromWKB(%s, 4326))
             RETURNING crossing_id
         """
-        ).format(source_schema=sql.Identifier(source_schema)),
+        ).format(ls_schema=sql.Identifier(ls_schema)),
         (name, linestring.wkb),
     )
     crossing_row = cur.fetchone()
@@ -65,7 +65,7 @@ def convert_crossing_linestring_to_cs_postgres(linestring: LineString, name: str
     cur.close()
 
     print(
-        f"Crossing ({name}, crossing_id: {crossing_id}) uploaded with geometry in '{source_schema}' and cellstrings in '{cs_schema}'."
+        f"Crossing ({name}, crossing_id: {crossing_id}) uploaded with geometry in '{ls_schema}' and cellstrings in '{cs_schema}'."
     )
 
 
@@ -79,7 +79,7 @@ def convert_crossing_linestring_to_cs_duckdb(linestring: LineString, name: str):
 
     from db_setup.duckdb.pyarrow_schemas import CROSSING_CS_SCHEMA
 
-    source_schema = get_source_schema("duckdb")
+    ls_schema = get_ls_schema("duckdb")
     cs_schema = get_cs_schema("duckdb")
     db_path = get_db_path_or_url("duckdb")
     conn = duckdb.connect(db_path)
@@ -87,7 +87,7 @@ def convert_crossing_linestring_to_cs_duckdb(linestring: LineString, name: str):
     # Insert crossing as linestring into table
     conn.execute("LOAD spatial;")
     crossing_row = conn.execute(
-        f"""INSERT INTO {source_schema}.crossing_ls (name, geom)
+        f"""INSERT INTO {ls_schema}.crossing_ls (name, geom)
            VALUES (?, ST_GeomFromWKB(?))
            RETURNING crossing_id""",
         [name, linestring.wkb],
@@ -120,7 +120,7 @@ def convert_crossing_linestring_to_cs_duckdb(linestring: LineString, name: str):
     conn.close()
 
     print(
-        f"Crossing ({name}, crossing_id: {crossing_id}) uploaded with geometry in '{source_schema}' and cellstrings in '{cs_schema}'."
+        f"Crossing ({name}, crossing_id: {crossing_id}) uploaded with geometry in '{ls_schema}' and cellstrings in '{cs_schema}'."
     )
 
 

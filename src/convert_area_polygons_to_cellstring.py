@@ -4,7 +4,7 @@ from db_setup.utils.db_utils import (
     get_cs_schema,
     get_db_backend,
     get_db_path_or_url,
-    get_source_schema,
+    get_ls_schema,
 )
 
 
@@ -16,7 +16,7 @@ def convert_area_polygons_to_cs_postgres():
     from db_setup.utils.connect import connect_to_postgres_db
     from psycopg import sql
 
-    source_schema = get_source_schema("postgresql")
+    ls_schema = get_ls_schema("postgresql")
     cs_schema = get_cs_schema("postgresql")
     conn = connect_to_postgres_db()
     cur = conn.cursor()
@@ -26,19 +26,19 @@ def convert_area_polygons_to_cs_postgres():
         sql.SQL(
             """
             SELECT area_poly.area_id, area_poly.name, ST_AsBinary(area_poly.geom)
-            FROM {source_schema}.area_poly as area_poly
+            FROM {ls_schema}.area_poly as area_poly
             LEFT JOIN {cs_schema}.area_cs AS area_cs ON area_poly.area_id = area_cs.area_id
             WHERE area_cs.area_id IS NULL
             ORDER BY area_poly.area_id;
         """
         ).format(
-            source_schema=sql.Identifier(source_schema),
+            ls_schema=sql.Identifier(ls_schema),
             cs_schema=sql.Identifier(cs_schema),
         )
     )
 
     rows = cur.fetchall()
-    print(f"Fetched {len(rows)} area polygon(s) from {source_schema}.area_poly")
+    print(f"Fetched {len(rows)} area polygon(s) from {ls_schema}.area_poly")
 
     for row in rows:
         area_id, name, geom_wkb = row
@@ -81,7 +81,7 @@ def convert_area_polygons_to_cs_duckdb():
     from db_setup.duckdb.pyarrow_schemas import AREA_CS_SCHEMA
 
     db_path = get_db_path_or_url("duckdb")
-    source_schema = get_source_schema("duckdb")
+    ls_schema = get_ls_schema("duckdb")
     cs_schema = get_cs_schema("duckdb")
     conn = duckdb.connect(database=db_path)
 
@@ -90,13 +90,13 @@ def convert_area_polygons_to_cs_duckdb():
     rows = conn.execute(
         f"""
             SELECT area_poly.area_id, area_poly.name, ST_AsWKB(geom)
-            FROM {source_schema}.area_poly
+            FROM {ls_schema}.area_poly
             LEFT JOIN {cs_schema}.area_cs ON area_poly.area_id = area_cs.area_id
             WHERE area_cs.area_id IS NULL
             ORDER BY area_poly.area_id;
         """
     ).fetchall()
-    print(f"Fetched {len(rows)} area polygon(s) from {source_schema}.area_poly table")
+    print(f"Fetched {len(rows)} area polygon(s) from {ls_schema}.area_poly table")
 
     for row in rows:
         area_id, name, geom_wkb = row
