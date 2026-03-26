@@ -17,6 +17,7 @@ def mat_points_view(conn: Connection, db_schema: str):
                 AND AIS.transponder_type_id = 5 -- Class A
                 AND LENGTH(V.mmsi::text) = 9
                 AND LEFT(V.mmsi::text, 1) BETWEEN '2' AND '7'
+                AND V.mmsi = 265610950
                 GROUP BY V.mmsi
                 HAVING COUNT(*) >= 10
             ),

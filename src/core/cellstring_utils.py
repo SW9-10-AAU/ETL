@@ -6,8 +6,10 @@ from shapely import LineString, Polygon, MultiPolygon, box
 
 from ukc_core.quadkey_utils import quadkey_to_int, zxy_to_quadkey
 
+
 class Classification(Enum):
     """Enum for classifying tile containment in a Polygon or MultiPolygon."""
+
     FULLY_CONTAINED = 1
     PARTIALLY_CONTAINED = 2
     NO_INTERSECTION = 3
@@ -18,8 +20,10 @@ DEFAULT_ZOOM = 21  # Default zoom level
 
 # --- Encoding Utilities ---
 
+
 def xyz_to_quadkey_int(zoom: int, x: int, y: int) -> int:
     return quadkey_to_int(zxy_to_quadkey(zoom, x, y))
+
 
 def _point_to_tile_fraction(lon: float, lat: float, zoom: int) -> tuple[float, float]:
     """Convert lon/lat to fractional tile coordinates at the given zoom level.
@@ -40,8 +44,8 @@ def _point_to_tile_fraction(lon: float, lat: float, zoom: int) -> tuple[float, f
 
 
 def linecover(
-        ls: LineString,
-        zoom: int = DEFAULT_ZOOM,
+    ls: LineString,
+    zoom: int = DEFAULT_ZOOM,
 ) -> list[tuple[int, int]]:
     """Return an list of (cell_id, epoch_timestamp) tuples that fully cover a LineString.
 
@@ -65,9 +69,9 @@ def linecover(
     for i in range(len(coords) - 1):
         x0_f, y0_f = _point_to_tile_fraction(coords[i][0], coords[i][1], zoom)
         x1_f, y1_f = _point_to_tile_fraction(coords[i + 1][0], coords[i + 1][1], zoom)
-        
+
         segment_cells: list[int] = []
-        
+
         has_z = len(coords[i]) > 2 and len(coords[i + 1]) > 2
         ts_segment_start = int(coords[i][2]) if has_z else 0
         ts_segment_end = int(coords[i + 1][2]) if has_z else 0
@@ -84,8 +88,12 @@ def linecover(
         x = math.floor(x0_f)
         y = math.floor(y0_f)
 
-        t_max_x = float("inf") if dx == 0 else abs(((1 if dx > 0 else 0) + x - x0_f) / dx)
-        t_max_y = float("inf") if dy == 0 else abs(((1 if dy > 0 else 0) + y - y0_f) / dy)
+        t_max_x = (
+            float("inf") if dx == 0 else abs(((1 if dx > 0 else 0) + x - x0_f) / dx)
+        )
+        t_max_y = (
+            float("inf") if dy == 0 else abs(((1 if dy > 0 else 0) + y - y0_f) / dy)
+        )
         tdx = float("inf") if dx == 0 else abs(sx / dx)
         tdy = float("inf") if dy == 0 else abs(sy / dy)
 
@@ -101,17 +109,23 @@ def linecover(
                 y += sy
 
             segment_cells.append(xyz_to_quadkey_int(zoom, x, y))
-        
+
         # Linear interpolation of timestamps across all cells in this segment
         num_cells = len(segment_cells)
         for idx, cell_id in enumerate(segment_cells):
-            if num_cells == 1: # If the start and end points are in the same cell, we duplicate the cell, but with different timestamps
-                cells_with_time.extend([(cell_id, ts_segment_start), (cell_id, ts_segment_end)])
-                continue # Important to skip the rest of the loop
+            if (
+                num_cells == 1
+            ):  # If the start and end points are in the same cell, we duplicate the cell, but with different timestamps
+                cells_with_time.extend(
+                    [(cell_id, ts_segment_start), (cell_id, ts_segment_end)]
+                )
+                continue  # Important to skip the rest of the loop
             else:
                 # Linear interpolation: first cell gets ts0, last cell gets ts1
                 progress = idx / (num_cells - 1)
-                interpolated_ts = round(ts_segment_start + progress * (ts_segment_end - ts_segment_start))
+                interpolated_ts = round(
+                    ts_segment_start + progress * (ts_segment_end - ts_segment_start)
+                )
             cells_with_time.append((cell_id, interpolated_ts))
 
     # Deduplicate cells that have the same cell_id and timestamp
@@ -120,7 +134,9 @@ def linecover(
     return deduplicate_cells_with_time
 
 
-def classify_tile_containment(poly: Polygon | MultiPolygon, tile: mercantile.Tile) -> Classification:
+def classify_tile_containment(
+    poly: Polygon | MultiPolygon, tile: mercantile.Tile
+) -> Classification:
     """
     Classify a tile's relationship to the polygon.
 
@@ -144,7 +160,9 @@ def classify_tile_containment(poly: Polygon | MultiPolygon, tile: mercantile.Til
         return Classification.NO_INTERSECTION
 
 
-def get_all_children_at_zoom(tile: mercantile.Tile, target_zoom: int) -> list[mercantile.Tile]:
+def get_all_children_at_zoom(
+    tile: mercantile.Tile, target_zoom: int
+) -> list[mercantile.Tile]:
     """
     Get all descendant tiles at target_zoom from the given tile.
 
@@ -173,7 +191,9 @@ def get_all_children_at_zoom(tile: mercantile.Tile, target_zoom: int) -> list[me
     return all_descendants
 
 
-def process_z13_tiles(poly: Polygon | MultiPolygon) -> tuple[list[int], list[mercantile.Tile], list[mercantile.Tile]]:
+def process_z13_tiles(
+    poly: Polygon | MultiPolygon,
+) -> tuple[list[int], list[mercantile.Tile], list[mercantile.Tile]]:
     minx, miny, maxx, maxy = poly.bounds
     z13_tiles = mercantile.tiles(minx, miny, maxx, maxy, 13)
 
@@ -191,16 +211,16 @@ def process_z13_tiles(poly: Polygon | MultiPolygon) -> tuple[list[int], list[mer
                 partially_contained_z13.append(tile)
             case Classification.NO_INTERSECTION:
                 continue
-            
+
         cellstring_z13.append(xyz_to_quadkey_int(13, tile.x, tile.y))
 
     return cellstring_z13, fully_contained_z13, partially_contained_z13
 
 
 def process_z17_tiles(
-        poly: Polygon | MultiPolygon,
-        fully_contained_z13: list[mercantile.Tile],
-        partially_contained_z13: list[mercantile.Tile],
+    poly: Polygon | MultiPolygon,
+    fully_contained_z13: list[mercantile.Tile],
+    partially_contained_z13: list[mercantile.Tile],
 ) -> tuple[list[int], list[mercantile.Tile], list[mercantile.Tile]]:
     cellstring_z17: list[int] = []
     fully_contained_z17: list[mercantile.Tile] = []
@@ -226,14 +246,14 @@ def process_z17_tiles(
                     continue
 
             cellstring_z17.append(xyz_to_quadkey_int(17, child.x, child.y))
-            
+
     return cellstring_z17, fully_contained_z17, partially_contained_z17
 
 
 def process_z21_tiles(
-        poly: Polygon | MultiPolygon,
-        fully_contained_z17: list[mercantile.Tile],
-        partially_contained_z17: list[mercantile.Tile],
+    poly: Polygon | MultiPolygon,
+    fully_contained_z17: list[mercantile.Tile],
+    partially_contained_z17: list[mercantile.Tile],
 ) -> list[int]:
     cellstring_z21: list[int] = []
 
@@ -248,7 +268,9 @@ def process_z21_tiles(
             classification = classify_tile_containment(poly, child)
 
             match classification:
-                case Classification.FULLY_CONTAINED | Classification.PARTIALLY_CONTAINED:
+                case (
+                    Classification.FULLY_CONTAINED | Classification.PARTIALLY_CONTAINED
+                ):
                     cellstring_z21.append(xyz_to_quadkey_int(21, child.x, child.y))
                 case Classification.NO_INTERSECTION:
                     continue
@@ -264,36 +286,48 @@ ENCODE_MULT_Z21 = 10_000_000
 ENCODE_MULT_Z17 = 1_000_000
 ENCODE_MULT_Z13 = 10_000
 
-def deprecated_get_tile_xy(lon: float, lat: float, zoom: int = DEFAULT_ZOOM) -> tuple[int, int]:
+
+def deprecated_get_tile_xy(
+    lon: float, lat: float, zoom: int = DEFAULT_ZOOM
+) -> tuple[int, int]:
     tile = mercantile.tile(lon, lat, zoom)
     return tile.x, tile.y
 
-def deprecated_encode_tile_xy_to_cellid(x: int, y: int, zoom: int = DEFAULT_ZOOM) -> int:
-    if (zoom == 13):
+
+def deprecated_encode_tile_xy_to_cellid(
+    x: int, y: int, zoom: int = DEFAULT_ZOOM
+) -> int:
+    if zoom == 13:
         return ENCODE_OFFSET_Z13 + (x * ENCODE_MULT_Z13) + y
 
-    if (zoom == 17):
+    if zoom == 17:
         return ENCODE_OFFSET_Z17 + (x * ENCODE_MULT_Z17) + y
 
     return ENCODE_OFFSET_Z21 + (x * ENCODE_MULT_Z21) + y
 
-def deprecated_encode_lonlat_to_cellid(lon: float, lat: float, zoom: int = DEFAULT_ZOOM) -> int:
+
+def deprecated_encode_lonlat_to_cellid(
+    lon: float, lat: float, zoom: int = DEFAULT_ZOOM
+) -> int:
     x, y = deprecated_get_tile_xy(lon, lat, zoom)
     return deprecated_encode_tile_xy_to_cellid(x, y, zoom)
 
-def deprecated_decode_cellid_to_tile(cellid: int, zoom: int = DEFAULT_ZOOM) -> tuple[int, int]:
-        """Decode a cell ID back to tile (x, y) coordinates."""
-        if zoom == 13:
-            offset = ENCODE_OFFSET_Z13
-            mult = ENCODE_MULT_Z13
-        elif zoom == 17:
-            offset = ENCODE_OFFSET_Z17
-            mult = ENCODE_MULT_Z17
-        else:
-            offset = ENCODE_OFFSET_Z21
-            mult = ENCODE_MULT_Z21
 
-        cellid_adjusted = cellid - offset
-        x = cellid_adjusted // mult
-        y = cellid_adjusted % mult
-        return (x, y)
+def deprecated_decode_cellid_to_tile(
+    cellid: int, zoom: int = DEFAULT_ZOOM
+) -> tuple[int, int]:
+    """Decode a cell ID back to tile (x, y) coordinates."""
+    if zoom == 13:
+        offset = ENCODE_OFFSET_Z13
+        mult = ENCODE_MULT_Z13
+    elif zoom == 17:
+        offset = ENCODE_OFFSET_Z17
+        mult = ENCODE_MULT_Z17
+    else:
+        offset = ENCODE_OFFSET_Z21
+        mult = ENCODE_MULT_Z21
+
+    cellid_adjusted = cellid - offset
+    x = cellid_adjusted // mult
+    y = cellid_adjusted % mult
+    return (x, y)

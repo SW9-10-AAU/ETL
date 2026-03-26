@@ -1,49 +1,76 @@
 from psycopg import Connection, sql
 
-def create_area_tables(conn: Connection, db_schema: str):
+
+def create_area_tables(conn: Connection, ls_schema: str, cs_schema: str):
     cur = conn.cursor()
-    
-    cur.execute(sql.SQL("""
-            CREATE TABLE IF NOT EXISTS {db_schema}.area_poly
+
+    cur.execute(
+        sql.SQL(
+            """
+            CREATE TABLE IF NOT EXISTS {ls_schema}.area_poly
             (
                 area_id SERIAL PRIMARY KEY,
                 name TEXT NOT NULL,
                 geom geometry(GEOMETRY, 4326) NOT NULL
             );
-        """).format(db_schema=sql.Identifier(db_schema)))
+        """
+        ).format(ls_schema=sql.Identifier(ls_schema))
+    )
 
-    cur.execute(sql.SQL("""
-            CREATE TABLE IF NOT EXISTS {db_schema}.area_cs
+    cur.execute(
+        sql.SQL(
+            """
+            CREATE TABLE IF NOT EXISTS {cs_schema}.area_cs
             (
-                area_id SERIAL PRIMARY KEY,
+                area_id INTEGER PRIMARY KEY,
                 name TEXT NOT NULL,
                 cellstring_z13 int ARRAY NOT NULL,
                 cellstring_z17 bigint ARRAY NOT NULL,
                 cellstring_z21 bigint ARRAY NOT NULL
             );
-        """).format(db_schema=sql.Identifier(db_schema)))
+        """
+        ).format(cs_schema=sql.Identifier(cs_schema))
+    )
 
     # Create indexes
-    cur.execute(sql.SQL("""
+    cur.execute(
+        sql.SQL(
+            """
             CREATE INDEX IF NOT EXISTS area_poly_geom_idx
-            ON {db_schema}.area_poly 
+            ON {ls_schema}.area_poly 
             USING GIST (geom);
-        """).format(db_schema=sql.Identifier(db_schema)))
-    cur.execute(sql.SQL("""
+        """
+        ).format(ls_schema=sql.Identifier(ls_schema))
+    )
+    cur.execute(
+        sql.SQL(
+            """
             CREATE INDEX IF NOT EXISTS area_cs_z13_gin_idx
-            ON {db_schema}.area_cs
+            ON {cs_schema}.area_cs
             USING GIN (cellstring_z13 gin__int_ops);
-        """).format(db_schema=sql.Identifier(db_schema)))
-    cur.execute(sql.SQL("""
+        """
+        ).format(cs_schema=sql.Identifier(cs_schema))
+    )
+    cur.execute(
+        sql.SQL(
+            """
             CREATE INDEX IF NOT EXISTS area_cs_z17_gin_idx
-            ON {db_schema}.area_cs 
+            ON {cs_schema}.area_cs 
             USING GIN (cellstring_z17);
-        """).format(db_schema=sql.Identifier(db_schema)))
-    cur.execute(sql.SQL("""
+        """
+        ).format(cs_schema=sql.Identifier(cs_schema))
+    )
+    cur.execute(
+        sql.SQL(
+            """
             CREATE INDEX IF NOT EXISTS area_cs_z21_gin_idx
-            ON {db_schema}.area_cs 
+            ON {cs_schema}.area_cs 
             USING GIN (cellstring_z21);
-        """).format(db_schema=sql.Identifier(db_schema)))
+        """
+        ).format(cs_schema=sql.Identifier(cs_schema))
+    )
     conn.commit()
-    
-    print(f"Ensured area tables exist in database schema {db_schema}.")    
+
+    print(
+        f"Ensured area tables exist with area_poly in schema '{ls_schema}' and area_cs in schema '{cs_schema}'."
+    )

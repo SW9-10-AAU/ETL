@@ -1,9 +1,11 @@
 import duckdb
 
+
 def create_duckdb_points(conn: duckdb.DuckDBPyConnection, db_schema: str):
     print("Creating table 'points' in DuckDB...")
-    
-    conn.execute(f"""
+
+    conn.execute(
+        f"""
         CREATE OR REPLACE TABLE {db_schema}.points AS
         WITH valid_mmsi AS (
             SELECT mmsi
@@ -30,6 +32,7 @@ def create_duckdb_points(conn: duckdb.DuckDBPyConnection, db_schema: str):
         )
         SELECT * FROM dedup 
         ORDER BY mmsi, epoch_ts;
-    """)
+    """
+    )
 
     print(f"Created table 'points' in DuckDB schema '{db_schema}'.")

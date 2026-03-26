@@ -2,282 +2,229 @@
 
 ## Repository Summary
 
-This is an **ETL (Extract, Transform, Load) pipeline** for processing AIS (Automatic Identification System) trajectory data. The repository contains Python scripts that:
+This repository contains an ETL pipeline for AIS (Automatic Identification System) trajectory processing with two backend implementations:
 
-- Extract ship trajectory data from a PostgreSQL/PostGIS database
-- Transform LineString geometries to Cell-String representations using map tiles (MVT/Mercantile at zoom level 21)
-- Construct trajectories and stops from raw AIS point data using parallel processing
-- Load transformed data back into PostgreSQL tables
+- PostgreSQL/PostGIS backend
+- DuckDB backend
 
-**Repository Size:** ~350KB | **Language:** Python 3.11-3.12 | **Files:** 10 Python files (~755 lines of code)
+The pipeline:
 
-**Key Technologies:**
+- Builds/refreshes points datasets
+- Constructs LineString trajectories and Polygon stops from AIS points
+- Transforms LineString/Polygon outputs into CellString representations
+- Persists outputs to backend-specific schemas/tables
 
-- PostgreSQL with PostGIS extension for spatial data
-- Python libraries: psycopg (3.2.10), shapely (2.1.1), mercantile (1.2.1), geopy (2.4.1), numpy (2.3.3)
-- Unit testing with Python's unittest framework
-- Linting with flake8
+## Major architecture updates
 
-## Build & Validation Process
+Compared to earlier versions, this repository now includes:
 
-### Prerequisites (Critical - ALWAYS Required)
+1. DuckDB support in parallel with PostgreSQL
+2. Shared core logic moved to `src/core/`
+3. Backend-specific orchestration split into dedicated modules
+4. Step-level execution controls (confirm/skip or env-driven)
+5. Source-schema vs CellString-schema routing for reusable construct outputs
+6. Performance-oriented batching and multiprocessing across construct/transform flows
 
-1. **PostgreSQL Installation Required**: This project requires PostgreSQL with PostGIS extension for database operations
-   - On Windows: Add PostgreSQL bin folder (containing libpq.dll) to system PATH
-   - Database connection string must be configured in `.env` file
+## Current project layout
 
-2. **Python Version**: Python 3.11 or 3.12 (CI uses Python 3.11)
+```text
+ETL/
+├── .github/
+│   ├── copilot-instructions.md
+│   └── workflows/python-app.yml
+├── src/
+│   ├── main.py
+│   ├── duckdb_construct_trajs_stops.py
+│   ├── duckdb_transform_ls_to_cs.py
+│   ├── pg_construct_trajs_stops.py
+│   ├── pg_transform_ls_to_cs.py
+│   ├── convert_area_geojson.py
+│   ├── convert_area_polygon.py
+│   ├── convert_area_polygons_to_cellstring.py
+│   ├── convert_crossing_linestring.py
+│   ├── core/
+│   │   ├── points_to_ls_poly.py
+│   │   ├── ls_poly_to_cs.py
+│   │   ├── cellstring_utils.py
+│   │   └── utils.py
+│   └── db_setup/
+│       ├── duckdb/
+│       │   ├── create_duckdb_points.py
+│       │   ├── create_duckdb_tables.py
+│       │   ├── drop_duckdb_tables.py
+│       │   └── pyarrow_schemas.py
+│       ├── postgresql/
+│       │   ├── create_postgresql_tables.py
+│       │   ├── create_ls_traj_stop_tables.py
+│       │   ├── create_cs_traj_stop_tables.py
+│       │   ├── create_area_tables.py
+│       │   ├── create_crossing_tables.py
+│       │   ├── mat_points_view.py
+│       │   └── drop_postgresql_tables.py
+│       └── utils/
+│           ├── connect.py
+│           └── db_utils.py
+├── tests/
+│   ├── test_connect.py
+│   ├── test_linecover_same_cell.py
+│   └── test_transform_ls_to_cs.py
+├── requirements.txt
+└── README.md
+```
 
-### Environment Setup (ALWAYS Follow This Order)
+## Build and validation workflow
 
-**Step 1: Install Dependencies** (ALWAYS run this first)
+### Environment setup
+
+1. Create and activate a virtual environment
+2. Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-- This installs all required packages including psycopg, shapely, mercantile, geopy, numpy, python-dotenv
-- Typical installation time: 10-30 seconds
-- Must be run before ANY other commands
-
-**Step 2: Install Development Tools** (Required for linting/CI validation)
+3. Install lint tool used by CI:
 
 ```bash
 pip install flake8
 ```
 
-**Step 3: Configure Database Connection** (Required for running the application)
+### Validation commands
 
-- Copy `.env.example` to `.env`
-- Update `POSTGRESQL_URL` with actual PostgreSQL connection string:
-  ```
-  POSTGRESQL_URL=postgresql://{username}:{password}@{serverip}:{port}/{dbname}
-  ```
-- The application will exit with error "POSTGRESQL_URL not defined in .env file" if this is missing
-
-### Linting (ALWAYS Run Before Committing)
-
-The CI pipeline runs flake8 in two stages:
-
-**Stage 1: Critical Syntax Errors** (Build fails if this fails)
+Run these before proposing completion:
 
 ```bash
 flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-```
-
-- Checks for Python syntax errors and undefined names
-- Exit code MUST be 0 (no errors)
-
-**Stage 2: Code Quality Warnings** (Non-blocking, exit-zero)
-
-```bash
 flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-```
-
-- Max line length: 127 characters
-- Max complexity: 10
-- Does not fail the build, but warnings should be addressed
-
-**Known Linting Issues** (Pre-existing, not blockers):
-
-- ~189 total warnings in existing code (mostly E231, W293, E302, E261)
-- These are informational and don't block CI
-
-### Testing (ALWAYS Run Before Committing)
-
-**Run All Tests:**
-
-```bash
 python -m unittest discover -s tests
 ```
 
-- Expected output: "Ran 11 tests in ~0.007s" with "OK"
-- Tests must pass for CI to succeed
-- Test files location: `tests/` directory
+### CI workflow reference
 
-**Test Files:**
+Workflow file: `.github/workflows/python-app.yml`
 
-- `tests/test_connect.py` - Database connection tests (mocked)
-- `tests/test_transform_ls_to_cs.py` - Geometry transformation tests
+CI currently:
 
-**Important**: Tests use mocking for database connections, so they can run without an actual database
+- Uses Python 3.11
+- Runs both flake8 stages
+- Runs unittest discovery in `tests/`
 
-### Running the Application
+## Runtime configuration model
 
-**Main Entry Point:**
+Configuration is loaded from `.env` via `python-dotenv`.
 
-```bash
-python src/main.py
-# or on some systems
-python3 src/main.py
-```
+Core selectors:
 
-**Prerequisites for Running:**
+- `DB_BACKEND=duckdb|postgresql`
+- `DUCKDB_PATH` for DuckDB
+- `POSTGRESQL_URL` for PostgreSQL
 
-- Valid `.env` file with `POSTGRESQL_URL` configured
-- PostgreSQL database must be accessible
-- Database schema `{schema_name}` should exist
+Schema routing:
 
-**Expected Behavior:**
+- Base schemas: `DUCKDB_SCHEMA`, `POSTGRESQL_SCHEMA`
+- Optional LineString schemas: `DUCKDB_LS_SCHEMA`, `POSTGRESQL_LS_SCHEMA`
+- Optional CellString schemas: `DUCKDB_CS_SCHEMA`, `POSTGRESQL_CS_SCHEMA`
 
-- Creates database tables for trajectories and stops
-- Processes AIS point data in parallel (uses CPU cores, max 12)
-- Inserts transformed data into PostgreSQL tables
+Source schema stores:
 
-## Project Architecture & Layout
+- `points`
+- `trajectory_ls`
+- `stop_poly`
 
-### Directory Structure
+CellString schema stores:
 
-```
-/home/runner/work/ETL/ETL/
-├── .github/
-│   └── workflows/
-│       └── python-app.yml          # CI/CD workflow (Python 3.11)
-├── src/                             # Main source code
-│   ├── main.py                      # Entry point - orchestrates entire ETL pipeline
-│   ├── connect.py                   # Database connection utility
-│   ├── construct_trajs_stops.py     # Parallel processing of trajectories/stops (268 lines)
-│   ├── transform_ls_to_cs.py        # LineString to CellString transformation (126 lines)
-│   └── tables/                      # Database table creation scripts
-│       ├── create_ls_traj_stop_tables.py   # LineString tables
-│       ├── create_cs_traj_stop_tables.py   # CellString tables
-│       ├── mat_points_view.py              # Materialized view creation
-│       └── drop_all_tables.py              # Table cleanup utility
-├── tests/                           # Unit tests (unittest framework)
-│   ├── test_connect.py              # Database connection tests
-│   └── test_transform_ls_to_cs.py   # Transformation logic tests
-├── .env.example                     # Template for database configuration
-├── .gitignore                       # Standard Python gitignore
-├── requirements.txt                 # Python dependencies (10 packages)
-├── README.md                        # User documentation
-└── LICENSE                          # Project license
-```
+- `trajectory_cs`
+- `stop_cs`
 
-### Key Source Files
+If LineString/CellString schema variables are unset, code falls back to base schema variables.
 
-**src/main.py** - Main Orchestrator (42 lines)
+## Step execution controls
 
-- Loads environment variables with `python-dotenv`
-- Validates POSTGRESQL_URL exists
-- Calls ETL steps in sequence:
-  1. `create_ls_traj_stop_tables()` - Create LineString tables
-  2. `create_cs_traj_stop_tables()` - Create CellString tables
-  3. `construct_trajectories_and_stops()` - Process data (parallel, CPU-bound)
-  4. Optional steps commented out: `drop_all_tables()`, `mat_points_view()`, transform functions
+`src/main.py` now supports per-step execution decisions:
 
-**src/connect.py** - Database Connection (11 lines)
+1. Drop tables
+2. Create schema(s)
+3. Create tables
+4. Create points
+5. Construct trajectories/stops
+6. Transform trajectories/stops to CellStrings
 
-- Single function: `connect_to_db()` returns psycopg.Connection
-- Reads POSTGRESQL_URL from environment
-- Exits with error message if POSTGRESQL_URL not set
+Control methods:
 
-**src/construct_trajs_stops.py** - Core Processing Logic (268 lines)
+- Interactive prompt per step
+- Optional env overrides:
+    - `ETL_DROP`
+    - `ETL_CREATE_SCHEMA`
+    - `ETL_CREATE_TABLES`
+    - `ETL_CREATE_POINTS`
+    - `ETL_CONSTRUCT`
+    - `ETL_TRANSFORM`
 
-- Implements trajectory and stop detection algorithm from research paper
-- Uses multiprocessing (ProcessPoolExecutor) for parallel MMSI processing
-- Constants (threshold values): STOP_SOG_THRESHOLD=1.0, STOP_DISTANCE_THRESHOLD=250m, etc.
-- Key functions:
-  - `construct_trajectories_and_stops()` - Main parallel processing function
-  - `process_single_mmsi()` - Processes single ship's trajectory
-  - `insert_trajectory()`, `insert_stop()` - Database insertion
-  - `get_mmsis()` - Queries distinct MMSIs from database
+Accepted boolean values:
 
-**src/transform_ls_to_cs.py** - Geometry Transformation (126 lines)
+- True: `y`, `yes`, `1`, `true`
+- False: `n`, `no`, `0`, `false`
 
-- Converts LineString/Polygon geometries to CellString (map tile IDs)
-- Uses Mercantile for MVT tile calculations at zoom level 21
-- Implements Bresenham's line algorithm for tile interpolation
-- Key functions:
-  - `encode_lonlat_to_cellid()` - Converts lat/lon to cell ID
-  - `convert_linestring_to_cellstring()` - LineString → cell array
-  - `convert_polygon_to_cellstring()` - Polygon → cell array
+## Backend implementation boundaries
 
-### Database Schema
+### Shared logic (backend-agnostic)
 
-**Schema:** `{schema_name}` (all tables/views in this schema)
+`src/core/` contains reusable processing logic for:
 
-**Tables Created:**
+- trajectory/stop construction rules from point streams
+- LS/Polygon to CellString conversion utilities
+- shared helper functions and types
 
-- `trajectory_ls` - LineString trajectories (geometry column: LINESTRINGM)
-- `stop_poly` - Stop polygons (geometry column: POLYGON)
-- `trajectory_cs` - CellString trajectories (cellstring: bigint ARRAY)
-- `stop_cs` - CellString stops (cellstring: bigint ARRAY)
-- `points` - Materialized view of AIS points (POINTM with MMSI)
+### DuckDB-specific
 
-**Important:** All tables have indexes on mmsi, timestamps, and geometry/cellstring columns
+- construct: `src/duckdb_construct_trajs_stops.py`
+- transform: `src/duckdb_transform_ls_to_cs.py`
+- setup: `src/db_setup/duckdb/*`
 
-### GitHub Actions CI Pipeline
+Notes:
 
-**Workflow:** `.github/workflows/python-app.yml`
+- Uses DuckDB spatial extension
+- Uses Arrow tables (`pyarrow`) for efficient CellString inserts
 
-- **Trigger:** Pull requests to `main` branch
-- **Runner:** ubuntu-latest
-- **Python Version:** 3.11 (specific version)
+### PostgreSQL-specific
 
-**CI Steps (in order):**
+- construct: `src/pg_construct_trajs_stops.py`
+- transform: `src/pg_transform_ls_to_cs.py`
+- setup: `src/db_setup/postgresql/*`
 
-1. Checkout code
-2. Set up Python 3.11
-3. Install dependencies: `pip install --upgrade pip && pip install flake8 && pip install -r requirements.txt`
-4. Lint with flake8 (critical errors only): `flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics`
-5. Lint with flake8 (all warnings): `flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics`
-6. Run tests: `python -m unittest discover -s tests || exit 1`
+Notes:
 
-**CI Success Criteria:**
+- Uses PostGIS geometry types and SQL functions
+- Uses server-side schema/table/materialized-view creation scripts
 
-- No syntax errors (E9,F63,F7,F82)
-- All 11 unit tests pass
-- Warnings are informational only (exit-zero)
+## Performance characteristics to preserve
 
-## Common Workflows & Pitfalls
+When editing construct/transform logic, preserve:
 
-### Making Code Changes
+- batch-oriented processing
+- multiprocessing via `ProcessPoolExecutor`
+- dedupe/skip semantics based on existing target rows
+- backend-specific optimized insertion strategy (Arrow for DuckDB)
 
-1. **ALWAYS** install dependencies first: `pip install -r requirements.txt && pip install flake8`
-2. Make your code changes
-3. Run syntax check: `flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics`
-4. Run all tests: `python -m unittest discover -s tests`
-5. Check full linting: `flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics`
-6. Commit changes
+Avoid regressions that force row-by-row processing unless explicitly requested.
 
-### Adding New Dependencies
+## Common change guidance
 
-1. Update `requirements.txt` with version pinning (e.g., `package==X.Y.Z`)
-2. Run `pip install -r requirements.txt` to verify installation
-3. Ensure CI pipeline still passes
+1. Keep shared logic in `src/core` when backend-neutral
+2. Keep backend-specific SQL and DDL in corresponding backend modules
+3. Do not reintroduce old `src/tables` paths; they are obsolete
+4. Keep schema routing explicit (LineString vs CellString)
+5. If modifying orchestration, keep per-step controls consistent across both backends
 
-### Database-Related Changes
+## Testing guidance for agents
 
-- **Never run** the application in CI - it requires a real PostgreSQL database
-- Tests use `unittest.mock` to mock database connections
-- When modifying database queries, update corresponding mocks in tests
-- The application requires the `{schema_name}` schema to exist in PostgreSQL
+After changes:
 
-### File Naming & Import Conventions
+1. Run critical flake8 check
+2. Run tests in `tests/`
+3. If touching backend-specific SQL paths, ensure no syntax/identifier drift
+4. If modifying schema routing, verify references still point to correct LineString or CellString schema role
 
-- All imports use relative paths from the src/ directory
-- Tests add `sys.path.append(os.path.join(os.path.dirname(__file__), '../src'))` to import src modules
-- Module imports in src/ assume running from repository root
+## Trust these instructions
 
-### Parallel Processing Notes
-
-- `construct_trajectories_and_stops()` uses `ProcessPoolExecutor` with max workers = min(CPU count, 12)
-- Each worker process creates its own database connection
-- Database connection string passed as parameter (not shared connection objects)
-- Progress tracking with ETA calculation based on completed MMSI count
-
-## Validation Checklist
-
-Before submitting a PR, ensure:
-
-- [ ] `pip install -r requirements.txt` completes successfully
-- [ ] `pip install flake8` completes successfully
-- [ ] `flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics` returns 0 errors
-- [ ] `python -m unittest discover -s tests` shows "Ran 11 tests" with "OK"
-- [ ] No new syntax errors or undefined names introduced
-- [ ] Code follows max line length of 127 characters where practical
-- [ ] If modifying database queries, corresponding tests are updated
-
-## Trust These Instructions
-
-These instructions have been validated by running all commands in a clean environment. If you encounter issues not documented here, it likely indicates a new problem that should be investigated. Only perform additional exploration if these instructions are incomplete or found to be incorrect.
+These instructions are intended to reflect the current repository structure and execution model. If implementation and docs diverge, prioritize the actual code and update these instructions in the same PR.
