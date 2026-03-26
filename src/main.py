@@ -42,9 +42,7 @@ def main():
         f"Running ETL with backend='{backend}', source_schema='{source_schema}', cs_schema='{cs_schema}'"
     )
 
-    confirm = input("Do you want to proceed? [Y/n]: ").strip().lower()
-
-    if confirm in ["n", "no"]:
+    if not should_run_step("ETL_PROCEED", "Do you want to proceed?", default_yes=True):
         print("Aborting.")
         sys.exit(0)
 
@@ -82,11 +80,13 @@ def main_duckdb():
         env_var="ETL_DROP_LS",
         fallback_env_var="ETL_DROP",
         prompt_text="Do you want to drop source/LS tables?",
+        default_yes=False,
     )
     should_drop_cs_tables = should_run_step_with_fallback(
         env_var="ETL_DROP_CS",
         fallback_env_var="ETL_DROP",
         prompt_text="Do you want to drop CellString tables?",
+        default_yes=False,
     )
     if should_drop_source_tables or should_drop_cs_tables:
         drop_duckdb_tables(
@@ -105,7 +105,11 @@ def main_duckdb():
     if should_run_step("ETL_CREATE_TABLES", "Do you want to create all tables?"):
         create_duckdb_tables(connection, source_schema, cs_schema)
 
-    if should_run_step("ETL_CREATE_POINTS", "Do you want to create points table?"):
+    if should_run_step(
+        "ETL_CREATE_POINTS",
+        "Do you want to create points table?",
+        default_yes=False,
+    ):
         create_duckdb_points(connection, source_schema)
 
     if should_run_step(
@@ -150,11 +154,13 @@ def main_postgres():
         env_var="ETL_DROP_LS",
         fallback_env_var="ETL_DROP",
         prompt_text="Do you want to drop source/LS tables?",
+        default_yes=False,
     )
     should_drop_cs_tables = should_run_step_with_fallback(
         env_var="ETL_DROP_CS",
         fallback_env_var="ETL_DROP",
         prompt_text="Do you want to drop CellString tables?",
+        default_yes=False,
     )
     if should_drop_source_tables or should_drop_cs_tables:
         drop_postgresql_tables(
@@ -174,7 +180,9 @@ def main_postgres():
         create_postgresql_tables(connection, source_schema, cs_schema)
 
     if should_run_step(
-        "ETL_CREATE_POINTS", "Do you want to create points materialized view?"
+        "ETL_CREATE_POINTS",
+        "Do you want to create points materialized view?",
+        default_yes=False,
     ):
         create_postgresql_points(connection, source_schema)
 
