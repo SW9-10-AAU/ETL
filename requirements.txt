@@ -11,3 +11,4 @@ tzdata==2025.2
 duckdb==1.4.4
 ukc_core==0.1.4
 pyarrow==22.0.*
+black==26.3.1
