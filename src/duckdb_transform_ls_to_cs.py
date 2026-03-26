@@ -223,7 +223,7 @@ def transform_poly_stops_to_cs(
                 conn.execute(
                     f"INSERT INTO {output_schema}.stop_cs SELECT * FROM arrow_table"
                 )
-                print(f"Inserted batch of {len(results)} stops ({len(cells)} cells).")
+                print(f"Inserted batch of {len(results)} stops ({len(cells):,} cells).")
                 total_cells_inserted += len(cells)
 
             total_processed += len(results)
