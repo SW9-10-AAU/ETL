@@ -109,6 +109,7 @@ Execution is step-driven with confirm/skip prompts:
 
 Set these env vars to bypass prompts for specific steps:
 
+- `ETL_PROCEED`
 - `ETL_DROP` (legacy fallback; applies to both drop prompts)
 - `ETL_DROP_LS`
 - `ETL_DROP_CS`
