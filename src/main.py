@@ -76,15 +76,19 @@ def main_duckdb():
         transform_poly_stops_to_cs,
     )
 
+    print("Connecting to DuckDB...")
     db_path = get_db_path_or_url("duckdb")
     ls_schema = get_ls_schema("duckdb")
     cs_schema = get_cs_schema("duckdb")
     num_workers = _get_num_workers()
     connection = duckdb.connect(database=db_path)
+    print(f"Connected to DuckDB at '{db_path}'.")
 
     # Install and load spatial extension
     connection.execute("INSTALL spatial;")
     connection.execute("LOAD spatial;")
+    print("Spatial extension installed and loaded.")
+    print(f"{num_workers} workers available for parallel processing.")
 
     should_drop_ls_tables = should_run_step_with_fallback(
         env_var="ETL_DROP_LS",
@@ -125,7 +129,9 @@ def main_duckdb():
     if should_run_step(
         "ETL_CONSTRUCT", "Do you want to construct trajectories and stops?"
     ):
-        construct_trajectories_and_stops(connection, ls_schema, ls_schema, num_workers, batch_size=200)
+        construct_trajectories_and_stops(
+            connection, ls_schema, ls_schema, num_workers, batch_size=200
+        )
 
     if should_run_step(
         "ETL_TRANSFORM", "Do you want to transform trajectories/stops to CellStrings?"
