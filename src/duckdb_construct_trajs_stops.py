@@ -6,7 +6,6 @@ import duckdb
 
 from core.points_to_ls_poly import (
     DictInputPoint,
-    InputPoint,
     ProcessResult,
     Stop,
     Traj,

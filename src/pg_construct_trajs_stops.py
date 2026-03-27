@@ -6,7 +6,6 @@ from psycopg import sql
 from core.points_to_ls_poly import (
     AISPointRow,
     DictInputPoint,
-    InputPoint,
     ProcessResult,
     Stop,
     Traj,
