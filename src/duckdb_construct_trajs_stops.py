@@ -1,17 +1,17 @@
 import time
 from collections import defaultdict
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
+
 import duckdb
-from shapely import Point, from_wkt, to_wkb
 
 from core.points_to_ls_poly import (
-    DictAISPointWKB,
+    DictInputPoint,
+    InputPoint,
     ProcessResult,
     Stop,
     Traj,
     process_single_mmsi,
 )
-
 
 BATCH_SIZE = 100  # Number of MMSIs to process in parallel
 FutureResult = Future[ProcessResult]  # Future returning ProcessResult
@@ -39,8 +39,8 @@ def get_mmsis_duckdb(
 
 def get_points_for_mmsis_in_batch_duckdb(
     conn: duckdb.DuckDBPyConnection, points_schema: str, mmsis: list[int]
-) -> DictAISPointWKB:
-    """Fetch all points for multiple MMSIs, construct WKB PointM (with M=epoch_ts), grouped by MMSI."""
+) -> DictInputPoint:
+    """Fetch all points for multiple MMSIs grouped by MMSI, ordered by time."""
     placeholders = ",".join(["?"] * len(mmsis))
     rows = conn.execute(
         f"""
@@ -52,12 +52,11 @@ def get_points_for_mmsis_in_batch_duckdb(
         mmsis,
     ).fetchall()
 
-    grouped: DictAISPointWKB = defaultdict(list)
+    grouped: DictInputPoint = defaultdict(list)
     for mmsi, lon, lat, sog, epoch_ts in rows:
         if mmsi is None or lon is None or lat is None or epoch_ts is None:
             continue
-        pt = from_wkt(f"POINT M ({lon} {lat} {int(epoch_ts)})")
-        grouped[int(mmsi)].append((pt.wkb, float(sog) if sog is not None else None))
+        grouped[int(mmsi)].append((lon, lat, sog, epoch_ts))
     return grouped
 
 
@@ -120,7 +119,7 @@ def construct_trajectories_and_stops(
             for future in as_completed(futures):
                 mmsi = futures[future]
                 try:
-                    (mmsi, trajs, stops) = future.result()
+                    mmsi, trajs, stops = future.result()
                     trajs_to_insert.extend(trajs)
                     stops_to_insert.extend(stops)
                 except Exception as e:

@@ -5,7 +5,8 @@ from psycopg import Connection, Cursor
 from psycopg import sql
 from core.points_to_ls_poly import (
     AISPointRow,
-    DictAISPointWKB,
+    DictInputPoint,
+    InputPoint,
     ProcessResult,
     Stop,
     Traj,
@@ -65,7 +66,7 @@ def construct_trajectories_and_stops(
 
             # Retrieve points for all MMSIs in the batch
             print(f"Fetching points for MMSIs in batch {batch_num}...")
-            points: DictAISPointWKB = get_points_for_mmsis_in_batch(
+            points: DictInputPoint = get_points_for_mmsis_in_batch(
                 read_cur, points_schema, mmsis_in_batch
             )
             print(f"{sum(len(pts) for pts in points.values()):,} points fetched.")
@@ -162,7 +163,7 @@ def get_mmsis(cur: Cursor, points_schema: str, output_schema: str) -> list[int]:
 
 def get_points_for_mmsis_in_batch(
     cur: Cursor, db_schema: str, mmsis: list[int]
-) -> DictAISPointWKB:
+) -> DictInputPoint:
     """Fetch all points for multiple MMSIs grouped by MMSI, ordered by time."""
 
     query = sql.SQL(
@@ -179,7 +180,7 @@ def get_points_for_mmsis_in_batch(
     rows: list[AISPointRow] = cur.fetchall()
 
     # Group points by MMSI
-    grouped_points: DictAISPointWKB = defaultdict(list)
+    grouped_points: DictInputPoint = defaultdict(list)
 
     for mmsi, geom_wkb, sog in rows:
         if mmsi is None or geom_wkb is None:

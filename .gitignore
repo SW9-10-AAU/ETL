@@ -220,4 +220,4 @@ geojson/
 *.wal
 
 # Claude
-.claude
+/.claude/

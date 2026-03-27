@@ -125,16 +125,16 @@ def main_duckdb():
     if should_run_step(
         "ETL_CONSTRUCT", "Do you want to construct trajectories and stops?"
     ):
-        construct_trajectories_and_stops(connection, ls_schema, ls_schema, num_workers)
+        construct_trajectories_and_stops(connection, ls_schema, ls_schema, num_workers, batch_size=200)
 
     if should_run_step(
         "ETL_TRANSFORM", "Do you want to transform trajectories/stops to CellStrings?"
     ):
         transform_ls_trajectories_to_cs(
-            connection, ls_schema, cs_schema, num_workers, batch_size=2000
+            connection, ls_schema, cs_schema, num_workers, batch_size=3000
         )
         transform_poly_stops_to_cs(
-            connection, ls_schema, cs_schema, num_workers, batch_size=2000
+            connection, ls_schema, cs_schema, num_workers, batch_size=3000
         )
 
     connection.close()

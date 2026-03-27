@@ -1,5 +1,5 @@
 from typing import cast
-from shapely import Polygon, from_wkb, Point, LineString, MultiPoint, concave_hull
+from shapely import Polygon, from_wkb, from_wkt, Point, MultiPoint, concave_hull
 from core.utils import (
     add_connecting_point_to_segment,
     append_segment_if_nonempty_and_clear_segment,
@@ -14,11 +14,11 @@ from core.utils import (
 
 # Stops
 STOP_SOG_THRESHOLD = 1.0  # knots, vT (original = 1 knot)
-STOP_DISTANCE_THRESHOLD = 250  # meters, disT (original = 2 km)    CHANGED TO 250m
+STOP_DISTANCE_THRESHOLD = 250  # meters, disT (original = 2 km) CHANGED TO 250 m
 STOP_TIME_THRESHOLD = 5400  # seconds, tT (original = 1.5 h)
 MIN_STOP_POINTS = 10  # Δn (original = 10 points)
-MIN_STOP_DURATION = 600  # seconds, Δstopt (original = 1.5 h) CHANGED TO 10 min (600s)
-MERGE_DISTANCE_THRESHOLD = 50  # meters, Δd. (original = 2 km)     CHANGED TO 50m
+MIN_STOP_DURATION = 600  # seconds, Δstopt (original = 1.5 h)   CHANGED TO 10 min (600s)
+MERGE_DISTANCE_THRESHOLD = 50  # meters, Δd. (original = 2 km)  CHANGED TO 50 m
 MERGE_TIME_THRESHOLD = 3600  # seconds, Δt (original = 1 h)
 MAX_MBR_AREA = 5_000_000  # 5 km², Maximum area of the Minimum Bounding Rectangle (MBR) for a valid stop polygon
 STOP_POINT_BUFFER_DEG = 1e-5  # ~1 m radius buffer in WGS84 degrees, used when all stop points have same lat,lon (e.g. null-SOG stationary vessel)
@@ -26,12 +26,14 @@ STOP_POINT_BUFFER_DEG = 1e-5  # ~1 m radius buffer in WGS84 degrees, used when a
 # Trajectories
 TRAJ_MAX_SPEED_KN = 50.0  # knots, used to filter out false AIS points (e.g. > 50 knots)
 TRAJ_MAX_GAP_S = (
-    3600  # seconds (1h), max time gap between two AIS points in a valid trajectory
+    3600  # seconds (1 h), max time gap between two AIS points in a valid trajectory
 )
 MIN_AIS_POINTS_IN_TRAJ = 10  # Minimum AIS messages required to record a trajectory, Remove trajectories with only small number of AIS points
 
 AISPointWKB = tuple[bytes, float | None]  # (geom as WKB, sog)
-AISPoint = tuple[Point, float | None]  # (geom as Point, sog)
+DuckDBRawPoint = tuple[float, float, float | None, float]  # (lon, lat, sog, epoch_ts)
+InputPoint = AISPointWKB | DuckDBRawPoint
+AISPoint = tuple[Point, float | None]  # (geom as PointM, sog)
 Traj = tuple[int, float, float, bytes]  # (mmsi, ts_start, ts_end, geom as WKB)
 Stop = tuple[int, float, float, bytes]  # (mmsi, ts_start, ts_end, geom as WKB)
 ProcessResult = tuple[
@@ -39,21 +41,29 @@ ProcessResult = tuple[
 ]  # (mmsi, trajs_to_insert, stops_to_insert)
 
 AISPointRow = tuple[int, bytes, float | None]  # (mmsi, geom as WKB, sog)
-DictAISPointWKB = dict[int, list[AISPointWKB]]  # mmsi -> list of (geom as WKB, sog)
+DictInputPoint = dict[
+    int, list[InputPoint]
+]  # mmsi -> list of InputPoint (AISPointWKB or DuckDBRawPoint)
 
 
-def process_single_mmsi(mmsi: int, wkb_points: list[AISPointWKB]) -> ProcessResult:
+def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessResult:
     """
     Process the points of a single MMSI - constructs trajectories and stops.
     Returns (mmsi, trajs_to_insert, stops_to_insert).
     """
-    if not wkb_points:
+    if not input_points:
         return (mmsi, [], [])
 
-    # Convert WKB to Shapely Points
-    points: list[AISPoint] = [
-        (cast(Point, from_wkb(geom_wkb)), sog) for (geom_wkb, sog) in wkb_points
-    ]
+    points: list[AISPoint] = []
+
+    for input_point in input_points:
+        if len(input_point) == 2:
+            geom_wkb, sog = input_point
+            points.append((cast(Point, from_wkb(geom_wkb)), sog))
+        elif len(input_point) == 4:
+            lon, lat, sog, epoch_ts = input_point
+            pt = cast(Point, from_wkt(f"POINT M ({lon} {lat} {int(epoch_ts)})"))
+            points.append((pt, float(sog) if sog is not None else None))
 
     prev_point = None
     current_traj: list[Point] = []

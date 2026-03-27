@@ -22,7 +22,7 @@ Compared to earlier versions, this repository now includes:
 2. Shared core logic moved to `src/core/`
 3. Backend-specific orchestration split into dedicated modules
 4. Step-level execution controls (confirm/skip or env-driven)
-5. Source-schema vs CellString-schema routing for reusable construct outputs
+5. LineString-schema vs CellString-schema routing for reusable construct outputs
 6. Performance-oriented batching and multiprocessing across construct/transform flows
 
 ## Current project layout
@@ -125,7 +125,7 @@ Schema routing:
 - Optional LineString schemas: `DUCKDB_LS_SCHEMA`, `POSTGRESQL_LS_SCHEMA`
 - Optional CellString schemas: `DUCKDB_CS_SCHEMA`, `POSTGRESQL_CS_SCHEMA`
 
-Source schema stores:
+LineString schema stores:
 
 - `points`
 - `trajectory_ls`
