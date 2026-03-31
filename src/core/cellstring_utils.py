@@ -129,15 +129,7 @@ def linecover(
             if cell_id != prev_cell_id:
                 cells_with_time.append((cell_id, interpolated_ts))
                 prev_cell_id = cell_id
-
-    # remove consequtive duplicate cells (keep first timestamp - entry_ts and cell_id)
-    # entry_ts_cells_only = []
-    # prev_cell_id = None
-    # for cell_id, ts in cells_with_time:
-    #     if cell_id != prev_cell_id:
-    #         entry_ts_cells_only.append((cell_id, ts))
-    #         prev_cell_id = cell_id
-            
+                     
     return cells_with_time
 
 
