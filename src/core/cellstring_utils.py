@@ -64,7 +64,7 @@ def linecover(
         each tile once per contiguous run.
     """
     cells_with_time: list[tuple[int, int]] = []
-    prev_cell_id = None
+    prev_cell_id: int | None = None
     
     coords = list(ls.coords)
     for i in range(len(coords) - 1):
