@@ -129,9 +129,16 @@ def linecover(
             cells_with_time.append((cell_id, interpolated_ts))
 
     # Deduplicate cells that have the same cell_id and timestamp
-    deduplicate_cells_with_time = list(dict.fromkeys(cells_with_time))
-
-    return deduplicate_cells_with_time
+    # deduplicate_cells_with_time = list(dict.fromkeys(cells_with_time))
+    # In linecover() function, replace the final deduplication with:
+    entry_ts_cells_only = []
+    prev_cell_id = None
+    for cell_id, ts in cells_with_time:
+        if cell_id != prev_cell_id:
+            entry_ts_cells_only.append((cell_id, ts))
+            prev_cell_id = cell_id
+            
+    return entry_ts_cells_only
 
 
 def classify_tile_containment(
