@@ -60,7 +60,10 @@ def convert_linestring_to_cellids(
     cellstring_with_timestamps = convert_linestring_to_cellstring(ls, zoom)
 
     cell_ids = [cell_id for cell_id, _ in cellstring_with_timestamps]
-    return cell_ids
+    # Deduplicate cell IDs (spatial deduplication, ignoring timestamps)
+    deduplicated_cell_ids = list(dict.fromkeys(cell_ids))
+    return  deduplicated_cell_ids 
+
 
 
 def convert_polygon_to_cellstrings(
