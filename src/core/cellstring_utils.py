@@ -118,7 +118,6 @@ def linecover(
                 if cell_id != prev_cell_id:
                     cells_with_time.append((cell_id, ts_segment_start))
                     prev_cell_id = cell_id
-                    print("hit this logic")
                 continue  # Important to skip the rest of the loop
             else:
                 # Linear interpolation: first cell gets ts0, last cell gets ts1

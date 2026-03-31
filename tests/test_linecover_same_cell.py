@@ -18,26 +18,6 @@ from core.ls_poly_to_cs import (
 
 class TestLinecoverSameCell(unittest.TestCase):
 
-    # deprecated with new timestamp logic (keep only first/entering timestamp with cell)
-    # def test_short_segment_in_same_cell_keeps_both_timestamps(self):
-    #     linestring = LineString(
-    #         [
-    #             (10.0, 55.0, 1000),
-    #             (10.0000001, 55.0000001, 1010),
-    #         ]
-    #     )
-
-    #     cells_with_time = convert_linestring_to_cellstring(linestring, zoom=21)
-
-    #     self.assertEqual(len(cells_with_time), 2)
-
-    #     first_cell, first_ts = cells_with_time[0]
-    #     second_cell, second_ts = cells_with_time[1]
-
-    #     self.assertEqual(first_cell, second_cell)
-    #     self.assertEqual(first_ts, 1000)
-    #     self.assertEqual(second_ts, 1010)
-
     def test_point_to_tile_fraction(self):
         pointA = _point_to_tile_fraction(12.617384910583496, 56.032630920410156, 21)
         pointB = _point_to_tile_fraction(12.617497444152832, 56.03263854980469, 21)
@@ -152,10 +132,6 @@ class TestLinecoverSameCell(unittest.TestCase):
         last_ts = cells[-1][1]
         self.assertEqual(first_ts, 1000)
         self.assertGreaterEqual(last_ts, 1040)
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 if __name__ == "__main__":
     unittest.main()
