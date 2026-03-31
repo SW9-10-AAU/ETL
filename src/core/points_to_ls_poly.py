@@ -1,4 +1,5 @@
 from typing import cast
+import time
 from shapely import Polygon, from_wkb, from_wkt, Point, MultiPoint, concave_hull
 from core.utils import (
     add_connecting_point_to_segment,
@@ -54,9 +55,12 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
     if not input_points:
         return (mmsi, [], [])
 
+    start_total = time.perf_counter()
+    start_phase1 = time.perf_counter()
+
     points: list[AISPoint] = []
 
-    # Phase 1: Parse input points into list of AISPoint (Point, SOG) tuples
+    # Phase 1: Parse input points into AISPoints (Point, SOG) tuples
     for input_point in input_points:
         if len(input_point) == 2:
             geom_wkb, sog = input_point
@@ -65,6 +69,12 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
             lon, lat, sog, epoch_ts = input_point
             pt = cast(Point, from_wkt(f"POINT M ({lon} {lat} {int(epoch_ts)})"))
             points.append((pt, float(sog) if sog is not None else None))
+
+    time_phase1 = time.perf_counter() - start_phase1
+    print(
+        f"[MMSI: {mmsi}] Phase 1 (Parsing Input Points) completed in {time_phase1:.1f}s",
+        flush=True,
+    )
 
     prev_point = None
     current_traj: list[Point] = []
@@ -75,6 +85,8 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
     # Final trajectories and stops to insert
     trajs_to_insert: list[Traj] = []
     stops_to_insert: list[Stop] = []
+
+    start_phase2 = time.perf_counter()
 
     # Phase 2: Iterate through points to construct candidate trajectories and stops
     for current_point, sog in points:
@@ -141,20 +153,45 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
     append_segment_if_nonempty_and_clear_segment(candidate_trajs, current_traj)
     append_segment_if_nonempty_and_clear_segment(candidate_stops, current_stop)
 
+    time_phase2 = time.perf_counter() - start_phase2
+    num_candidate_stops = len(candidate_stops)
+    num_candidate_trajs = len(candidate_trajs)
+    print(
+        f"[MMSI: {mmsi}] Phase 2 (Iterate through AISPoints) completed in {time_phase2:.1f}s",
+        flush=True,
+    )
+
+    start_phase3 = time.perf_counter()
+
     # Phase 3: Merge nearby candidate stops
     merged_stops = merge_candidate_stops(
         candidate_stops, MERGE_TIME_THRESHOLD, MERGE_DISTANCE_THRESHOLD
     )
 
+    time_phase3 = time.perf_counter() - start_phase3
+    num_merged_stops = len(merged_stops)
+    print(
+        f"[MMSI: {mmsi}] Phase 3 (Merge of Stops) completed in {time_phase3:.1f}s",
+        flush=True,
+    )
+
+    start_phase4 = time.perf_counter()
+    time_phase4_1 = 0.0
+    time_concave_hull = 0.0
+    max_points_in_stop = 0
+
     # Phase 4: Final validation of stops after merging (fallback to merge invalid stops with trajectories)
     for merged_stop in merged_stops:
+        max_points_in_stop = max(max_points_in_stop, len(merged_stop))
         ts_start, ts_end = extract_start_end_time_s(merged_stop)
         stop_duration = ts_end - ts_start
 
         if len(merged_stop) >= MIN_STOP_POINTS and stop_duration >= MIN_STOP_DURATION:
+            start_hull = time.perf_counter()
             geom_points = MultiPoint(merged_stop)
             hull = concave_hull(geom_points, ratio=0.2, allow_holes=False)
             envelope = geom_points.envelope
+            time_concave_hull += time.perf_counter() - start_hull
 
             # Use the envelope (MBR) if the hull is not Polygon
             stop_geom = hull if hull.geom_type == "Polygon" else envelope
@@ -172,6 +209,7 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
                     stops_to_insert.append((mmsi, ts_start, ts_end, stop_poly.wkb))
                     continue  # Skip fallback
 
+        start_fallback = time.perf_counter()
         # Phase 4.1: Fallback - Try to merge invalid merged stop with trajectories
         try_merge_invalid_merged_stop_with_trajectories(
             trajs=candidate_trajs,
@@ -180,6 +218,15 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
             traj_max_gap_s=TRAJ_MAX_GAP_S,
             min_ais_points_in_traj=MIN_AIS_POINTS_IN_TRAJ,
         )
+        time_phase4_1 += time.perf_counter() - start_fallback
+
+    time_phase4 = time.perf_counter() - start_phase4
+    print(
+        f"[MMSI: {mmsi}] Phase 4 (Validation/add of Stops) completed in {time_phase4:.1f}s",
+        flush=True,
+    )
+
+    start_phase5 = time.perf_counter()
 
     # Phase 5: Final validation of trajectories
     for trajectory in candidate_trajs:
@@ -189,8 +236,24 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
                 (mmsi, ts_start, ts_end, points_to_linestringm_as_wkb(trajectory))
             )
 
+    time_phase5 = time.perf_counter() - start_phase5
     print(
-        f"[MMSI: {mmsi}] ({len(points)} points, {len(trajs_to_insert)} trajectories, {len(stops_to_insert)} stops)",
+        f"[MMSI: {mmsi}] Phase 5 (Validation/add of Trajectories) completed in {time_phase5:.1f}s",
+        flush=True,
+    )
+
+    total_time = time.perf_counter() - start_total
+
+    print(
+        f"[MMSI: {mmsi}] ({len(points)} points, {len(trajs_to_insert)} trajectories, {len(stops_to_insert)} stops) processed in {total_time:.1f}s\n"
+        f"  - Phase 1 (Parsing Input Points):   {time_phase1:.1f}s\n"
+        f"  - Phase 2 (Iterate AISPoints):      {time_phase2:.1f}s (Candidate Trajs: {num_candidate_trajs}, Candidate Stops: {num_candidate_stops})\n"
+        f"  - Phase 3 (Merge of Stops):         {time_phase3:.1f}s (Merged Stops: {num_merged_stops})\n"
+        f"  - Phase 4 (Validate/add Stops):     {time_phase4:.1f}s (Max pts in stop: {max_points_in_stop})\n"
+        f"    - 4.0 Concave hull:               {time_concave_hull:.1f}s\n"
+        f"    - 4.1 Fallback (merge w. trajs):  {time_phase4_1:.1f}s\n"
+        f"  - Phase 5 (Validate/add Trajs):     {time_phase5:.1f}s\n"
+        f"{'-'*60}",
         flush=True,
     )
 
