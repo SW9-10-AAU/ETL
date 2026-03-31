@@ -81,69 +81,83 @@ def main_duckdb():
     ls_schema = get_ls_schema("duckdb")
     cs_schema = get_cs_schema("duckdb")
     num_workers = _get_num_workers()
-    connection = duckdb.connect(database=db_path)
-    print(f"Connected to DuckDB at '{db_path}'.")
+    connection = None
+    try:
+        connection = duckdb.connect(database=db_path)
+        print(f"Connected to DuckDB at '{db_path}'.")
 
-    # Install and load spatial extension
-    connection.execute("INSTALL spatial;")
-    connection.execute("LOAD spatial;")
-    print("Spatial extension installed and loaded.")
-    print(f"{num_workers} workers available for parallel processing.")
+        # Install and load spatial extension
+        connection.execute("INSTALL spatial;")
+        connection.execute("LOAD spatial;")
+        print("Spatial extension installed and loaded.")
+        print(f"{num_workers} workers available for parallel processing.")
 
-    should_drop_ls_tables = should_run_step_with_fallback(
-        env_var="ETL_DROP_LS",
-        fallback_env_var="ETL_DROP",
-        prompt_text="Do you want to drop LineString tables (points, trajectory_ls, stop_poly, area_poly, crossing_ls)?",
-        default_yes=False,
-    )
-    should_drop_cs_tables = should_run_step_with_fallback(
-        env_var="ETL_DROP_CS",
-        fallback_env_var="ETL_DROP",
-        prompt_text="Do you want to drop CellString tables (trajectory_cs, stop_cs, area_cs, crossing_cs)?",
-        default_yes=False,
-    )
-    if should_drop_ls_tables or should_drop_cs_tables:
-        drop_duckdb_tables(
-            connection,
-            ls_schema,
-            cs_schema,
-            should_drop_ls_tables,
-            should_drop_cs_tables,
+        should_drop_ls_tables = should_run_step_with_fallback(
+            env_var="ETL_DROP_LS",
+            fallback_env_var="ETL_DROP",
+            prompt_text="Do you want to drop LineString tables (points, trajectory_ls, stop_poly, area_poly, crossing_ls)?",
+            default_yes=False,
         )
-
-    if should_run_step(
-        "ETL_CREATE_SCHEMA", "Do you want to create/ensure schemas exist?"
-    ):
-        _ensure_schema_names(connection, "duckdb", ls_schema, cs_schema)
-
-    if should_run_step("ETL_CREATE_TABLES", "Do you want to create all tables?"):
-        create_duckdb_tables(connection, ls_schema, cs_schema)
-
-    if should_run_step(
-        "ETL_CREATE_POINTS",
-        "Do you want to create points table?",
-        default_yes=False,
-    ):
-        create_duckdb_points(connection, ls_schema)
-
-    if should_run_step(
-        "ETL_CONSTRUCT", "Do you want to construct trajectories and stops?"
-    ):
-        construct_trajectories_and_stops(
-            connection, ls_schema, ls_schema, num_workers, batch_size=200
+        should_drop_cs_tables = should_run_step_with_fallback(
+            env_var="ETL_DROP_CS",
+            fallback_env_var="ETL_DROP",
+            prompt_text="Do you want to drop CellString tables (trajectory_cs, stop_cs, area_cs, crossing_cs)?",
+            default_yes=False,
         )
+        if should_drop_ls_tables or should_drop_cs_tables:
+            drop_duckdb_tables(
+                connection,
+                ls_schema,
+                cs_schema,
+                should_drop_ls_tables,
+                should_drop_cs_tables,
+            )
 
-    if should_run_step(
-        "ETL_TRANSFORM", "Do you want to transform trajectories/stops to CellStrings?"
-    ):
-        transform_ls_trajectories_to_cs(
-            connection, ls_schema, cs_schema, num_workers, batch_size=3000
-        )
-        transform_poly_stops_to_cs(
-            connection, ls_schema, cs_schema, num_workers, batch_size=3000
-        )
+        if should_run_step(
+            "ETL_CREATE_SCHEMA", "Do you want to create/ensure schemas exist?"
+        ):
+            _ensure_schema_names(connection, "duckdb", ls_schema, cs_schema)
 
-    connection.close()
+        if should_run_step("ETL_CREATE_TABLES", "Do you want to create all tables?"):
+            create_duckdb_tables(connection, ls_schema, cs_schema)
+
+        if should_run_step(
+            "ETL_CREATE_POINTS",
+            "Do you want to create points table?",
+            default_yes=False,
+        ):
+            create_duckdb_points(connection, ls_schema)
+
+        if should_run_step(
+            "ETL_CONSTRUCT", "Do you want to construct trajectories and stops?"
+        ):
+            construct_trajectories_and_stops(
+                connection, ls_schema, ls_schema, num_workers, batch_size=200
+            )
+
+        if should_run_step(
+            "ETL_TRANSFORM",
+            "Do you want to transform trajectories/stops to CellStrings?",
+        ):
+            transform_ls_trajectories_to_cs(
+                connection, ls_schema, cs_schema, num_workers, batch_size=3000
+            )
+            transform_poly_stops_to_cs(
+                connection, ls_schema, cs_schema, num_workers, batch_size=3000
+            )
+    except KeyboardInterrupt:
+        print("\nETL interrupted. Shutting down DuckDB connection...")
+        raise SystemExit(130)
+    finally:
+        if connection is not None:
+            try:
+                connection.close()
+                print("DuckDB connection closed.")
+            except Exception as close_error:
+                print(
+                    "Warning: failed to close DuckDB connection cleanly: "
+                    f"{close_error}"
+                )
 
 
 def main_postgres():

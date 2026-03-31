@@ -88,6 +88,18 @@ def construct_trajectories_and_stops(
     print(
         f"Processing {num_mmsis} MMSIs in batches of {batch_size} MMSIs using {max_workers} workers."
     )
+    print(
+        f"""
+--------------------------------- Phases of processing each MMSI --------------------------------------------
+[1] Parse input points into AISPoints (Point, SOG) tuples
+[2] Iterate through points to construct candidate trajectories and stops
+[3] Merge nearby candidate stops into merged stops
+[4] Validate merged stops and add valid ones to final list of stops (with fallback to merge with trajs)
+[4.1] Compute concave hull for merged stops
+[4.2] Merge invalid stops with trajectories
+[5] Validate candidate trajectories and add valid ones to final list of trajs
+-------------------------------------------------------------------------------------------------------------"""
+    )
 
     for batch_start in range(0, num_mmsis, batch_size):
         mmsis_in_batch = all_mmsis[batch_start : batch_start + batch_size]
@@ -100,10 +112,13 @@ def construct_trajectories_and_stops(
 
         # Retrieve points for all MMSIs in the batch
         print(f"Fetching points for MMSIs in batch {batch_num}...")
+
         points = get_points_for_mmsis_in_batch_duckdb(
             conn, points_schema, mmsis_in_batch
         )
-        print(f"{sum(len(pts) for pts in points.values()):,} points fetched.")
+        print(
+            f"{sum(len(pts) for pts in points.values()):,} points fetched in {time.perf_counter() - batch_start_time:.2f}s."
+        )
 
         trajs_to_insert: list[Traj] = []
         stops_to_insert: list[Stop] = []
