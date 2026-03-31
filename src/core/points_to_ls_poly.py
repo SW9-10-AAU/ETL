@@ -56,6 +56,7 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
 
     points: list[AISPoint] = []
 
+    # Phase 1: Parse input points into list of AISPoint (Point, SOG) tuples
     for input_point in input_points:
         if len(input_point) == 2:
             geom_wkb, sog = input_point
@@ -75,6 +76,7 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
     trajs_to_insert: list[Traj] = []
     stops_to_insert: list[Stop] = []
 
+    # Phase 2: Iterate through points to construct candidate trajectories and stops
     for current_point, sog in points:
 
         # Initialization of first point
@@ -135,16 +137,16 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
         # Update previous point
         prev_point = current_point
 
-    # Final append (remaining traj or stop)
+    # Phase 2.1: Final append (remaining traj or stop)
     append_segment_if_nonempty_and_clear_segment(candidate_trajs, current_traj)
     append_segment_if_nonempty_and_clear_segment(candidate_stops, current_stop)
 
-    # Merge nearby candidate stops
+    # Phase 3: Merge nearby candidate stops
     merged_stops = merge_candidate_stops(
         candidate_stops, MERGE_TIME_THRESHOLD, MERGE_DISTANCE_THRESHOLD
     )
 
-    # Validate and insert stops (fallback to merging invalid stops with trajectories)
+    # Phase 4: Final validation of stops after merging (fallback to merge invalid stops with trajectories)
     for merged_stop in merged_stops:
         ts_start, ts_end = extract_start_end_time_s(merged_stop)
         stop_duration = ts_end - ts_start
@@ -170,7 +172,7 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
                     stops_to_insert.append((mmsi, ts_start, ts_end, stop_poly.wkb))
                     continue  # Skip fallback
 
-        # Fallback: Try to merge invalid merged stop with trajectories
+        # Phase 4.1: Fallback - Try to merge invalid merged stop with trajectories
         try_merge_invalid_merged_stop_with_trajectories(
             trajs=candidate_trajs,
             invalid_merged_stop=merged_stop,
@@ -179,7 +181,7 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
             min_ais_points_in_traj=MIN_AIS_POINTS_IN_TRAJ,
         )
 
-    # Validate and insert trajectories
+    # Phase 5: Final validation of trajectories
     for trajectory in candidate_trajs:
         ts_start, ts_end = extract_start_end_time_s(trajectory)
         if len(trajectory) >= MIN_AIS_POINTS_IN_TRAJ and ts_end > ts_start:
