@@ -72,7 +72,7 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
 
     time_phase1 = time.perf_counter() - start_phase1
     print(
-        f"[MMSI: {mmsi}] Phase 1 (Parsing Input Points) completed in {time_phase1:.1f}s",
+        f"[MMSI: {mmsi}] Phase 1 (Parsing Input Points) completed in {time_phase1:.1f}s ({len(points)} points)",
         flush=True,
     )
 
@@ -157,7 +157,7 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
     num_candidate_stops = len(candidate_stops)
     num_candidate_trajs = len(candidate_trajs)
     print(
-        f"[MMSI: {mmsi}] Phase 2 (Iterate through AISPoints) completed in {time_phase2:.1f}s",
+        f"[MMSI: {mmsi}] Phase 2 (Iterate through AISPoints) completed in {time_phase2:.1f}s (Candidate Trajectories: {num_candidate_trajs}, Candidate Stops: {num_candidate_stops})",
         flush=True,
     )
 
@@ -171,7 +171,7 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
     time_phase3 = time.perf_counter() - start_phase3
     num_merged_stops = len(merged_stops)
     print(
-        f"[MMSI: {mmsi}] Phase 3 (Merge of Stops) completed in {time_phase3:.1f}s",
+        f"[MMSI: {mmsi}] Phase 3 (Merge of Stops) completed in {time_phase3:.1f}s (Merged Stops: {num_merged_stops})",
         flush=True,
     )
 
@@ -221,24 +221,28 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
         time_phase4_1 += time.perf_counter() - start_fallback
 
     time_phase4 = time.perf_counter() - start_phase4
+
     print(
-        f"[MMSI: {mmsi}] Phase 4 (Validation/add of Stops) completed in {time_phase4:.1f}s",
+        f"[MMSI: {mmsi}] Phase 4 (Validation/add of Stops) completed in {time_phase4:.1f}s ({len(stops_to_insert)} stops, Concave hull: {time_concave_hull:.1f}s, Fallback merge with trajs: {time_phase4_1:.1f}s, Max pts in stop: {max_points_in_stop})",
         flush=True,
     )
 
     start_phase5 = time.perf_counter()
+    time_linestringm = 0.0
 
     # Phase 5: Final validation of trajectories
     for trajectory in candidate_trajs:
         ts_start, ts_end = extract_start_end_time_s(trajectory)
         if len(trajectory) >= MIN_AIS_POINTS_IN_TRAJ and ts_end > ts_start:
+            start_linestringm = time.perf_counter()
             trajs_to_insert.append(
                 (mmsi, ts_start, ts_end, points_to_linestringm_as_wkb(trajectory))
             )
+            time_linestringm += time.perf_counter() - start_linestringm
 
     time_phase5 = time.perf_counter() - start_phase5
     print(
-        f"[MMSI: {mmsi}] Phase 5 (Validation/add of Trajectories) completed in {time_phase5:.1f}s",
+        f"[MMSI: {mmsi}] Phase 5 (Validation/add of Trajectories) completed in {time_phase5:.1f}s ({len(trajs_to_insert)} trajectories, Linestringm: {time_linestringm:.1f}s)",
         flush=True,
     )
 
@@ -252,7 +256,7 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
         f"  - Phase 4 (Validate/add Stops):     {time_phase4:.1f}s (Max pts in stop: {max_points_in_stop})\n"
         f"    - 4.0 Concave hull:               {time_concave_hull:.1f}s\n"
         f"    - 4.1 Fallback (merge w. trajs):  {time_phase4_1:.1f}s\n"
-        f"  - Phase 5 (Validate/add Trajs):     {time_phase5:.1f}s\n"
+        f"  - Phase 5 (Validate/add Trajs):     {time_phase5:.1f}s (Linestringm: {time_linestringm:.1f}s)\n"
         f"{'-'*60}",
         flush=True,
     )
