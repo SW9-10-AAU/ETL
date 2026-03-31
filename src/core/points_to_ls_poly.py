@@ -71,10 +71,6 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
             points.append((pt, float(sog) if sog is not None else None))
 
     time_phase1 = time.perf_counter() - start_phase1
-    print(
-        f"[MMSI: {mmsi}] Phase 1 (Parsing Input Points) completed in {time_phase1:.1f}s ({len(points)} points)",
-        flush=True,
-    )
 
     prev_point = None
     current_traj: list[Point] = []
@@ -112,10 +108,8 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
             prev_point, current_point
         )
 
-        # Use minimum of SOG or average speed if SOG is not null, otherwise use the computed average speed between points
-        current_speed = (
-            min(sog, avg_vessel_speed) if sog is not None else avg_vessel_speed
-        )
+        # Use SOG if SOG is not null, otherwise use the computed average speed between points
+        current_speed = sog if sog is not None else avg_vessel_speed
 
         # Candidate stop condition
         if (
@@ -132,7 +126,7 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
         # Trajectory condition
         else:
             add_connecting_point_to_segment(current_traj, prev_point)
-            if avg_vessel_speed < TRAJ_MAX_SPEED_KN:
+            if avg_vessel_speed < TRAJ_MAX_SPEED_KN:  # Filter out outliers
                 if time_diff < TRAJ_MAX_GAP_S:
                     current_traj.append(current_point)
                 else:
@@ -154,12 +148,6 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
     append_segment_if_nonempty_and_clear_segment(candidate_stops, current_stop)
 
     time_phase2 = time.perf_counter() - start_phase2
-    num_candidate_stops = len(candidate_stops)
-    num_candidate_trajs = len(candidate_trajs)
-    print(
-        f"[MMSI: {mmsi}] Phase 2 (Iterate through AISPoints) completed in {time_phase2:.1f}s (Candidate Trajectories: {num_candidate_trajs}, Candidate Stops: {num_candidate_stops})",
-        flush=True,
-    )
 
     start_phase3 = time.perf_counter()
 
@@ -169,18 +157,13 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
     )
 
     time_phase3 = time.perf_counter() - start_phase3
-    num_merged_stops = len(merged_stops)
-    print(
-        f"[MMSI: {mmsi}] Phase 3 (Merge of Stops) completed in {time_phase3:.1f}s (Merged Stops: {num_merged_stops})",
-        flush=True,
-    )
 
     start_phase4 = time.perf_counter()
-    time_phase4_1 = 0.0
     time_concave_hull = 0.0
+    time_merge_stops_with_trajs = 0.0
     max_points_in_stop = 0
 
-    # Phase 4: Final validation of stops after merging (fallback to merge invalid stops with trajectories)
+    # Phase 4: Final validation of merged stops (fallback to merge invalid stops with trajectories)
     for merged_stop in merged_stops:
         max_points_in_stop = max(max_points_in_stop, len(merged_stop))
         ts_start, ts_end = extract_start_end_time_s(merged_stop)
@@ -189,6 +172,8 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
         if len(merged_stop) >= MIN_STOP_POINTS and stop_duration >= MIN_STOP_DURATION:
             start_hull = time.perf_counter()
             geom_points = MultiPoint(merged_stop)
+
+            # Phase 4.1: Compute concave hull
             hull = concave_hull(geom_points, ratio=0.2, allow_holes=False)
             envelope = geom_points.envelope
             time_concave_hull += time.perf_counter() - start_hull
@@ -210,7 +195,7 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
                     continue  # Skip fallback
 
         start_fallback = time.perf_counter()
-        # Phase 4.1: Fallback - Try to merge invalid merged stop with trajectories
+        # Phase 4.2: Fallback - Try to merge invalid merged stop with trajectories
         try_merge_invalid_merged_stop_with_trajectories(
             trajs=candidate_trajs,
             invalid_merged_stop=merged_stop,
@@ -218,14 +203,9 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
             traj_max_gap_s=TRAJ_MAX_GAP_S,
             min_ais_points_in_traj=MIN_AIS_POINTS_IN_TRAJ,
         )
-        time_phase4_1 += time.perf_counter() - start_fallback
+        time_merge_stops_with_trajs += time.perf_counter() - start_fallback
 
     time_phase4 = time.perf_counter() - start_phase4
-
-    print(
-        f"[MMSI: {mmsi}] Phase 4 (Validation/add of Stops) completed in {time_phase4:.1f}s ({len(stops_to_insert)} stops, Concave hull: {time_concave_hull:.1f}s, Fallback merge with trajs: {time_phase4_1:.1f}s, Max pts in stop: {max_points_in_stop})",
-        flush=True,
-    )
 
     start_phase5 = time.perf_counter()
     time_linestringm = 0.0
@@ -241,24 +221,11 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
             time_linestringm += time.perf_counter() - start_linestringm
 
     time_phase5 = time.perf_counter() - start_phase5
-    print(
-        f"[MMSI: {mmsi}] Phase 5 (Validation/add of Trajectories) completed in {time_phase5:.1f}s ({len(trajs_to_insert)} trajectories, Linestringm: {time_linestringm:.1f}s)",
-        flush=True,
-    )
 
     total_time = time.perf_counter() - start_total
 
     print(
-        f"[MMSI: {mmsi}] ({len(points)} points, {len(trajs_to_insert)} trajectories, {len(stops_to_insert)} stops) processed in {total_time:.1f}s\n"
-        f"  - Phase 1 (Parsing Input Points):   {time_phase1:.1f}s\n"
-        f"  - Phase 2 (Iterate AISPoints):      {time_phase2:.1f}s (Candidate Trajs: {num_candidate_trajs}, Candidate Stops: {num_candidate_stops})\n"
-        f"  - Phase 3 (Merge of Stops):         {time_phase3:.1f}s (Merged Stops: {num_merged_stops})\n"
-        f"  - Phase 4 (Validate/add Stops):     {time_phase4:.1f}s (Max pts in stop: {max_points_in_stop})\n"
-        f"    - 4.0 Concave hull:               {time_concave_hull:.1f}s\n"
-        f"    - 4.1 Fallback (merge w. trajs):  {time_phase4_1:.1f}s\n"
-        f"  - Phase 5 (Validate/add Trajs):     {time_phase5:.1f}s (Linestringm: {time_linestringm:.1f}s)\n"
-        f"{'-'*60}",
-        flush=True,
+        f"[MMSI: {mmsi}] ({len(points)} points, {len(trajs_to_insert)} trajectories, {len(stops_to_insert)} stops) processed in {total_time:.2f}s ([1]={time_phase1:.2f}s, [2]={time_phase2:.2f}s, [3]={time_phase3:.2f}s, [4]={time_phase4:.2f}s, [4.1]={time_concave_hull:.2f}s, [4.2]={time_merge_stops_with_trajs:.2f}s, [5]={time_phase5:.2f}s)\n"
     )
 
     return (mmsi, trajs_to_insert, stops_to_insert)
