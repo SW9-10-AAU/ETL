@@ -25,7 +25,7 @@ def transform_ls_trajectories_to_cs(
     max_workers: int = MAX_WORKERS,
     batch_size: int = BATCH_SIZE,
 ):
-    print(f"--- Processing trajectories with (using {max_workers} workers) ---")
+    print(f"\n--- Processing trajectories with (using {max_workers} workers) ---")
     total_processed = 0
     total_cells_inserted = 0
 
@@ -136,7 +136,7 @@ def transform_poly_stops_to_cs(
     max_workers: int = MAX_WORKERS,
     batch_size: int = BATCH_SIZE,
 ):
-    print(f"--- Processing stops (using {max_workers} workers) ---")
+    print(f"\n--- Processing stops (using {max_workers} workers) ---")
     total_processed = 0
     total_cells_inserted = 0
 
