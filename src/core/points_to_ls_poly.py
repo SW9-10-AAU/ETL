@@ -225,7 +225,7 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
     total_time = time.perf_counter() - start_total
 
     print(
-        f"[MMSI: {mmsi}] ({len(points)} points, {len(trajs_to_insert)} trajectories, {len(stops_to_insert)} stops) processed in {total_time:.2f}s ([1]={time_phase1:.2f}s, [2]={time_phase2:.2f}s, [3]={time_phase3:.2f}s, [4]={time_phase4:.2f}s, [4.1]={time_concave_hull:.2f}s, [4.2]={time_merge_stops_with_trajs:.2f}s, [5]={time_phase5:.2f}s)\n"
+        f"[MMSI: {mmsi}] ({len(points)} points, {len(trajs_to_insert)} trajectories, {len(stops_to_insert)} stops) processed in {total_time:.2f}s ([1]={time_phase1:.2f}s, [2]={time_phase2:.2f}s, [3]={time_phase3:.2f}s, [4]={time_phase4:.2f}s, [4.1]={time_concave_hull:.2f}s, [4.2]={time_merge_stops_with_trajs:.2f}s, [5]={time_phase5:.2f}s)"
     )
 
     return (mmsi, trajs_to_insert, stops_to_insert)
