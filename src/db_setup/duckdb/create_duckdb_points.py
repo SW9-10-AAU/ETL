@@ -1,8 +1,10 @@
 import duckdb
+import time
 
 
 def create_duckdb_points(conn: duckdb.DuckDBPyConnection, db_schema: str):
     print("Creating table 'points' in DuckDB...")
+    start_time = time.perf_counter()
 
     conn.execute(
         f"""
@@ -35,4 +37,6 @@ def create_duckdb_points(conn: duckdb.DuckDBPyConnection, db_schema: str):
     """
     )
 
-    print(f"Created table 'points' in DuckDB schema '{db_schema}'.")
+    print(
+        f"Created table 'points' in DuckDB schema '{db_schema}' in {time.perf_counter() - start_time:.2f}s."
+    )
