@@ -8,7 +8,7 @@ python-dotenv==1.2.2
 shapely==2.1.2
 typing_extensions==4.15.0
 tzdata==2025.2
-duckdb==1.4.4
+duckdb==1.5.1
 ukc_core==0.1.4
 pyarrow==22.0.0
 black==26.3.1
