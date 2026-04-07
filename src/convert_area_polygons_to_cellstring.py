@@ -115,7 +115,7 @@ def convert_area_polygons_to_cs_duckdb(zoom_levels: tuple[int, int, int] = (13, 
         # Convert polygon to cellstring and insert into table
         print(f"Converting polygon to cellstrings at zoom levels {zoom_levels}")
         _, _, cellstring_finest = convert_polygon_to_cellstrings(
-            polygon, skip_z21=False, zoom_levels=zoom_levels
+            polygon, skip_finest_zoom=False, zoom_levels=zoom_levels
         )
         print(
             f"Conversion of {name} succeeded with {len(cellstring_finest)} cells (zoom {zoom_levels[2]})."

@@ -12,7 +12,7 @@ from core.ls_poly_to_cs import convert_polygon_to_cellstrings
 def convert_area_polygon_to_cs_postgresql(
     polygon: Polygon | MultiPolygon,
     name: str,
-    skip_z21: bool = False,
+    skip_finest_zoom: bool = False,
     zoom_levels: tuple[int, int, int] = (13, 17, 21)
 ):
     """
@@ -21,7 +21,7 @@ def convert_area_polygon_to_cs_postgresql(
     Args:
         polygon: A Shapely Polygon or MultiPolygon representing the area
         name: A unique identifier for this area
-        skip_z21: If True, skip the finest zoom level
+        skip_finest_zoom: If True, skip the finest zoom level
         zoom_levels: Tuple of (zoom1, zoom2, zoom3) where zoom1 < zoom2 < zoom3.
                      Defaults to (13, 17, 21).
     """
@@ -54,7 +54,7 @@ def convert_area_polygon_to_cs_postgresql(
     # Convert polygon to cellstring and insert into table
     print(f"Converting polygon to cellstrings at zoom levels {zoom_levels}")
     cellstring_z1, cellstring_z2, cellstring_z3 = convert_polygon_to_cellstrings(
-        polygon, skip_z21=skip_z21, zoom_levels=zoom_levels
+        polygon, skip_finest_zoom=skip_finest_zoom, zoom_levels=zoom_levels
     )
     print(
         f"Conversion succeeded with {len(cellstring_z1)} cells (zoom {zoom_levels[0]}), "
@@ -84,7 +84,7 @@ def convert_area_polygon_to_cs_postgresql(
 def convert_area_polygon_to_cs_duckdb(
     polygon: Polygon | MultiPolygon,
     name: str,
-    skip_z21: bool = False,
+    skip_finest_zoom: bool = False,
     zoom_levels: tuple[int, int, int] = (13, 17, 21)
 ):
     """
@@ -93,7 +93,7 @@ def convert_area_polygon_to_cs_duckdb(
     Args:
         polygon: A Shapely Polygon or MultiPolygon representing the area
         name: A unique identifier for this area
-        skip_z21: If True, skip the finest zoom level (ignored for DuckDB)
+        skip_finest_zoom: If True, skip the finest zoom level (ignored for DuckDB)
         zoom_levels: Tuple of (zoom1, zoom2, zoom3). DuckDB only stores zoom3 cells.
                      Defaults to (13, 17, 21).
     """
@@ -106,9 +106,9 @@ def convert_area_polygon_to_cs_duckdb(
     duckdb_path = get_db_path_or_url("duckdb")
     conn = duckdb.connect(duckdb_path)
 
-    if skip_z21:
-        print(f"DuckDB requires finest zoom level (z{zoom_levels[2]}) cells; ignoring skip_z21=True.")
-        skip_z21 = False
+    if skip_finest_zoom:
+        print(f"DuckDB requires finest zoom level (z{zoom_levels[2]}) cells; ignoring skip_finest_zoom=True.")
+        skip_finest_zoom = False
 
     # Insert area polygon as geom from WKB
     conn.execute("LOAD SPATIAL;")
@@ -126,7 +126,7 @@ def convert_area_polygon_to_cs_duckdb(
 
     print(f"Converting polygon to cellstring(s) at zoom levels {zoom_levels}")
     _, _, cellstring_finest = convert_polygon_to_cellstrings(
-        polygon, skip_z21=skip_z21, zoom_levels=zoom_levels
+        polygon, skip_finest_zoom=skip_finest_zoom, zoom_levels=zoom_levels
     )
     print(f"Conversion succeeded with {len(cellstring_finest)} cells (zoom {zoom_levels[2]}).")
 

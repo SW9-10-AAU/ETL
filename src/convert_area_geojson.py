@@ -15,7 +15,7 @@ from db_setup.utils.db_utils import get_db_backend
 def convert_area_geojson_to_cs(
     geojson_path: str,
     name: str,
-    skip_z21: bool = False,
+    skip_finest_zoom: bool = False,
     zoom_levels: tuple[int, int, int] = (13, 17, 21)
 ):
     """
@@ -27,15 +27,15 @@ def convert_area_geojson_to_cs(
     Args:
         geojson_path: Path to GeoJSON file
         name: Name to store the area under in the database
-        skip_z21: If True, skip the finest zoom level
+        skip_finest_zoom: If True, skip the finest zoom level
         zoom_levels: Tuple of (zoom1, zoom2, zoom3) where zoom1 < zoom2 < zoom3.
                      Defaults to (13, 17, 21).
     """
     db_backend = get_db_backend()
 
-    if db_backend == "duckdb" and skip_z21:
-        print(f"DuckDB requires finest zoom level (z{zoom_levels[2]}) cells; overriding skip_z21=False.")
-        skip_z21 = False
+    if db_backend == "duckdb" and skip_finest_zoom:
+        print(f"DuckDB requires finest zoom level (z{zoom_levels[2]}) cells; overriding skip_finest_zoom=False.")
+        skip_finest_zoom = False
 
     # Load GeoJSON file
     geojson_file = Path(geojson_path)
@@ -73,22 +73,22 @@ def convert_area_geojson_to_cs(
         )
         if db_backend == "postgresql":
             convert_area_polygon_to_cs_postgresql(
-                multiPolygon, name, skip_z21=skip_z21, zoom_levels=zoom_levels
+                multiPolygon, name, skip_finest_zoom=skip_finest_zoom, zoom_levels=zoom_levels
             )
         elif db_backend == "duckdb":
             convert_area_polygon_to_cs_duckdb(
-                multiPolygon, name, skip_z21=skip_z21, zoom_levels=zoom_levels
+                multiPolygon, name, skip_finest_zoom=skip_finest_zoom, zoom_levels=zoom_levels
             )
     else:
         poly: Polygon = cast(Polygon, geometry)
         print(f"Polygon contains {len(poly.exterior.coords)} points")
         if db_backend == "postgresql":
             convert_area_polygon_to_cs_postgresql(
-                poly, name, skip_z21=skip_z21, zoom_levels=zoom_levels
+                poly, name, skip_finest_zoom=skip_finest_zoom, zoom_levels=zoom_levels
             )
         elif db_backend == "duckdb":
             convert_area_polygon_to_cs_duckdb(
-                poly, name, skip_z21=skip_z21, zoom_levels=zoom_levels
+                poly, name, skip_finest_zoom=skip_finest_zoom, zoom_levels=zoom_levels
             )
 
 

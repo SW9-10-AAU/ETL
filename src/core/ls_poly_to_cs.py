@@ -67,7 +67,7 @@ def convert_linestring_to_cellids(
 
 def convert_polygon_to_cellstrings(
     poly: Polygon | MultiPolygon,
-    skip_z21: bool = False,
+    skip_finest_zoom: bool = False,
     zoom_levels: tuple[int, int, int] = (13, 17, 21)
 ) -> tuple[list[int], list[int], list[int]]:
     """
@@ -75,7 +75,7 @@ def convert_polygon_to_cellstrings(
 
     Args:
         poly: A Shapely Polygon or MultiPolygon to convert
-        skip_z21: If True, skip the finest zoom level (for backward compatibility)
+        skip_finest_zoom: If True, skip the finest zoom level (for backward compatibility)
         zoom_levels: Tuple of (zoom1, zoom2, zoom3) where zoom1 < zoom2 < zoom3.
                      Defaults to (13, 17, 21) for backward compatibility.
 
@@ -104,7 +104,7 @@ def convert_polygon_to_cellstrings(
     # Process third zoom level (if not skipped)
     cellstring_z3 = (
         []
-        if skip_z21
+        if skip_finest_zoom
         else process_child_tiles(poly, fully_contained_z2, partially_contained_z2, zoom3)[0]
     )
 
