@@ -9,9 +9,13 @@ from db_setup.utils.db_utils import (
 
 
 # PostgreSQL implementation
-def convert_area_polygons_to_cs_postgres():
+def convert_area_polygons_to_cs_postgres(zoom_levels: tuple[int, int, int] = (13, 17, 21)):
     """
     Convert all area polygons in DB to cellstrings and upload to PostGIS.
+
+    Args:
+        zoom_levels: Tuple of (zoom1, zoom2, zoom3) where zoom1 < zoom2 < zoom3.
+                     Defaults to (13, 17, 21). Use (13, 17, 19) for large areas like EEZ.
     """
     from db_setup.utils.connect import connect_to_postgres_db
     from psycopg import sql
@@ -46,13 +50,15 @@ def convert_area_polygons_to_cs_postgres():
         polygon = from_wkb(geom_wkb)
 
         # Convert polygon to cellstring and insert into table
-        print("Converting polygon to cellstrings")
-        cellstring_z13, cellstring_z17, cellstring_z21 = convert_polygon_to_cellstrings(
-            polygon
+        print(f"Converting polygon to cellstrings at zoom levels {zoom_levels}")
+        cellstring_z1, cellstring_z2, cellstring_z3 = convert_polygon_to_cellstrings(
+            polygon, zoom_levels=zoom_levels
         )
 
         print(
-            f"Conversion of {name} succeeded with {len(cellstring_z13)} cells (zoom 13), {len(cellstring_z17)} cells (zoom 17), and {len(cellstring_z21)} cells (zoom 21)."
+            f"Conversion of {name} succeeded with {len(cellstring_z1)} cells (zoom {zoom_levels[0]}), "
+            f"{len(cellstring_z2)} cells (zoom {zoom_levels[1]}), and "
+            f"{len(cellstring_z3)} cells (zoom {zoom_levels[2]})."
         )
 
         cur.execute(
@@ -62,7 +68,7 @@ def convert_area_polygons_to_cs_postgres():
                 VALUES (%s, %s, %s, %s, %s)
             """
             ).format(cs_schema=sql.Identifier(cs_schema)),
-            (area_id, name, cellstring_z13, cellstring_z17, cellstring_z21),
+            (area_id, name, cellstring_z1, cellstring_z2, cellstring_z3),
         )
         conn.commit()
         print(f"Inserted area cellstrings for {name} into PostGIS table")
@@ -72,9 +78,13 @@ def convert_area_polygons_to_cs_postgres():
 
 
 # DuckDB implementation
-def convert_area_polygons_to_cs_duckdb():
+def convert_area_polygons_to_cs_duckdb(zoom_levels: tuple[int, int, int] = (13, 17, 21)):
     """
     Convert all area polygons in DB to cellstrings and upload to DuckDB.
+
+    Args:
+        zoom_levels: Tuple of (zoom1, zoom2, zoom3). DuckDB only stores zoom3 cells.
+                     Defaults to (13, 17, 21). Use (13, 17, 19) for large areas like EEZ.
     """
     import duckdb
     import pyarrow as pa
@@ -103,20 +113,22 @@ def convert_area_polygons_to_cs_duckdb():
         polygon = from_wkb(geom_wkb)
 
         # Convert polygon to cellstring and insert into table
-        print("Converting polygon to cellstrings")
-        _, _, cellstring_z21 = convert_polygon_to_cellstrings(polygon, skip_z21=False)
+        print(f"Converting polygon to cellstrings at zoom levels {zoom_levels}")
+        _, _, cellstring_finest = convert_polygon_to_cellstrings(
+            polygon, skip_z21=False, zoom_levels=zoom_levels
+        )
         print(
-            f"Conversion of {name} succeeded with {len(cellstring_z21)} cells (zoom 21)."
+            f"Conversion of {name} succeeded with {len(cellstring_finest)} cells (zoom {zoom_levels[2]})."
         )
 
-        if cellstring_z21:
+        if cellstring_finest:
             arrow_table = pa.table(
                 {
                     "area_id": pa.array(
-                        [area_id] * len(cellstring_z21), type=pa.int32()
+                        [area_id] * len(cellstring_finest), type=pa.int32()
                     ),
-                    "name": pa.array([name] * len(cellstring_z21), type=pa.string()),
-                    "cell_z21": pa.array(cellstring_z21, type=pa.uint64()),
+                    "name": pa.array([name] * len(cellstring_finest), type=pa.string()),
+                    "cell_z21": pa.array(cellstring_finest, type=pa.uint64()),
                 },
                 schema=AREA_CS_SCHEMA,
             )
@@ -131,9 +143,13 @@ def convert_area_polygons_to_cs_duckdb():
 
 def main():
     """
-    Convert all area polygons in DB to cellstrings and upload to PostGIS.
+    Convert all area polygons in DB to cellstrings and upload to database.
+
+    By default uses zoom levels (13, 17, 21). To use (13, 17, 19) for large areas,
+    modify the zoom_levels parameter in the function calls below.
     """
     db_backend = get_db_backend()
+    # Use zoom_levels=(13, 17, 19) for large areas like EEZ
     if db_backend == "postgresql":
         convert_area_polygons_to_cs_postgres()
     elif db_backend == "duckdb":

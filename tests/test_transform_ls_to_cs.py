@@ -319,6 +319,61 @@ class TestHierarchicalPolygonToCellString(unittest.TestCase):
         self.assertEqual(z17, [])
         self.assertEqual(z21, [])
 
+    def test_custom_zoom_levels_z19(self):
+        """Test custom zoom levels with z19 as the finest level."""
+        polygon = Polygon(
+            [
+                [10.314142022338359, 56.989841283038544],
+                [10.308192009866758, 56.96758619876718],
+                [10.32171476548396, 56.97466210465393],
+                [10.339564802898877, 56.97525170280585],
+                [10.343892084696563, 56.969650143499706],
+                [10.324419316607646, 56.9565274047078],
+                [10.341457988686244, 56.94753049842973],
+                [10.36390576301099, 56.96729134018483],
+                [10.378510339077962, 56.99617639075896],
+                [10.353087558517444, 56.99882797615109],
+                [10.347137546045786, 56.99043064087442],
+                [10.336860251775192, 56.97878909571352],
+                [10.32766477795559, 56.97937862853158],
+                [10.327935233067706, 56.98880988437111],
+                [10.314142022338359, 56.989841283038544],
+            ]
+        )
+
+        # Generate cellstrings at z13, z17, z19
+        z13, z17, z19 = convert_polygon_to_cellstrings(polygon, zoom_levels=(13, 17, 19))
+
+        # Verify we get results at all three zoom levels
+        self.assertGreater(len(z13), 0, "Should have z13 cells")
+        self.assertGreater(len(z17), 0, "Should have z17 cells")
+        self.assertGreater(len(z19), 0, "Should have z19 cells")
+
+        # z19 should have fewer cells than z21 but more than z17
+        z13_21, z17_21, z21 = convert_polygon_to_cellstrings(polygon, zoom_levels=(13, 17, 21))
+        self.assertGreater(len(z21), len(z19), "Z21 should have more cells than z19")
+        self.assertGreater(len(z19), len(z17), "Z19 should have more cells than z17")
+
+        # z13 and z17 should be the same regardless of finest zoom level
+        self.assertEqual(set(z13), set(z13_21), "Z13 cells should be the same")
+        self.assertEqual(set(z17), set(z17_21), "Z17 cells should be the same")
+
+    def test_custom_zoom_levels_validation(self):
+        """Test that zoom level validation works correctly."""
+        polygon = Polygon(
+            [[10.0, 57.0], [10.0, 58.0], [11.0, 58.0], [11.0, 57.0], [10.0, 57.0]]
+        )
+
+        # Should raise error for non-increasing zoom levels
+        with self.assertRaises(ValueError):
+            convert_polygon_to_cellstrings(polygon, zoom_levels=(17, 13, 21))
+
+        with self.assertRaises(ValueError):
+            convert_polygon_to_cellstrings(polygon, zoom_levels=(13, 21, 17))
+
+        with self.assertRaises(ValueError):
+            convert_polygon_to_cellstrings(polygon, zoom_levels=(13, 13, 21))
+
     def test_classify_tile_containment(self):
         """Test the classify_tile_containment helper function."""
         # Create a simple polygon

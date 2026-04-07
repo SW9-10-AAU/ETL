@@ -189,30 +189,96 @@ def get_all_children_at_zoom(
     return all_descendants
 
 
-def process_z13_tiles(
+def process_tiles_at_zoom(
     poly: Polygon | MultiPolygon,
+    zoom: int,
 ) -> tuple[list[int], list[mercantile.Tile], list[mercantile.Tile]]:
+    """
+    Process tiles at a given zoom level for a polygon.
+
+    Args:
+        poly: A Shapely Polygon or MultiPolygon
+        zoom: Zoom level to process
+
+    Returns:
+        Tuple of (cellstring, fully_contained_tiles, partially_contained_tiles)
+    """
     minx, miny, maxx, maxy = poly.bounds
-    z13_tiles = mercantile.tiles(minx, miny, maxx, maxy, 13)
+    tiles = mercantile.tiles(minx, miny, maxx, maxy, zoom)
 
-    cellstring_z13: list[int] = []
-    fully_contained_z13: list[mercantile.Tile] = []
-    partially_contained_z13: list[mercantile.Tile] = []
+    cellstring: list[int] = []
+    fully_contained: list[mercantile.Tile] = []
+    partially_contained: list[mercantile.Tile] = []
 
-    for tile in z13_tiles:
+    for tile in tiles:
         classification = classify_tile_containment(poly, tile)
 
         match classification:
             case Classification.FULLY_CONTAINED:
-                fully_contained_z13.append(tile)
+                fully_contained.append(tile)
             case Classification.PARTIALLY_CONTAINED:
-                partially_contained_z13.append(tile)
+                partially_contained.append(tile)
             case Classification.NO_INTERSECTION:
                 continue
 
-        cellstring_z13.append(xyz_to_quadkey_int(13, tile.x, tile.y))
+        cellstring.append(xyz_to_quadkey_int(zoom, tile.x, tile.y))
 
-    return cellstring_z13, fully_contained_z13, partially_contained_z13
+    return cellstring, fully_contained, partially_contained
+
+
+def process_z13_tiles(
+    poly: Polygon | MultiPolygon,
+) -> tuple[list[int], list[mercantile.Tile], list[mercantile.Tile]]:
+    """Process tiles at zoom level 13. Kept for backward compatibility."""
+    return process_tiles_at_zoom(poly, 13)
+
+
+def process_child_tiles(
+    poly: Polygon | MultiPolygon,
+    fully_contained_parent: list[mercantile.Tile],
+    partially_contained_parent: list[mercantile.Tile],
+    target_zoom: int,
+) -> tuple[list[int], list[mercantile.Tile], list[mercantile.Tile]]:
+    """
+    Process child tiles at target_zoom from parent tiles.
+
+    Args:
+        poly: A Shapely Polygon or MultiPolygon
+        fully_contained_parent: Parent tiles that are fully contained in the polygon
+        partially_contained_parent: Parent tiles that are partially contained in the polygon
+        target_zoom: Target zoom level for child tiles
+
+    Returns:
+        Tuple of (cellstring, fully_contained_tiles, partially_contained_tiles)
+    """
+    cellstring: list[int] = []
+    fully_contained: list[mercantile.Tile] = []
+    partially_contained: list[mercantile.Tile] = []
+
+    # Process fully contained parent tiles - all children are automatically included
+    for tile in fully_contained_parent:
+        children = get_all_children_at_zoom(tile, target_zoom)
+        for child in children:
+            cellstring.append(xyz_to_quadkey_int(target_zoom, child.x, child.y))
+            fully_contained.append(child)
+
+    # Process partially contained parent tiles - need to check each child
+    for tile in partially_contained_parent:
+        children = get_all_children_at_zoom(tile, target_zoom)
+        for child in children:
+            classification = classify_tile_containment(poly, child)
+
+            match classification:
+                case Classification.FULLY_CONTAINED:
+                    fully_contained.append(child)
+                case Classification.PARTIALLY_CONTAINED:
+                    partially_contained.append(child)
+                case Classification.NO_INTERSECTION:
+                    continue
+
+            cellstring.append(xyz_to_quadkey_int(target_zoom, child.x, child.y))
+
+    return cellstring, fully_contained, partially_contained
 
 
 def process_z17_tiles(
@@ -220,32 +286,8 @@ def process_z17_tiles(
     fully_contained_z13: list[mercantile.Tile],
     partially_contained_z13: list[mercantile.Tile],
 ) -> tuple[list[int], list[mercantile.Tile], list[mercantile.Tile]]:
-    cellstring_z17: list[int] = []
-    fully_contained_z17: list[mercantile.Tile] = []
-    partially_contained_z17: list[mercantile.Tile] = []
-
-    for tile in fully_contained_z13:
-        children_z17 = get_all_children_at_zoom(tile, 17)
-        for child in children_z17:
-            cellstring_z17.append(xyz_to_quadkey_int(17, child.x, child.y))
-            fully_contained_z17.append(child)
-
-    for tile in partially_contained_z13:
-        children_z17 = get_all_children_at_zoom(tile, 17)
-        for child in children_z17:
-            classification = classify_tile_containment(poly, child)
-
-            match classification:
-                case Classification.FULLY_CONTAINED:
-                    fully_contained_z17.append(child)
-                case Classification.PARTIALLY_CONTAINED:
-                    partially_contained_z17.append(child)
-                case Classification.NO_INTERSECTION:
-                    continue
-
-            cellstring_z17.append(xyz_to_quadkey_int(17, child.x, child.y))
-
-    return cellstring_z17, fully_contained_z17, partially_contained_z17
+    """Process tiles at zoom level 17 from z13 parent tiles. Kept for backward compatibility."""
+    return process_child_tiles(poly, fully_contained_z13, partially_contained_z13, 17)
 
 
 def process_z21_tiles(
@@ -253,27 +295,9 @@ def process_z21_tiles(
     fully_contained_z17: list[mercantile.Tile],
     partially_contained_z17: list[mercantile.Tile],
 ) -> list[int]:
-    cellstring_z21: list[int] = []
-
-    for tile in fully_contained_z17:
-        children_z21 = get_all_children_at_zoom(tile, 21)
-        for child in children_z21:
-            cellstring_z21.append(xyz_to_quadkey_int(21, child.x, child.y))
-
-    for tile in partially_contained_z17:
-        children_z21 = get_all_children_at_zoom(tile, 21)
-        for child in children_z21:
-            classification = classify_tile_containment(poly, child)
-
-            match classification:
-                case (
-                    Classification.FULLY_CONTAINED | Classification.PARTIALLY_CONTAINED
-                ):
-                    cellstring_z21.append(xyz_to_quadkey_int(21, child.x, child.y))
-                case Classification.NO_INTERSECTION:
-                    continue
-
-    return cellstring_z21
+    """Process tiles at zoom level 21 from z17 parent tiles. Kept for backward compatibility."""
+    cellstring, _, _ = process_child_tiles(poly, fully_contained_z17, partially_contained_z17, 21)
+    return cellstring
 
 
 # ---- Deprecated encoding functions ----

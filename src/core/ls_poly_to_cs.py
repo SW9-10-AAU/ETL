@@ -5,9 +5,8 @@ from shapely import LineString, MultiPolygon, Polygon, box, from_wkb
 from core.cellstring_utils import (
     DEFAULT_ZOOM,
     linecover,
-    process_z13_tiles,
-    process_z17_tiles,
-    process_z21_tiles,
+    process_tiles_at_zoom,
+    process_child_tiles,
     xyz_to_quadkey_int,
 )
 
@@ -67,33 +66,49 @@ def convert_linestring_to_cellids(
 
 
 def convert_polygon_to_cellstrings(
-    poly: Polygon | MultiPolygon, skip_z21: bool = False
+    poly: Polygon | MultiPolygon,
+    skip_z21: bool = False,
+    zoom_levels: tuple[int, int, int] = (13, 17, 21)
 ) -> tuple[list[int], list[int], list[int]]:
     """
-    Convert Polygon or MultiPolygon to CellStrings at z13, z17, and z21.
+    Convert Polygon or MultiPolygon to CellStrings at configurable zoom levels.
 
     Args:
         poly: A Shapely Polygon or MultiPolygon to convert
+        skip_z21: If True, skip the finest zoom level (for backward compatibility)
+        zoom_levels: Tuple of (zoom1, zoom2, zoom3) where zoom1 < zoom2 < zoom3.
+                     Defaults to (13, 17, 21) for backward compatibility.
 
     Returns:
-        Tuple of (cellstring_z13, cellstring_z17, cellstring_z21)
+        Tuple of (cellstring_zoom1, cellstring_zoom2, cellstring_zoom3)
     """
     if poly.is_empty:
         return ([], [], [])
 
-    cellstring_z13, fully_contained_z13, partially_contained_z13 = process_z13_tiles(
-        poly
-    )
-    cellstring_z17, fully_contained_z17, partially_contained_z17 = process_z17_tiles(
-        poly, fully_contained_z13, partially_contained_z13
-    )
-    cellstring_z21 = (
-        []
-        if skip_z21
-        else process_z21_tiles(poly, fully_contained_z17, partially_contained_z17)
+    zoom1, zoom2, zoom3 = zoom_levels
+
+    # Validate zoom levels
+    if not (zoom1 < zoom2 < zoom3):
+        raise ValueError(f"Zoom levels must be strictly increasing: {zoom1} < {zoom2} < {zoom3}")
+
+    # Process first zoom level
+    cellstring_z1, fully_contained_z1, partially_contained_z1 = process_tiles_at_zoom(
+        poly, zoom1
     )
 
-    return cellstring_z13, cellstring_z17, cellstring_z21
+    # Process second zoom level
+    cellstring_z2, fully_contained_z2, partially_contained_z2 = process_child_tiles(
+        poly, fully_contained_z1, partially_contained_z1, zoom2
+    )
+
+    # Process third zoom level (if not skipped)
+    cellstring_z3 = (
+        []
+        if skip_z21
+        else process_child_tiles(poly, fully_contained_z2, partially_contained_z2, zoom3)[0]
+    )
+
+    return cellstring_z1, cellstring_z2, cellstring_z3
 
 
 def deprecated_convert_polygon_to_cellstring(

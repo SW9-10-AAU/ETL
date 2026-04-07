@@ -12,7 +12,12 @@ from convert_area_polygon import (
 from db_setup.utils.db_utils import get_db_backend
 
 
-def convert_area_geojson_to_cs(geojson_path: str, name: str, skip_z21: bool = False):
+def convert_area_geojson_to_cs(
+    geojson_path: str,
+    name: str,
+    skip_z21: bool = False,
+    zoom_levels: tuple[int, int, int] = (13, 17, 21)
+):
     """
     Loads a GeoJSON file and converts its geometry to cellstrings.
 
@@ -22,11 +27,14 @@ def convert_area_geojson_to_cs(geojson_path: str, name: str, skip_z21: bool = Fa
     Args:
         geojson_path: Path to GeoJSON file
         name: Name to store the area under in the database
+        skip_z21: If True, skip the finest zoom level
+        zoom_levels: Tuple of (zoom1, zoom2, zoom3) where zoom1 < zoom2 < zoom3.
+                     Defaults to (13, 17, 21).
     """
     db_backend = get_db_backend()
 
     if db_backend == "duckdb" and skip_z21:
-        print("DuckDB requires z21 cells; overriding skip_z21=False.")
+        print(f"DuckDB requires finest zoom level (z{zoom_levels[2]}) cells; overriding skip_z21=False.")
         skip_z21 = False
 
     # Load GeoJSON file
@@ -64,26 +72,45 @@ def convert_area_geojson_to_cs(geojson_path: str, name: str, skip_z21: bool = Fa
             f"MultiPolygon contains {num_polygons} polygon(s) with {total_points} total points"
         )
         if db_backend == "postgresql":
-            convert_area_polygon_to_cs_postgresql(multiPolygon, name, skip_z21=skip_z21)
+            convert_area_polygon_to_cs_postgresql(
+                multiPolygon, name, skip_z21=skip_z21, zoom_levels=zoom_levels
+            )
         elif db_backend == "duckdb":
-            convert_area_polygon_to_cs_duckdb(multiPolygon, name, skip_z21=skip_z21)
+            convert_area_polygon_to_cs_duckdb(
+                multiPolygon, name, skip_z21=skip_z21, zoom_levels=zoom_levels
+            )
     else:
         poly: Polygon = cast(Polygon, geometry)
         print(f"Polygon contains {len(poly.exterior.coords)} points")
         if db_backend == "postgresql":
-            convert_area_polygon_to_cs_postgresql(poly, name, skip_z21=skip_z21)
+            convert_area_polygon_to_cs_postgresql(
+                poly, name, skip_z21=skip_z21, zoom_levels=zoom_levels
+            )
         elif db_backend == "duckdb":
-            convert_area_polygon_to_cs_duckdb(poly, name, skip_z21=skip_z21)
+            convert_area_polygon_to_cs_duckdb(
+                poly, name, skip_z21=skip_z21, zoom_levels=zoom_levels
+            )
 
 
 def main():
     """
     Load Denmark EEZ from GeoJSON and convert to cellstrings.
+
+    For large areas like EEZ, use zoom_levels=(13, 17, 19) instead of (13, 17, 21)
+    to reduce the number of cells and improve CoverageByMMSI query performance.
+
+    Example:
+        # Use z19 for EEZ (large area)
+        convert_area_geojson_to_cs(geojson_path, name, zoom_levels=(13, 17, 19))
+
+        # Use z21 for smaller areas (default)
+        convert_area_geojson_to_cs(geojson_path, name)
     """
     geojson_path = "./geojson/Denmark_EEZ_gml.geojson"
     name = "Denmark-EEZ"
 
-    convert_area_geojson_to_cs(geojson_path, name, skip_z21=True)
+    # Use z19 for large areas like EEZ to reduce cell count
+    convert_area_geojson_to_cs(geojson_path, name, zoom_levels=(13, 17, 19))
 
 
 if __name__ == "__main__":

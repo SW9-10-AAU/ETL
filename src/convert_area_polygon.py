@@ -10,7 +10,10 @@ from core.ls_poly_to_cs import convert_polygon_to_cellstrings
 
 # PostgreSQL implementation
 def convert_area_polygon_to_cs_postgresql(
-    polygon: Polygon | MultiPolygon, name: str, skip_z21: bool = False
+    polygon: Polygon | MultiPolygon,
+    name: str,
+    skip_z21: bool = False,
+    zoom_levels: tuple[int, int, int] = (13, 17, 21)
 ):
     """
     Converts a Polygon or MultiPolygon to CellStrings and inserts both into PostGIS tables.
@@ -18,6 +21,9 @@ def convert_area_polygon_to_cs_postgresql(
     Args:
         polygon: A Shapely Polygon or MultiPolygon representing the area
         name: A unique identifier for this area
+        skip_z21: If True, skip the finest zoom level
+        zoom_levels: Tuple of (zoom1, zoom2, zoom3) where zoom1 < zoom2 < zoom3.
+                     Defaults to (13, 17, 21).
     """
     from db_setup.utils.connect import connect_to_postgres_db
     from psycopg import sql
@@ -46,12 +52,14 @@ def convert_area_polygon_to_cs_postgresql(
     print(f"Inserted area polygon (ID: {area_id}, Name: {name}) into PostGIS table")
 
     # Convert polygon to cellstring and insert into table
-    print("Converting polygon to cellstrings")
-    cellstring_z13, cellstring_z17, cellstring_z21 = convert_polygon_to_cellstrings(
-        polygon, skip_z21=skip_z21
+    print(f"Converting polygon to cellstrings at zoom levels {zoom_levels}")
+    cellstring_z1, cellstring_z2, cellstring_z3 = convert_polygon_to_cellstrings(
+        polygon, skip_z21=skip_z21, zoom_levels=zoom_levels
     )
     print(
-        f"Conversion succeeded with {len(cellstring_z13)} cells (zoom 13), {len(cellstring_z17)} cells (zoom 17), and {len(cellstring_z21)} cells (zoom 21)."
+        f"Conversion succeeded with {len(cellstring_z1)} cells (zoom {zoom_levels[0]}), "
+        f"{len(cellstring_z2)} cells (zoom {zoom_levels[1]}), and "
+        f"{len(cellstring_z3)} cells (zoom {zoom_levels[2]})."
     )
 
     cur.execute(
@@ -61,7 +69,7 @@ def convert_area_polygon_to_cs_postgresql(
             VALUES (%s, %s, %s, %s, %s)
         """
         ).format(cs_schema=sql.Identifier(cs_schema)),
-        (area_id, name, cellstring_z13, cellstring_z17, cellstring_z21),
+        (area_id, name, cellstring_z1, cellstring_z2, cellstring_z3),
     )
     print(f"Inserted area cellstrings (ID: {area_id}, Name: {name}) into PostGIS table")
     conn.commit()
@@ -74,7 +82,10 @@ def convert_area_polygon_to_cs_postgresql(
 
 # DuckDB implementation
 def convert_area_polygon_to_cs_duckdb(
-    polygon: Polygon | MultiPolygon, name: str, skip_z21: bool = False
+    polygon: Polygon | MultiPolygon,
+    name: str,
+    skip_z21: bool = False,
+    zoom_levels: tuple[int, int, int] = (13, 17, 21)
 ):
     """
     Converts a Polygon or MultiPolygon to CellStrings and inserts both into DuckDB tables.
@@ -82,7 +93,9 @@ def convert_area_polygon_to_cs_duckdb(
     Args:
         polygon: A Shapely Polygon or MultiPolygon representing the area
         name: A unique identifier for this area
-        duckdb_path: Path to DuckDB database file
+        skip_z21: If True, skip the finest zoom level (ignored for DuckDB)
+        zoom_levels: Tuple of (zoom1, zoom2, zoom3). DuckDB only stores zoom3 cells.
+                     Defaults to (13, 17, 21).
     """
     import duckdb
     import pyarrow as pa
@@ -94,7 +107,7 @@ def convert_area_polygon_to_cs_duckdb(
     conn = duckdb.connect(duckdb_path)
 
     if skip_z21:
-        print("DuckDB requires z21 cells; ignoring skip_z21=True.")
+        print(f"DuckDB requires finest zoom level (z{zoom_levels[2]}) cells; ignoring skip_z21=True.")
         skip_z21 = False
 
     # Insert area polygon as geom from WKB
@@ -111,16 +124,18 @@ def convert_area_polygon_to_cs_duckdb(
     area_id = int(area_row[0])
     print(f"Inserted area polygon (ID: {area_id}, Name: {name}) into DuckDB table")
 
-    print("Converting polygon to cellstring(s)")
-    _, _, cellstring_z21 = convert_polygon_to_cellstrings(polygon, skip_z21=skip_z21)
-    print(f"Conversion succeeded with {len(cellstring_z21)} cells (zoom 21).")
+    print(f"Converting polygon to cellstring(s) at zoom levels {zoom_levels}")
+    _, _, cellstring_finest = convert_polygon_to_cellstrings(
+        polygon, skip_z21=skip_z21, zoom_levels=zoom_levels
+    )
+    print(f"Conversion succeeded with {len(cellstring_finest)} cells (zoom {zoom_levels[2]}).")
 
-    if cellstring_z21:
+    if cellstring_finest:
         arrow_table = pa.table(
             {
-                "area_id": pa.array([area_id] * len(cellstring_z21), type=pa.int32()),
-                "name": pa.array([name] * len(cellstring_z21), type=pa.string()),
-                "cell_z21": pa.array(cellstring_z21, type=pa.uint64()),
+                "area_id": pa.array([area_id] * len(cellstring_finest), type=pa.int32()),
+                "name": pa.array([name] * len(cellstring_finest), type=pa.string()),
+                "cell_z21": pa.array(cellstring_finest, type=pa.uint64()),
             },
             schema=AREA_CS_SCHEMA,
         )
@@ -144,6 +159,16 @@ def main():
     You can draw on a map using these tools:
     - https://geojson.io/#map=6.47/55.777/10.723
     - https://www.keene.edu/campus/maps/tool/
+
+    To generate area coverage at zoom 19 instead of 21, pass zoom_levels=(13, 17, 19).
+    This is useful for large areas like EEZ where z21 would be too granular.
+
+    Example usage:
+        # Default zoom levels (13, 17, 21)
+        convert_area_polygon_to_cs_postgresql(polygon, name)
+
+        # For large areas like EEZ, use z19 as the finest level
+        convert_area_polygon_to_cs_postgresql(polygon, name, zoom_levels=(13, 17, 19))
     """
     name = "Hals-Egense"
     polygon = Polygon(
@@ -160,12 +185,17 @@ def main():
         ]
     )
 
+    # Set to True to use z19 instead of z21 for large areas
+    use_z19_for_large_areas = False
+
+    zoom_levels = (13, 17, 19) if use_z19_for_large_areas else (13, 17, 21)
+
     db = get_db_backend()
 
     if db == "postgresql":
-        convert_area_polygon_to_cs_postgresql(polygon, name)
+        convert_area_polygon_to_cs_postgresql(polygon, name, zoom_levels=zoom_levels)
     elif db == "duckdb":
-        convert_area_polygon_to_cs_duckdb(polygon, name)
+        convert_area_polygon_to_cs_duckdb(polygon, name, zoom_levels=zoom_levels)
 
 
 if __name__ == "__main__":
