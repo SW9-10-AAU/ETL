@@ -65,7 +65,7 @@ def linecover(
     """
     cells_with_time: list[tuple[int, int]] = []
     prev_cell_id: int | None = None
-    
+
     coords = list(ls.coords)
     for i in range(len(coords) - 1):
         x0_f, y0_f = _point_to_tile_fraction(coords[i][0], coords[i][1], zoom)
@@ -80,7 +80,8 @@ def linecover(
         dx = x1_f - x0_f
         dy = y1_f - y0_f
 
-        if dx == 0 and dy == 0:
+        # We only skip identical consecutive points if we have emitted at least one cell already (prev_cell_id is not None)
+        if dx == 0 and dy == 0 and prev_cell_id is not None:
             continue
 
         sx = 1 if dx > 0 else -1
@@ -114,7 +115,9 @@ def linecover(
         # Linear interpolation of timestamps across all cells in this segment
         num_cells = len(segment_cells)
         for idx, cell_id in enumerate(segment_cells):
-            if (num_cells == 1):  # If the start and end points are in the same cell, we duplicate the cell, but with different timestamps
+            if (
+                num_cells == 1
+            ):  # If the start and end points are in the same cell, we duplicate the cell, but with different timestamps
                 if cell_id != prev_cell_id:
                     cells_with_time.append((cell_id, ts_segment_start))
                     prev_cell_id = cell_id
@@ -128,7 +131,7 @@ def linecover(
             if cell_id != prev_cell_id:
                 cells_with_time.append((cell_id, interpolated_ts))
                 prev_cell_id = cell_id
-                     
+
     return cells_with_time
 
 

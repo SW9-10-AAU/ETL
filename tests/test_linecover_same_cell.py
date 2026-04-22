@@ -63,7 +63,7 @@ class TestLinecoverSameCell(unittest.TestCase):
 
         self.assertGreater(len(cells), 0)
         self.assertEqual(len(cells), len(set(cells)))
-        
+
     def test_only_first_timestamp_cell(self):
         """Test that when multiple points map to the same cell, only the entering timestamp is kept."""
         linestring = LineString(
@@ -73,65 +73,85 @@ class TestLinecoverSameCell(unittest.TestCase):
                 (10.0000002, 55.0000002, 1020),
             ]
         )
-        
+
         cells = convert_linestring_to_cellstring(linestring, zoom=21)
 
         # All 3 points are so close they map to the same cell at zoom 21
         # Should return only 1 cell with the entering (first) timestamp
         self.assertEqual(len(cells), 1)
-        
+
         # Verify the cell has the first timestamp (1000), not later ones
         cell_id, timestamp = cells[0]
         self.assertEqual(timestamp, 1000)
-        
-        
-        
+
+    def test_only_first_timestamp_cell_indentical_points(self):
+        """Test that when multiple identical points map to the same cell, only the entering timestamp is kept."""
+        linestring = LineString(
+            [
+                (10.0, 55.0, 1000),
+                (10.0, 55.0, 1010),
+                (10.0, 55.0, 1020),
+                (10.0, 55.0, 1030),
+            ]
+        )
+
+        cells = convert_linestring_to_cellstring(linestring, zoom=21)
+
+        # All 4 points are identical and map to the same cell at zoom 21
+        # Should return only 1 cell with the entering (first) timestamp
+        self.assertEqual(len(cells), 1)
+
+        # Verify the cell has the first timestamp (1000), not later ones
+        cell_id, timestamp = cells[0]
+        self.assertEqual(timestamp, 1000)
+
     def test_ship_returns_to_cell_after_leaving(self):
         """Test that visiting the same cell multiple times keeps all non-consecutive entries.
-        
+
         Simulates a ship that:
         - Starts in cell A (points 1-3)
         - Leaves cell A and visits cells B, C
         - Returns to cell A later
-        
-        Expected behavior: Both entries to cell A are kept, but consecutive 
+
+        Expected behavior: Both entries to cell A are kept, but consecutive
         duplicates within the same cell are discarded.
         """
         linestring = LineString(
             [
                 # Movement 1: Ship enters cell A
                 (10.0, 55.0, 1000),
-                (10.00001, 55.00001, 1005),     # Stay in cell A (discard)
-                (10.00002, 55.00002, 1010),     # Stay in cell A (discard)
+                (10.00001, 55.00001, 1005),  # Stay in cell A (discard)
+                (10.00002, 55.00002, 1010),  # Stay in cell A (discard)
                 # Movement 2: Ship leaves cell A
-                (10.0003, 55.0, 1020),              # Enter cell B
-                (10.0003, 55.0, 1030),              # Enter cell B (discard)
+                (10.0003, 55.0, 1020),  # Enter cell B
+                (10.0003, 55.0, 1030),  # Enter cell B (discard)
                 # Movement 3: Ship returns to cell A
-                (10.0, 55.0, 1040),              # Re-enter cell A (KEEP - not consecutive)
-                (10.00001, 55.00001, 1045),     # Stay in cell A (discard)
+                (10.0, 55.0, 1040),  # Re-enter cell A (KEEP - not consecutive)
+                (10.00001, 55.00001, 1045),  # Stay in cell A (discard)
             ]
         )
-        
+
         cells = convert_linestring_to_cellstring(linestring, zoom=21)
-        
-       
+
         # Should have at least 4 distinct visits:
         # 1. Cell A at t=1000 (first entry)
         # 2. Cell B at t=1020 (leaves A)
         # 3. Cell A at t=1040 (returns to A)
         self.assertEqual(len(cells), 3)
-        
+
         # Verify the pattern: first and last cell should be the same (same area)
         first_cell_id = cells[0][0]
         last_cell_id = cells[-1][0]
-        self.assertEqual(first_cell_id, last_cell_id, 
-                        "Ship should enter and re-enter the same cell")
-        
+        self.assertEqual(
+            first_cell_id, last_cell_id, "Ship should enter and re-enter the same cell"
+        )
+
         # Verify timestamps make sense
         first_ts = cells[0][1]
         last_ts = cells[-1][1]
         self.assertEqual(first_ts, 1000)
         self.assertGreaterEqual(last_ts, 1040)
+
 
 if __name__ == "__main__":
     unittest.main()
