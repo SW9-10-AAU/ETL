@@ -84,6 +84,27 @@ class TestLinecoverSameCell(unittest.TestCase):
         cell_id, timestamp = cells[0]
         self.assertEqual(timestamp, 1000)
 
+    def test_only_first_timestamp_cell_indentical_points(self):
+        """Test that when multiple identical points map to the same cell, only the entering timestamp is kept."""
+        linestring = LineString(
+            [
+                (10.0, 55.0, 1000),
+                (10.0, 55.0, 1010),
+                (10.0, 55.0, 1020),
+                (10.0, 55.0, 1030),
+            ]
+        )
+
+        cells = convert_linestring_to_cellstring(linestring, zoom=21)
+
+        # All 4 points are identical and map to the same cell at zoom 21
+        # Should return only 1 cell with the entering (first) timestamp
+        self.assertEqual(len(cells), 1)
+
+        # Verify the cell has the first timestamp (1000), not later ones
+        cell_id, timestamp = cells[0]
+        self.assertEqual(timestamp, 1000)
+
     def test_ship_returns_to_cell_after_leaving(self):
         """Test that visiting the same cell multiple times keeps all non-consecutive entries.
 
