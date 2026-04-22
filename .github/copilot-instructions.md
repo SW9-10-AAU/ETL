@@ -38,10 +38,10 @@ ETL/
 │   ├── duckdb_transform_ls_to_cs.py
 │   ├── pg_construct_trajs_stops.py
 │   ├── pg_transform_ls_to_cs.py
-│   ├── convert_area_geojson.py
-│   ├── convert_area_polygon.py
-│   ├── convert_area_polygons_to_cellstring.py
-│   ├── convert_crossing_linestring.py
+│   ├── convert_region_geojson.py
+│   ├── convert_region_polygon.py
+│   ├── convert_region_polygons_to_cellstring.py
+│   ├── convert_passage_linestring.py
 │   ├── core/
 │   │   ├── points_to_ls_poly.py
 │   │   ├── ls_poly_to_cs.py
@@ -57,8 +57,8 @@ ETL/
 │       │   ├── create_postgresql_tables.py
 │       │   ├── create_ls_traj_stop_tables.py
 │       │   ├── create_cs_traj_stop_tables.py
-│       │   ├── create_area_tables.py
-│       │   ├── create_crossing_tables.py
+│       │   ├── create_region_tables.py
+│       │   ├── create_passage_tables.py
 │       │   ├── mat_points_view.py
 │       │   └── drop_postgresql_tables.py
 │       └── utils/
