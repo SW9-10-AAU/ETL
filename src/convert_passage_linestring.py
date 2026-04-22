@@ -131,19 +131,28 @@ def main():
     - https://geojson.io/#map=6.47/55.777/10.723
     - https://www.keene.edu/campus/maps/tool/
     """
-    name = "Bornholm"
-    linestring = LineString(
-        [
-            [14.376500767303753, 55.43940778019655],
-            [14.713765894365793, 55.30487796624158],
-        ]
-    )
+    passages = [
+        ("Skagen", [[10.6547341, 57.7469023], [11.6832043, 57.8390526]]),
+        ("Kiel", [[10.6398103, 54.707243], [10.7675855, 54.518765]]),
+        ("Storebælt Nord", [[10.6218303, 55.7653698], [10.8689216, 55.7433214]]),
+        ("Storebælt Syd", [[10.7168396, 54.727667], [10.9955755, 54.7712645]]),
+        ("Sundet Nord", [[12.2843156, 56.1277941], [12.4463371, 56.3009201]]),
+        ("Sundet Syd", [[12.4472826, 55.2994701], [12.812782, 55.3828301]]),
+        ("Bornholms Gate", [[14.2737822, 55.4560996], [14.7232539, 55.2377075]]),
+        ("Kadetrenden", [[11.9681072, 54.5605233], [12.4027844, 54.3751052]]),
+        ("Fynshoved", [[10.5992236, 55.6179156], [10.6111518, 55.7628973]]),
+        ("Lillebælt Nord", [[10.0298125, 55.6977269], [10.1637184, 55.6449764]]),
+        ("Lillebælt Syd", [[10.4195311, 54.8146529], [9.9537696, 54.7766516]]),
+        ("Bornholm Syd", [[14.8267825, 55.0423356], [14.8352947, 54.4869928]]),
+    ]
 
     db_backend = get_db_backend()
-    if db_backend == "postgresql":
-        convert_passage_linestring_to_cs_postgres(linestring, name)
-    elif db_backend == "duckdb":
-        convert_passage_linestring_to_cs_duckdb(linestring, name)
+    for name, coords in passages:
+        linestring = LineString(coords)
+        if db_backend == "postgresql":
+            convert_passage_linestring_to_cs_postgres(linestring, name)
+        elif db_backend == "duckdb":
+            convert_passage_linestring_to_cs_duckdb(linestring, name)
 
 
 if __name__ == "__main__":
