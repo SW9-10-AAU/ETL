@@ -63,50 +63,50 @@ def create_duckdb_tables(
     """
     )
 
-    # area poly
+    # region poly
     conn.execute(
         f"""
-        CREATE SEQUENCE IF NOT EXISTS {ls_schema}.area_poly_seq START 1;
-        CREATE TABLE IF NOT EXISTS {ls_schema}.area_poly
+        CREATE SEQUENCE IF NOT EXISTS {ls_schema}.region_poly_seq START 1;
+        CREATE TABLE IF NOT EXISTS {ls_schema}.region_poly
         (
-            area_id      INTEGER PRIMARY KEY DEFAULT nextval('{ls_schema}.area_poly_seq'),
+            region_id      INTEGER PRIMARY KEY DEFAULT nextval('{ls_schema}.region_poly_seq'),
             name         TEXT NOT NULL,
             geom         GEOMETRY NOT NULL
         );
     """
     )
 
-    # area cs
+    # region cs
     conn.execute(
         f"""
-        CREATE TABLE IF NOT EXISTS {cs_schema}.area_cs
+        CREATE TABLE IF NOT EXISTS {cs_schema}.region_cs
         (
-            area_id      INTEGER NOT NULL,
+            region_id      INTEGER NOT NULL,
             name         TEXT NOT NULL,
             cell_z21     UINT64 NOT NULL
         );
     """
     )
 
-    # crossing ls
+    # passage ls
     conn.execute(
         f"""
-        CREATE SEQUENCE IF NOT EXISTS {ls_schema}.crossing_ls_seq START 1;
-        CREATE TABLE IF NOT EXISTS {ls_schema}.crossing_ls
+        CREATE SEQUENCE IF NOT EXISTS {ls_schema}.passage_ls_seq START 1;
+        CREATE TABLE IF NOT EXISTS {ls_schema}.passage_ls
         (
-            crossing_id  INTEGER PRIMARY KEY DEFAULT nextval('{ls_schema}.crossing_ls_seq'),
+            passage_id  INTEGER PRIMARY KEY DEFAULT nextval('{ls_schema}.passage_ls_seq'),
             name         TEXT NOT NULL,
             geom         GEOMETRY NOT NULL
         );
     """
     )
 
-    # crossing cs
+    # passage cs
     conn.execute(
         f"""
-        CREATE TABLE IF NOT EXISTS {cs_schema}.crossing_cs
+        CREATE TABLE IF NOT EXISTS {cs_schema}.passage_cs
         (
-            crossing_id  INTEGER NOT NULL,
+            passage_id  INTEGER NOT NULL,
             name         TEXT NOT NULL,
             cell_z21     UINT64 NOT NULL
         );
@@ -122,14 +122,14 @@ def create_duckdb_tables(
         CREATE INDEX IF NOT EXISTS stop_poly_geom_rtree_idx
         ON {ls_schema}.stop_poly USING RTREE (geom);
 
-        CREATE INDEX IF NOT EXISTS area_poly_geom_rtree_idx
-        ON {ls_schema}.area_poly USING RTREE (geom);
+        CREATE INDEX IF NOT EXISTS region_poly_geom_rtree_idx
+        ON {ls_schema}.region_poly USING RTREE (geom);
 
-        CREATE INDEX IF NOT EXISTS crossing_ls_geom_rtree_idx
-        ON {ls_schema}.crossing_ls USING RTREE (geom);
+        CREATE INDEX IF NOT EXISTS passage_ls_geom_rtree_idx
+        ON {ls_schema}.passage_ls USING RTREE (geom);
     """
     )
 
     print(
-        f"Created DuckDB tables (trajectory_ls, stop_poly, area_poly, crossing_ls) in schema '{ls_schema}' and CellString tables (trajectory_cs, stop_cs, area_cs, crossing_cs) in schema '{cs_schema}'."
+        f"Created DuckDB tables (trajectory_ls, stop_poly, region_poly, passage_ls) in schema '{ls_schema}' and CellString tables (trajectory_cs, stop_cs, region_cs, passage_cs) in schema '{cs_schema}'."
     )

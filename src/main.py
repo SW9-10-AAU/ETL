@@ -95,13 +95,13 @@ def main_duckdb():
         should_drop_ls_tables = should_run_step_with_fallback(
             env_var="ETL_DROP_LS",
             fallback_env_var="ETL_DROP",
-            prompt_text="Do you want to drop LineString tables (points, trajectory_ls, stop_poly, area_poly, crossing_ls)?",
+            prompt_text="Do you want to drop LineString tables (points, trajectory_ls, stop_poly, region_poly, passage_ls)?",
             default_yes=False,
         )
         should_drop_cs_tables = should_run_step_with_fallback(
             env_var="ETL_DROP_CS",
             fallback_env_var="ETL_DROP",
-            prompt_text="Do you want to drop CellString tables (trajectory_cs, stop_cs, area_cs, crossing_cs)?",
+            prompt_text="Do you want to drop CellString tables (trajectory_cs, stop_cs, region_cs, passage_cs)?",
             default_yes=False,
         )
         if should_drop_ls_tables or should_drop_cs_tables:
@@ -181,13 +181,13 @@ def main_postgres():
     should_drop_ls_tables = should_run_step_with_fallback(
         env_var="ETL_DROP_LS",
         fallback_env_var="ETL_DROP",
-        prompt_text="Do you want to drop LineString tables (points, trajectory_ls, stop_poly, area_poly, crossing_ls)?",
+        prompt_text="Do you want to drop LineString tables (points, trajectory_ls, stop_poly, region_poly, passage_ls)?",
         default_yes=False,
     )
     should_drop_cs_tables = should_run_step_with_fallback(
         env_var="ETL_DROP_CS",
         fallback_env_var="ETL_DROP",
-        prompt_text="Do you want to drop CellString tables (trajectory_cs, stop_cs, area_cs, crossing_cs)?",
+        prompt_text="Do you want to drop CellString tables (trajectory_cs, stop_cs, region_cs, passage_cs)?",
         default_yes=False,
     )
     if should_drop_ls_tables or should_drop_cs_tables:

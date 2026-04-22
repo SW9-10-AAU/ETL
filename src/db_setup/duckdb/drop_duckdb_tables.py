@@ -19,11 +19,11 @@ def drop_duckdb_tables(
         cur.execute(f"DROP SEQUENCE IF EXISTS {ls_schema}.trajectory_ls_seq;")
         cur.execute(f"DROP SEQUENCE IF EXISTS {ls_schema}.stop_poly_seq;")
 
-        cur.execute(f"DROP TABLE IF EXISTS {ls_schema}.area_poly;")
-        cur.execute(f"DROP SEQUENCE IF EXISTS {ls_schema}.area_poly_seq;")
+        cur.execute(f"DROP TABLE IF EXISTS {ls_schema}.region_poly;")
+        cur.execute(f"DROP SEQUENCE IF EXISTS {ls_schema}.region_poly_seq;")
 
-        cur.execute(f"DROP TABLE IF EXISTS {ls_schema}.crossing_ls;")
-        cur.execute(f"DROP SEQUENCE IF EXISTS {ls_schema}.crossing_ls_seq;")
+        cur.execute(f"DROP TABLE IF EXISTS {ls_schema}.passage_ls;")
+        cur.execute(f"DROP SEQUENCE IF EXISTS {ls_schema}.passage_ls_seq;")
 
         print(
             f"Dropped LineString tables and sequences in DuckDB schema '{ls_schema}'."
@@ -32,8 +32,8 @@ def drop_duckdb_tables(
     if drop_cs_tables:
         cur.execute(f"DROP TABLE IF EXISTS {cs_schema}.trajectory_cs;")
         cur.execute(f"DROP TABLE IF EXISTS {cs_schema}.stop_cs;")
-        cur.execute(f"DROP TABLE IF EXISTS {cs_schema}.area_cs;")
-        cur.execute(f"DROP TABLE IF EXISTS {cs_schema}.crossing_cs;")
+        cur.execute(f"DROP TABLE IF EXISTS {cs_schema}.region_cs;")
+        cur.execute(f"DROP TABLE IF EXISTS {cs_schema}.passage_cs;")
         print(f"Dropped CellString tables in DuckDB schema '{cs_schema}'.")
 
     conn.commit()

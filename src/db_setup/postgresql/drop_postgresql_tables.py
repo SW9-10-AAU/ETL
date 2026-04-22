@@ -29,13 +29,13 @@ def drop_postgresql_tables(
         )
 
         cur.execute(
-            sql.SQL("DROP TABLE IF EXISTS {db_schema}.area_poly;").format(
+            sql.SQL("DROP TABLE IF EXISTS {db_schema}.region_poly;").format(
                 db_schema=sql.Identifier(ls_schema)
             )
         )
 
         cur.execute(
-            sql.SQL("DROP TABLE IF EXISTS {db_schema}.crossing_ls;").format(
+            sql.SQL("DROP TABLE IF EXISTS {db_schema}.passage_ls;").format(
                 db_schema=sql.Identifier(ls_schema)
             )
         )
@@ -56,12 +56,12 @@ def drop_postgresql_tables(
             )
         )
         cur.execute(
-            sql.SQL("DROP TABLE IF EXISTS {db_schema}.area_cs;").format(
+            sql.SQL("DROP TABLE IF EXISTS {db_schema}.region_cs;").format(
                 db_schema=sql.Identifier(cs_schema)
             )
         )
         cur.execute(
-            sql.SQL("DROP TABLE IF EXISTS {db_schema}.crossing_cs;").format(
+            sql.SQL("DROP TABLE IF EXISTS {db_schema}.passage_cs;").format(
                 db_schema=sql.Identifier(cs_schema)
             )
         )
