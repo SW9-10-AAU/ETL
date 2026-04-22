@@ -81,6 +81,11 @@ def linecover(
         dy = y1_f - y0_f
 
         if dx == 0 and dy == 0:
+        # Handle identical start and end points
+            cell_id = xyz_to_quadkey_int(zoom, math.floor(x0_f), math.floor(y0_f))
+            if cell_id != prev_cell_id:
+                cells_with_time.append((cell_id, ts_segment_start))
+                prev_cell_id = cell_id
             continue
 
         sx = 1 if dx > 0 else -1
@@ -97,7 +102,7 @@ def linecover(
         )
         tdx = float("inf") if dx == 0 else abs(sx / dx)
         tdy = float("inf") if dy == 0 else abs(sy / dy)
-
+        
         # Emit the first cell
         segment_cells.append(xyz_to_quadkey_int(zoom, x, y))
 
