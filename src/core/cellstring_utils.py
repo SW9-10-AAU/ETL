@@ -81,7 +81,7 @@ def linecover(
         dy = y1_f - y0_f
 
         if dx == 0 and dy == 0:
-            # Handle identical start and end points
+            # Handle identical start and end points of segment: just emit the single cell if it's different from the previous one
             cell_id = xyz_to_quadkey_int(zoom, math.floor(x0_f), math.floor(y0_f))
             if cell_id != prev_cell_id:
                 cells_with_time.append((cell_id, ts_segment_start))
