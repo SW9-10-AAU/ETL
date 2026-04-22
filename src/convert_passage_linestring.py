@@ -145,5 +145,6 @@ def main():
     elif db_backend == "duckdb":
         convert_passage_linestring_to_cs_duckdb(linestring, name)
 
+
 if __name__ == "__main__":
     main()
