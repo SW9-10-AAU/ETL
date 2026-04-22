@@ -19,17 +19,17 @@ STOP_CS_SCHEMA = pa.schema(
     ]
 )
 
-AREA_CS_SCHEMA = pa.schema(
+REGION_CS_SCHEMA = pa.schema(
     [
-        pa.field("area_id", pa.int32()),
+        pa.field("region_id", pa.int32()),
         pa.field("name", pa.string()),
         pa.field("cell_z21", pa.uint64()),
     ]
 )
 
-CROSSING_CS_SCHEMA = pa.schema(
+PASSAGE_CS_SCHEMA = pa.schema(
     [
-        pa.field("crossing_id", pa.int32()),
+        pa.field("passage_id", pa.int32()),
         pa.field("name", pa.string()),
         pa.field("cell_z21", pa.uint64()),
     ]

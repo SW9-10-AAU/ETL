@@ -18,10 +18,10 @@ ETL/
 │   ├── duckdb_transform_ls_to_cs.py
 │   ├── pg_construct_trajs_stops.py
 │   ├── pg_transform_ls_to_cs.py
-│   ├── convert_area_geojson.py
-│   ├── convert_area_polygon.py
-│   ├── convert_area_polygons_to_cellstring.py
-│   ├── convert_crossing_linestring.py
+│   ├── convert_region_geojson.py
+│   ├── convert_region_polygon.py
+│   ├── convert_region_polygons_to_cellstring.py
+│   ├── convert_passage_linestring.py
 │   ├── core/
 │   │   ├── cellstring_utils.py
 │   │   ├── ls_poly_to_cs.py
@@ -37,8 +37,8 @@ ETL/
 │       │   ├── create_postgresql_tables.py
 │       │   ├── create_ls_traj_stop_tables.py
 │       │   ├── create_cs_traj_stop_tables.py
-│       │   ├── create_area_tables.py
-│       │   ├── create_crossing_tables.py
+│       │   ├── create_region_tables.py
+│       │   ├── create_passage_tables.py
 │       │   ├── mat_points_view.py
 │       │   └── drop_postgresql_tables.py
 │       └── utils/
@@ -83,8 +83,8 @@ Schema settings:
 
 - Base (backward-compatible): `DUCKDB_SCHEMA`, `POSTGRESQL_SCHEMA`
 - Optional split schema setup:
-  - `DUCKDB_LS_SCHEMA`, `POSTGRESQL_LS_SCHEMA` for `points`, `trajectory_ls`, `stop_poly`, `area_poly`, and `crossing_ls`
-  - `DUCKDB_CS_SCHEMA`, `POSTGRESQL_CS_SCHEMA` for `trajectory_cs`, `stop_cs`, `area_cs`, and `crossing_cs`
+  - `DUCKDB_LS_SCHEMA`, `POSTGRESQL_LS_SCHEMA` for `points`, `trajectory_ls`, `stop_poly`, `region_poly`, and `passage_ls`
+  - `DUCKDB_CS_SCHEMA`, `POSTGRESQL_CS_SCHEMA` for `trajectory_cs`, `stop_cs`, `region_cs`, and `passage_cs`
 
 If split schema vars are not set, they fall back to backend base schema vars.
 
@@ -125,13 +125,13 @@ Accepted values: `y`, `yes`, `1`, `true`, `n`, `no`, `0`, `false`.
 
 - `python -m unittest discover -s tests`
 
-## Draw areas and crossings
+## Draw regions and passages
 
 Use [geojson.io](https://geojson.io/#map=6.47/55.777/10.723) to create polygon/linestring inputs.
 
 Relevant scripts:
 
-- `src/convert_area_geojson.py`
-- `src/convert_area_polygon.py`
-- `src/convert_area_polygons_to_cellstring.py`
-- `src/convert_crossing_linestring.py`
+- `src/convert_region_geojson.py`
+- `src/convert_region_polygon.py`
+- `src/convert_region_polygons_to_cellstring.py`
+- `src/convert_passage_linestring.py`
