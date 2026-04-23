@@ -152,9 +152,7 @@ def transform_ls_trajectories_to_cs(
                         "trajectory_id": pa.array(trajectory_ids, type=pa.int32()),
                         "mmsi": pa.array(mmsis, type=pa.int64()),
                         "ts": pa.array(timestamps, type=pa.timestamp("s", tz="UTC")),
-                        "occupation_seconds": pa.array(
-                            occupation_seconds, type=pa.int32()
-                        ),
+                        "delta_sec": pa.array(occupation_seconds, type=pa.int32()),
                         "cell_z21": pa.array(cells, type=pa.uint64()),
                     },
                     schema=TRAJ_CS_SCHEMA,

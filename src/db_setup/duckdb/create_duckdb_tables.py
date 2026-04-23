@@ -45,7 +45,7 @@ def create_duckdb_tables(
             trajectory_id   INTEGER NOT NULL,
             mmsi            BIGINT NOT NULL,
             ts              TIMESTAMP NOT NULL,
-            occupation_seconds INTEGER NOT NULL,
+            delta_sec INTEGER NOT NULL,
             cell_z21        UINT64 NOT NULL,
         );
     """
@@ -53,7 +53,7 @@ def create_duckdb_tables(
     conn.execute(
         f"""
         ALTER TABLE {cs_schema}.trajectory_cs
-        ADD COLUMN IF NOT EXISTS occupation_seconds INTEGER;
+        ADD COLUMN IF NOT EXISTS delta_sec INTEGER;
     """
     )
 
