@@ -50,12 +50,6 @@ def create_duckdb_tables(
         );
     """
     )
-    conn.execute(
-        f"""
-        ALTER TABLE {cs_schema}.trajectory_cs
-        ADD COLUMN IF NOT EXISTS delta_sec INTEGER;
-    """
-    )
 
     # stop_cs
     conn.execute(
