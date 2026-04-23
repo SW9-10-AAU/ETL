@@ -1,6 +1,7 @@
 import time
 from collections import defaultdict
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
+from datetime import date
 
 import duckdb
 
@@ -12,43 +13,85 @@ from core.points_to_ls_poly import (
     process_single_mmsi,
 )
 
-BATCH_SIZE = 100  # Number of MMSIs to process in parallel
 FutureResult = Future[ProcessResult]  # Future returning ProcessResult
 
 
+def get_latest_constructed_ts_duckdb(
+    conn: duckdb.DuckDBPyConnection, output_schema: str
+):
+    """Fetch latest constructed ts_end across stop_poly and trajectory_ls."""
+    row = conn.execute(
+        f"""
+        SELECT GREATEST(
+            COALESCE((SELECT MAX(ts_end) FROM {output_schema}.stop_poly), TIMESTAMP '1970-01-01'),
+            COALESCE((SELECT MAX(ts_end) FROM {output_schema}.trajectory_ls), TIMESTAMP '1970-01-01')
+        ) AS latest_ts;
+    """
+    ).fetchone()
+    return row[0] if row else None
+
+
+def get_processing_days_duckdb(
+    conn: duckdb.DuckDBPyConnection,
+    points_schema: str,
+    latest_ts,
+) -> list[date]:
+    """Fetch days that contain points newer than global latest constructed timestamp."""
+    rows = conn.execute(
+        f"""
+        SELECT DISTINCT DATE(p.timestamp) AS point_day
+        FROM {points_schema}.points p
+        WHERE p.timestamp > ?
+        ORDER BY point_day;
+    """,
+        [latest_ts],
+    ).fetchall()
+    return [point_day for (point_day,) in rows]
+
+
 def get_mmsis_duckdb(
-    conn: duckdb.DuckDBPyConnection, points_schema: str, output_schema: str
+    conn: duckdb.DuckDBPyConnection,
+    points_schema: str,
+    point_day: date,
+    latest_ts,
 ) -> list[int]:
-    """Fetch MMSIs that still need processing, ordered by number of points (descending)."""
+    """Fetch MMSIs with unprocessed points for one day, ordered by number of points (descending)."""
     rows = conn.execute(
         f"""
         SELECT p.mmsi, COUNT(*) AS num_points
         FROM {points_schema}.points p
-        WHERE p.mmsi NOT IN (
-            SELECT mmsi FROM {output_schema}.stop_poly
-            UNION
-            SELECT mmsi FROM {output_schema}.trajectory_ls
-        )
+        WHERE DATE(p.timestamp) = ?
+          AND p.timestamp > ?
         GROUP BY p.mmsi
         ORDER BY num_points DESC;
-    """
+    """,
+        [point_day, latest_ts],
     ).fetchall()
-    return [mmsi for mmsi, _ in rows]
+    return [int(mmsi) for mmsi, _ in rows]
 
 
 def get_points_for_mmsis_in_batch_duckdb(
-    conn: duckdb.DuckDBPyConnection, points_schema: str, mmsis: list[int]
+    conn: duckdb.DuckDBPyConnection,
+    points_schema: str,
+    point_day: date,
+    mmsis: list[int],
+    latest_ts,
 ) -> DictInputPoint:
-    """Fetch all points for multiple MMSIs grouped by MMSI, ordered by time."""
+    """Fetch one-day incremental points for MMSIs grouped by MMSI, ordered by time."""
+    if not mmsis:
+        return defaultdict(list)
+
     placeholders = ",".join(["?"] * len(mmsis))
     rows = conn.execute(
         f"""
         SELECT mmsi, lon, lat, sog, epoch_ts
         FROM {points_schema}.points
         WHERE mmsi IN ({placeholders})
+          AND DATE(timestamp) = ?
+          AND timestamp > ?
         ORDER BY mmsi, epoch_ts;
     """,
-        mmsis,
+        [*mmsis, point_day, latest_ts],
     ).fetchall()
 
     grouped: DictInputPoint = defaultdict(list)
@@ -64,10 +107,10 @@ def construct_trajectories_and_stops(
     points_schema: str,
     output_schema: str,
     max_workers: int = 4,
-    batch_size: int = BATCH_SIZE,
 ):
-    """Construct trajectories and stops for all MMSIs in DuckDB. Processes MMSIs in batches."""
-    all_mmsis = get_mmsis_duckdb(conn, points_schema, output_schema)
+    """Construct trajectories and stops per day using global latest constructed timestamp."""
+    latest_ts = get_latest_constructed_ts_duckdb(conn, output_schema)
+    processing_days = get_processing_days_duckdb(conn, points_schema, latest_ts)
 
     insert_traj_query = f"""
         INSERT INTO {output_schema}.trajectory_ls (mmsi, ts_start, ts_end, geom)
@@ -79,17 +122,16 @@ def construct_trajectories_and_stops(
         VALUES (?, to_timestamp(?), to_timestamp(?), ST_GeomFromWKB(?))
     """
 
-    num_mmsis = len(all_mmsis)
-    if num_mmsis == 0:
-        print("No MMSIs to process.")
+    if not processing_days:
+        print("No days with unprocessed points.")
         return
 
     start_time = time.perf_counter()
     print(
-        f"Processing {num_mmsis} MMSIs in batches of {batch_size} MMSIs using {max_workers} workers."
+        f"Processing {len(processing_days)} day(s) newer than global latest ts ({latest_ts}) using {max_workers} workers."
     )
     print(
-        f"""
+        """
 --------------------------------- Phases of processing each MMSI --------------------------------------------
 [1] Parse input points into AISPoints (Point, SOG) tuples
 [2] Iterate through points to construct candidate trajectories and stops
@@ -101,33 +143,41 @@ def construct_trajectories_and_stops(
 -------------------------------------------------------------------------------------------------------------"""
     )
 
-    for batch_start in range(0, num_mmsis, batch_size):
-        mmsis_in_batch = all_mmsis[batch_start : batch_start + batch_size]
-        batch_num = batch_start // batch_size + 1
-        num_batches = (num_mmsis + batch_size - 1) // batch_size
-        batch_start_time = time.perf_counter()
+    total_mmsis_processed = 0
+    for day_num, point_day in enumerate(processing_days, start=1):
+        day_start_time = time.perf_counter()
+        day_mmsis = get_mmsis_duckdb(conn, points_schema, point_day, latest_ts)
+        if not day_mmsis:
+            continue
+
         print(
-            f"\n--- Processing batch {batch_num} of {num_batches} ({len(mmsis_in_batch)} MMSIs: {mmsis_in_batch[0]} to {mmsis_in_batch[-1]}) ---"
+            f"\n=== Procesing batch ({point_day.isoformat()}) {day_num}/{len(processing_days)}: {point_day.isoformat()} ({len(day_mmsis)} MMSIs: {day_mmsis[0]} to {day_mmsis[-1]}) ==="
         )
 
-        # Retrieve points for all MMSIs in the batch
-        print(f"Fetching points for MMSIs in batch {batch_num}...")
+        batch_start_time = time.perf_counter()
+        print(f"Fetching points for day {point_day.isoformat()}...")
 
         points = get_points_for_mmsis_in_batch_duckdb(
-            conn, points_schema, mmsis_in_batch
+            conn,
+            points_schema,
+            point_day,
+            day_mmsis,
+            latest_ts,
         )
+
+        point_count = sum(len(pts) for pts in points.values())
         print(
-            f"{sum(len(pts) for pts in points.values()):,} points fetched in {time.perf_counter() - batch_start_time:.2f}s."
+            f"{point_count:,} points fetched in {time.perf_counter() - batch_start_time:.2f}s."
         )
 
         trajs_to_insert: list[Traj] = []
         stops_to_insert: list[Stop] = []
 
-        # Parallel processing of the batch of MMSIs
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             futures: dict[FutureResult, int] = {
-                executor.submit(process_single_mmsi, mmsi, points[mmsi]): mmsi
-                for mmsi in mmsis_in_batch
+                executor.submit(process_single_mmsi, mmsi, points.get(mmsi, [])): mmsi
+                for mmsi in day_mmsis
+                if points.get(mmsi)
             }
 
             for future in as_completed(futures):
@@ -141,10 +191,9 @@ def construct_trajectories_and_stops(
                     continue
 
         print(
-            f"Batch {batch_num} processed: {len(trajs_to_insert)} trajectories, {len(stops_to_insert)} stops. Inserting into database..."
+            f"Processed batch ({point_day.isoformat()}) {day_num}/{len(processing_days)}: {len(trajs_to_insert)} trajectories, {len(stops_to_insert)} stops. Inserting into database..."
         )
 
-        # Batch insert trajectories and stops
         if trajs_to_insert:
             conn.executemany(
                 insert_traj_query,
@@ -163,17 +212,20 @@ def construct_trajectories_and_stops(
                 ],
             )
 
-        print(
-            f"Batch {batch_num} inserted: {len(trajs_to_insert)} trajectories, {len(stops_to_insert)} stops."
-        )
+        total_mmsis_processed += len(day_mmsis)
         elapsed_time = time.perf_counter() - start_time
         batch_time = time.perf_counter() - batch_start_time
         print(
-            f"Progress: {batch_num/num_batches*100:.2f}% | Elapsed time: {elapsed_time:.2f}s | Batch time: {batch_time:.2f}s | Avg per MMSI: {batch_time/len(mmsis_in_batch):.2f}s"
+            f"Inserted batch results for day {point_day.isoformat()} | Elapsed: {elapsed_time:.2f}s | Batch time: {batch_time:.2f}s"
+        )
+
+        day_elapsed = time.perf_counter() - day_start_time
+        print(
+            f"Completed day {point_day.isoformat()} in {day_elapsed:.2f}s ({len(day_mmsis)} MMSIs)."
         )
 
     total_time = time.perf_counter() - start_time
-    print(f"\nAll MMSIs processed.")
+    print("\nAll MMSIs processed.")
     print(
-        f"Total time: {total_time/60:.2f} min | Avg per MMSI: {total_time/num_mmsis:.2f}s"
+        f"Total time: {total_time/60:.2f} min | Avg per MMSI: {total_time/max(total_mmsis_processed, 1):.2f}s"
     )

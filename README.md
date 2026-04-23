@@ -77,7 +77,15 @@ Required core settings:
 
 - `DB_BACKEND`: `duckdb` or `postgresql`
 - `DUCKDB_PATH` when using DuckDB
+- `AIS_DATA_PATH` when using DuckDB incremental points ingestion (folder containing files named like `aisdk-2025-12-01.pq`)
 - `POSTGRESQL_URL` when using PostgreSQL
+
+Optional default ingestion period (DuckDB):
+
+- `AIS_START_DATE` in `YYYY-MM-DD`
+- `AIS_END_DATE` in `YYYY-MM-DD`
+
+When the points step runs on DuckDB, the loader prompts for an optional date range. Press Enter to use defaults and process all discovered days newer than the current watermark.
 
 Schema settings:
 
@@ -104,6 +112,13 @@ Execution is step-driven with confirm/skip prompts:
 5. Create points table/materialized view
 6. Construct trajectories and stops
 7. Transform trajectories/stops to CellStrings
+
+DuckDB points step behavior:
+
+- Discovers parquet files in `AIS_DATA_PATH` matching `aisdk-YYYY-MM-DD.pq`
+- Uses ingestion watermarking to load only files newer than already loaded data
+- Prompts for optional date interval filtering
+- Appends deduplicated rows into `points` (incremental, no full replace)
 
 ## Optional non-interactive step toggles
 
