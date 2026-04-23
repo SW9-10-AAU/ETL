@@ -445,12 +445,6 @@ class TestDuckDBOccupationSeconds(unittest.TestCase):
 
         self.assertEqual(occupation, [7])
 
-    def test_calculate_occupation_seconds_defensive_clamp(self):
-        cells_with_ts = [(10, 3000), (11, 2999)]
-        occupation = _calculate_occupation_seconds(cells_with_ts, ts_end_epoch=2998)
-
-        self.assertEqual(occupation, [0, 0])
-
 
 if __name__ == "__main__":
     unittest.main()

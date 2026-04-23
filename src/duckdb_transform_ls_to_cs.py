@@ -38,9 +38,9 @@ def _calculate_occupation_seconds(
         if idx + 1 < len(cells_with_ts):
             exit_ts = cells_with_ts[idx + 1][1]
         else:
-            exit_ts = ts_end_epoch
+            exit_ts = ts_end_epoch  # Use trajectory end time for the last cell
 
-        # Defensive clamp; pipeline guarantees ts_end >= last entry timestamp.
+        # Ensure exit_ts >= entry_ts
         occupation_seconds.append(max(0, int(exit_ts - entry_ts)))
 
     return occupation_seconds
