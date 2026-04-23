@@ -8,7 +8,8 @@ sys.path.insert(
 import unittest
 
 import mercantile
-from shapely import LineString, Point, Polygon, from_wkb, from_wkt
+from shapely import LineString, Polygon, from_wkb, from_wkt
+from duckdb_transform_ls_to_cs import _calculate_occupation_seconds
 
 from core.cellstring_utils import (
     Classification,
@@ -21,7 +22,7 @@ from core.ls_poly_to_cs import (
     convert_polygon_to_cellstrings,
     deprecated_convert_polygon_to_cellstring,
 )
-from core.points_to_ls_poly import AISPointWKB, process_single_mmsi
+from core.points_to_ls_poly import InputPoint, process_single_mmsi
 
 
 class TestEncodeLonLatToMVTCellId(unittest.TestCase):
@@ -341,7 +342,7 @@ class TestHierarchicalPolygonToCellString(unittest.TestCase):
 
     def test_single_point_leftover_does_not_connect(self):
         mmsi = 123456789
-        points: list[AISPointWKB] = []
+        points: list[InputPoint] = []
 
         start_ts = 1700000000
 
@@ -405,7 +406,7 @@ class TestProcessSingleMmsiCoincidentNullSog(unittest.TestCase):
         n_points = 100  # 100 × 10 s = 990 s total (> MIN_STOP_DURATION=600 s)
 
         # All points at the exact same location, SOG=None, 10-second intervals
-        wkb_points: list[AISPointWKB] = [
+        wkb_points: list[InputPoint] = [
             (
                 self.make_point(lon, lat, start_ts + i * 10),
                 None,
@@ -429,6 +430,26 @@ class TestProcessSingleMmsiCoincidentNullSog(unittest.TestCase):
         self.assertEqual(ts_end, float(start_ts + (n_points - 1) * 10))
         self.assertAlmostEqual(from_wkb(geom_wkb).centroid.x, lon, places=2)
         self.assertAlmostEqual(from_wkb(geom_wkb).centroid.y, lat, places=2)
+
+
+class TestDuckDBOccupationSeconds(unittest.TestCase):
+    def test_calculate_occupation_seconds_multi_cell(self):
+        cells_with_ts = [(10, 1234), (11, 1240), (12, 1255)]
+        occupation = _calculate_occupation_seconds(cells_with_ts, ts_end_epoch=1260)
+
+        self.assertEqual(occupation, [6, 15, 5])
+
+    def test_calculate_occupation_seconds_single_cell_uses_ts_end(self):
+        cells_with_ts = [(10, 2000)]
+        occupation = _calculate_occupation_seconds(cells_with_ts, ts_end_epoch=2007)
+
+        self.assertEqual(occupation, [7])
+
+    def test_calculate_occupation_seconds_defensive_clamp(self):
+        cells_with_ts = [(10, 3000), (11, 2999)]
+        occupation = _calculate_occupation_seconds(cells_with_ts, ts_end_epoch=2998)
+
+        self.assertEqual(occupation, [0, 0])
 
 
 if __name__ == "__main__":
