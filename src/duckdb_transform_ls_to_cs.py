@@ -1,4 +1,5 @@
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
+from datetime import datetime, timezone
 import duckdb
 import pyarrow as pa
 from core.ls_poly_to_cs import (
@@ -16,6 +17,33 @@ FutureResultStop = Future[ProcessResultStop]
 
 BATCH_SIZE = 5000
 MAX_WORKERS = 4
+
+
+def _to_epoch_seconds(value: int | float | datetime) -> int:
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return int(value.timestamp())
+    return int(value)
+
+
+def _calculate_occupation_seconds(
+    cells_with_ts: list[tuple[int, int]], ts_end_epoch: int
+) -> list[int]:
+    if not cells_with_ts:
+        return []
+
+    occupation_seconds: list[int] = []
+    for idx, (_, entry_ts) in enumerate(cells_with_ts):
+        if idx + 1 < len(cells_with_ts):
+            exit_ts = cells_with_ts[idx + 1][1]
+        else:
+            exit_ts = ts_end_epoch
+
+        # Defensive clamp; pipeline guarantees ts_end >= last entry timestamp.
+        occupation_seconds.append(max(0, int(exit_ts - entry_ts)))
+
+    return occupation_seconds
 
 
 def transform_ls_trajectories_to_cs(
@@ -71,6 +99,11 @@ def transform_ls_trajectories_to_cs(
             if not batch:
                 break
 
+            trajectory_end_by_id: dict[int, int] = {
+                trajectory_id: _to_epoch_seconds(ts_end)
+                for trajectory_id, _, _, ts_end, _ in batch
+            }
+
             print(
                 f"Processing batch of {len(batch)} trajectories (total processed so far: {total_processed:,})..."
             )
@@ -93,13 +126,25 @@ def transform_ls_trajectories_to_cs(
             trajectory_ids: list[int] = []
             mmsis: list[int] = []
             timestamps: list[int] = []
+            occupation_seconds: list[int] = []
             cells: list[int] = []
 
             for trajectory_id, mmsi, cells_with_ts in results:
-                for cell, ts in cells_with_ts:
+                ts_end_epoch = trajectory_end_by_id.get(
+                    trajectory_id,
+                    cells_with_ts[-1][1] if cells_with_ts else 0,
+                )
+                cell_occupation_seconds = _calculate_occupation_seconds(
+                    cells_with_ts, ts_end_epoch
+                )
+
+                for (cell, ts), occupation in zip(
+                    cells_with_ts, cell_occupation_seconds
+                ):
                     trajectory_ids.append(trajectory_id)
                     mmsis.append(mmsi)
                     timestamps.append(ts)  # seconds
+                    occupation_seconds.append(occupation)
                     cells.append(cell)
             if cells:
                 arrow_table = pa.table(
@@ -107,6 +152,9 @@ def transform_ls_trajectories_to_cs(
                         "trajectory_id": pa.array(trajectory_ids, type=pa.int32()),
                         "mmsi": pa.array(mmsis, type=pa.int64()),
                         "ts": pa.array(timestamps, type=pa.timestamp("s", tz="UTC")),
+                        "occupation_seconds": pa.array(
+                            occupation_seconds, type=pa.int32()
+                        ),
                         "cell_z21": pa.array(cells, type=pa.uint64()),
                     },
                     schema=TRAJ_CS_SCHEMA,
