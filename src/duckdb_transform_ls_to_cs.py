@@ -1,5 +1,4 @@
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
-from datetime import datetime, timezone
 import duckdb
 import pyarrow as pa
 from core.ls_poly_to_cs import (
