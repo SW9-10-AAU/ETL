@@ -27,7 +27,7 @@ def discover_ais_parquet_files(ais_data_path: str) -> list[tuple[str, str, date]
         )
 
     discovered: list[tuple[str, str, date]] = []
-    for file_path in sorted(base_dir.glob("*.pq")):
+    for file_path in sorted(base_dir.rglob("*.pq")):
         parsed_date = parse_ais_file_date(file_path.name)
         if parsed_date is None:
             continue
