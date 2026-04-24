@@ -250,8 +250,12 @@ def create_duckdb_points(
         f"Selected {len(selected_files)} parquet files from {selected_files[0][2].isoformat()} to {selected_files[-1][2].isoformat()}."
     )
 
+    print(f"Loading {len(selected_files)} parquet files into DuckDB...")
     _create_staging_table(conn, selected_files)
+
+    print(f"Loaded {len(selected_files)} files. Inserting into points table...")
     inserted_points = _insert_incremental_points(conn, db_schema)
+
     _log_loaded_files(conn, db_schema, selected_files)
     conn.execute(f"DROP TABLE IF EXISTS {TEMP_AIS_STAGE};")
 
