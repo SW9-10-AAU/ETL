@@ -86,6 +86,10 @@ def main_duckdb():
         connection = duckdb.connect(database=db_path)
         print(f"Connected to DuckDB at '{db_path}'.")
 
+        # Set time zone to UTC for consistent timestamp handling
+        connection.execute("SET TimeZone = 'UTC';")
+        print("Time zone set to UTC.")
+
         # Install and load spatial extension
         connection.execute("INSTALL spatial;")
         connection.execute("LOAD spatial;")
