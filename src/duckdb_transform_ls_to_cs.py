@@ -19,16 +19,8 @@ BATCH_SIZE = 5000
 MAX_WORKERS = 4
 
 
-def _to_epoch_seconds(value: int | float | datetime) -> int:
-    if isinstance(value, datetime):
-        if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        return int(value.timestamp())
-    return int(value)
-
-
-def _calculate_occupation_seconds(
-    cells_with_ts: list[tuple[int, int]], ts_end_epoch: int
+def calculate_occupation_seconds(
+    cells_with_ts: list[tuple[int, int]], ts_end: int
 ) -> list[int]:
     if not cells_with_ts:
         return []
@@ -38,7 +30,7 @@ def _calculate_occupation_seconds(
         if idx + 1 < len(cells_with_ts):
             exit_ts = cells_with_ts[idx + 1][1]
         else:
-            exit_ts = ts_end_epoch  # Use trajectory end time for the last cell
+            exit_ts = ts_end  # Use trajectory end time for the last cell
 
         # Ensure exit_ts >= entry_ts
         occupation_seconds.append(max(0, int(exit_ts - entry_ts)))
@@ -89,7 +81,7 @@ def transform_ls_trajectories_to_cs(
                 (int(tid), int(mmsi), ts_start, ts_end, bytes(geom_wkb))
                 for tid, mmsi, ts_start, ts_end, geom_wkb in conn.execute(
                     f"""
-                    SELECT trajectory_id, mmsi, ts_start, ts_end, ST_AsWKB(geom)
+                    SELECT trajectory_id, mmsi, EXTRACT(EPOCH FROM ts_start) AS ts_start, EXTRACT(EPOCH FROM ts_end) AS ts_end, ST_AsWKB(geom)
                     FROM {input_schema}.trajectory_ls
                     WHERE trajectory_id IN ({','.join(map(str, batch_ids))})
                     ORDER BY trajectory_id;
@@ -100,8 +92,7 @@ def transform_ls_trajectories_to_cs(
                 break
 
             trajectory_end_by_id: dict[int, int] = {
-                trajectory_id: _to_epoch_seconds(ts_end)
-                for trajectory_id, _, _, ts_end, _ in batch
+                trajectory_id: ts_end for trajectory_id, _, _, ts_end, _ in batch
             }
 
             print(
@@ -130,12 +121,12 @@ def transform_ls_trajectories_to_cs(
             cells: list[int] = []
 
             for trajectory_id, mmsi, cells_with_ts in results:
-                ts_end_epoch = trajectory_end_by_id.get(
+                ts_end = trajectory_end_by_id.get(
                     trajectory_id,
                     cells_with_ts[-1][1] if cells_with_ts else 0,
                 )
-                cell_occupation_seconds = _calculate_occupation_seconds(
-                    cells_with_ts, ts_end_epoch
+                cell_occupation_seconds = calculate_occupation_seconds(
+                    cells_with_ts, ts_end
                 )
 
                 for (cell, ts), occupation in zip(
@@ -218,7 +209,7 @@ def transform_poly_stops_to_cs(
                 (int(sid), int(mmsi), ts_start, ts_end, bytes(geom_wkb))
                 for sid, mmsi, ts_start, ts_end, geom_wkb in conn.execute(
                     f"""
-                    SELECT stop_id, mmsi, ts_start, ts_end, ST_AsWKB(geom)
+                    SELECT stop_id, mmsi, EXTRACT(EPOCH FROM ts_start) AS ts_start, EXTRACT(EPOCH FROM ts_end) AS ts_end, ST_AsWKB(geom)
                     FROM {input_schema}.stop_poly
                     WHERE stop_id IN ({','.join(map(str, batch_ids))})
                     ORDER BY stop_id;

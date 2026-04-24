@@ -9,7 +9,7 @@ import unittest
 
 import mercantile
 from shapely import LineString, Polygon, from_wkb, from_wkt
-from duckdb_transform_ls_to_cs import _calculate_occupation_seconds
+from duckdb_transform_ls_to_cs import calculate_occupation_seconds
 
 from core.cellstring_utils import (
     Classification,
@@ -435,13 +435,13 @@ class TestProcessSingleMmsiCoincidentNullSog(unittest.TestCase):
 class TestDuckDBOccupationSeconds(unittest.TestCase):
     def test_calculate_occupation_seconds_multi_cell(self):
         cells_with_ts = [(10, 1234), (11, 1240), (12, 1255)]
-        occupation = _calculate_occupation_seconds(cells_with_ts, ts_end_epoch=1260)
+        occupation = calculate_occupation_seconds(cells_with_ts, ts_end_epoch=1260)
 
         self.assertEqual(occupation, [6, 15, 5])
 
     def test_calculate_occupation_seconds_single_cell_uses_ts_end(self):
         cells_with_ts = [(10, 2000)]
-        occupation = _calculate_occupation_seconds(cells_with_ts, ts_end_epoch=2007)
+        occupation = calculate_occupation_seconds(cells_with_ts, ts_end_epoch=2007)
 
         self.assertEqual(occupation, [7])
 
