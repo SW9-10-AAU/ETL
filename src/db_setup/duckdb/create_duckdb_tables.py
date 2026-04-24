@@ -58,6 +58,7 @@ def create_duckdb_tables(
             trajectory_id   INTEGER NOT NULL,
             mmsi            BIGINT NOT NULL,
             ts              TIMESTAMP NOT NULL,
+            delta_sec INTEGER NOT NULL,
             cell_z21        UINT64 NOT NULL,
         );
     """
