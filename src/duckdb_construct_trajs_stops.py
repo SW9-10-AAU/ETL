@@ -167,7 +167,7 @@ def construct_trajectories_and_stops(
 
         point_count = sum(len(pts) for pts in points.values())
         print(
-            f"{point_count:,} points fetched in {time.perf_counter() - batch_start_time:.2f}s."
+            f"{point_count:,} points fetched in {time.perf_counter() - batch_start_time:.2f}s. Processing MMSIs in parallel..."
         )
 
         trajs_to_insert: list[Traj] = []
