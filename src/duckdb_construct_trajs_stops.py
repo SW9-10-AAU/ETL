@@ -151,7 +151,7 @@ def construct_trajectories_and_stops(
             continue
 
         print(
-            f"\n=== Procesing batch ({point_day.isoformat()}) {day_num}/{len(processing_days)}: {point_day.isoformat()} ({len(day_mmsis)} MMSIs: {day_mmsis[0]} to {day_mmsis[-1]}) ==="
+            f"\n=== Procesing batch {day_num}/{len(processing_days)}: {point_day.isoformat()} ({len(day_mmsis)} MMSIs: {day_mmsis[0]} to {day_mmsis[-1]}) ==="
         )
 
         batch_start_time = time.perf_counter()
@@ -191,7 +191,7 @@ def construct_trajectories_and_stops(
                     continue
 
         print(
-            f"Processed batch ({point_day.isoformat()}) {day_num}/{len(processing_days)}: {len(trajs_to_insert)} trajectories, {len(stops_to_insert)} stops. Inserting into database..."
+            f"Processed batch {day_num}/{len(processing_days)}: {point_day.isoformat()} ({len(trajs_to_insert)} trajectories, {len(stops_to_insert)} stops). Inserting into database..."
         )
 
         if trajs_to_insert:
