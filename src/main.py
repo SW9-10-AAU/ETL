@@ -3,6 +3,7 @@ import os
 import sys
 
 from db_setup.utils.db_utils import (
+    get_ais_data_path,
     get_cs_schema,
     get_db_backend,
     get_db_path_or_url,
@@ -127,16 +128,18 @@ def main_duckdb():
 
         if should_run_step(
             "ETL_CREATE_POINTS",
-            "Do you want to create points table?",
+            "Do you want to create or incrementally update points table from parquet files?",
             default_yes=False,
         ):
-            create_duckdb_points(connection, ls_schema)
+            create_duckdb_points(
+                connection, ls_schema, ais_data_path=get_ais_data_path()
+            )
 
         if should_run_step(
             "ETL_CONSTRUCT", "Do you want to construct trajectories and stops?"
         ):
             construct_trajectories_and_stops(
-                connection, ls_schema, ls_schema, num_workers, batch_size=200
+                connection, ls_schema, ls_schema, num_workers
             )
 
         if should_run_step(

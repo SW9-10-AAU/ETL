@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+from datetime import date
 
 
 def _get_required_env(key: str) -> str:
@@ -7,6 +8,19 @@ def _get_required_env(key: str) -> str:
     if not value:
         raise ValueError(f"{key} not defined in .env file")
     return value
+
+
+def _parse_optional_env_date(key: str) -> date | None:
+    value = os.getenv(key)
+    if not value:
+        return None
+
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError as exc:
+        raise ValueError(
+            f"Invalid date for {key}: '{value}'. Use YYYY-MM-DD format."
+        ) from exc
 
 
 def _get_schema_with_fallback(primary_key: str, fallback_key: str) -> str:
@@ -89,3 +103,17 @@ def get_cs_schema(db_type: str) -> str:
         return _get_schema_with_fallback("DUCKDB_CS_SCHEMA", "DUCKDB_SCHEMA")
 
     raise ValueError(f"Unsupported database type: {db_type}")
+
+
+def get_ais_data_path() -> str:
+    load_dotenv()
+    return _get_required_env("AIS_DATA_PATH")
+
+
+def get_ais_default_period() -> tuple[date | None, date | None]:
+    load_dotenv()
+    start = _parse_optional_env_date("AIS_START_DATE")
+    end = _parse_optional_env_date("AIS_END_DATE")
+    if start and end and start > end:
+        raise ValueError("AIS_START_DATE cannot be after AIS_END_DATE.")
+    return start, end

@@ -10,6 +10,19 @@ def create_duckdb_tables(
     conn: duckdb.DuckDBPyConnection, ls_schema: str, cs_schema: str
 ):
 
+    conn.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {ls_schema}.points_ingestion_log (
+            file_name TEXT PRIMARY KEY,
+            file_path TEXT NOT NULL,
+            file_date DATE NOT NULL,
+            min_ts TIMESTAMP,
+            max_ts TIMESTAMP,
+            loaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+    """
+    )
+
     # trajectory_ls
     conn.execute(
         f"""
