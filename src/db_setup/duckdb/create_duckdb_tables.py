@@ -124,6 +124,7 @@ def create_duckdb_tables(
         ON {ls_schema}.passage_ls USING RTREE (geom);
     """)
 
-    print(
-        f"Created DuckDB tables (trajectory_ls, stop_poly, region_poly, passage_ls) in schema '{ls_schema}' and CellString tables (trajectory_cs, stop_cs, region_cs, passage_cs) in schema '{cs_schema}'."
-    )
+    print(f"""Created DuckDB tables: 
+        '{ls_schema}': trajectory_ls, stop_poly, region_poly, passage_ls
+        '{cs_schema}': trajectory_cs, stop_cs, region_cs, passage_cs
+    """)
