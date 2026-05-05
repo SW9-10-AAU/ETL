@@ -1,6 +1,6 @@
 from math import inf
 from geopy.distance import geodesic
-from shapely import Polygon, Point, MultiPoint, from_wkt
+from shapely import Polygon, Point, from_wkt
 
 KNOT_AS_MPS = 0.514444  # 1 knot = 0.514444 m/s
 MIN_POINTS_IN_SEGMENT = 2  # Minimum number of points in a trajectory or stop segment
@@ -39,6 +39,13 @@ def compute_mbr_area(poly: Polygon) -> float:
     return w * h
 
 
+def compute_centroid_of_points(points: list[Point]) -> tuple[float, float, int]:
+    """Return (sum_x, sum_y, count) for incremental centroid tracking."""
+    sx = sum(p.x for p in points)
+    sy = sum(p.y for p in points)
+    return sx, sy, len(points)
+
+
 def merge_candidate_stops(
     candidate_stops: list[list[Point]],
     merge_time_threshold: float,
@@ -51,9 +58,14 @@ def merge_candidate_stops(
     merged_stops: list[list[Point]] = []
     current_merged_stop = candidate_stops[0]
 
+    # Running centroid as (sum_x, sum_y, count) — avoids rebuilding MultiPoint each iteration
+    merged_sx, merged_sy, merged_n = compute_centroid_of_points(current_merged_stop)
+
     for current_candidate_stop in candidate_stops[1:]:
-        center_merged = MultiPoint(current_merged_stop).centroid
-        center_candidate = MultiPoint(current_candidate_stop).centroid
+        cand_sx, cand_sy, cand_n = compute_centroid_of_points(current_candidate_stop)
+
+        center_merged = Point(merged_sx / merged_n, merged_sy / merged_n)
+        center_candidate = Point(cand_sx / cand_n, cand_sy / cand_n)
 
         # Time difference between end of current merged stop and start of candidate stop
         time_diff = extract_time_s(current_candidate_stop[0]) - extract_time_s(
@@ -66,10 +78,16 @@ def merge_candidate_stops(
         if time_diff < merge_time_threshold and dist_diff < merge_distance_threshold:
             # Merge candidate stop into current merged stop
             current_merged_stop.extend(current_candidate_stop)
+
+            # Update running centroid
+            merged_sx += cand_sx
+            merged_sy += cand_sy
+            merged_n += cand_n
         else:
             # Finalize current merged stop and start a new one
             merged_stops.append(current_merged_stop)
             current_merged_stop = current_candidate_stop
+            merged_sx, merged_sy, merged_n = cand_sx, cand_sy, cand_n
 
     # Append the last merged stop
     merged_stops.append(current_merged_stop)
