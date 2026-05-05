@@ -4,6 +4,7 @@ from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from datetime import date
 
 import duckdb
+import pyarrow as pa
 
 from core.points_to_ls_poly import (
     DictInputPoint,
@@ -12,6 +13,7 @@ from core.points_to_ls_poly import (
     Traj,
     process_single_mmsi,
 )
+from db_setup.duckdb.pyarrow_schemas import STOP_POLY_SCHEMA, TRAJ_LS_SCHEMA
 
 FutureResult = Future[ProcessResult]  # Future returning ProcessResult
 
@@ -20,14 +22,12 @@ def get_latest_constructed_ts_duckdb(
     conn: duckdb.DuckDBPyConnection, output_schema: str
 ):
     """Fetch latest constructed ts_end across stop_poly and trajectory_ls."""
-    row = conn.execute(
-        f"""
+    row = conn.execute(f"""
         SELECT GREATEST(
             COALESCE((SELECT MAX(ts_end) FROM {output_schema}.stop_poly), TIMESTAMP '1970-01-01'),
             COALESCE((SELECT MAX(ts_end) FROM {output_schema}.trajectory_ls), TIMESTAMP '1970-01-01')
         ) AS latest_ts;
-    """
-    ).fetchone()
+    """).fetchone()
     return row[0] if row else None
 
 
@@ -114,12 +114,14 @@ def construct_trajectories_and_stops(
 
     insert_traj_query = f"""
         INSERT INTO {output_schema}.trajectory_ls (mmsi, ts_start, ts_end, geom)
-        VALUES (?, to_timestamp(?), to_timestamp(?), ST_GeomFromWKB(?))
+        SELECT mmsi, ts_start, ts_end, ST_GeomFromWKB(geom_wkb)
+        FROM arrow_table
     """
 
     insert_stop_query = f"""
         INSERT INTO {output_schema}.stop_poly (mmsi, ts_start, ts_end, geom)
-        VALUES (?, to_timestamp(?), to_timestamp(?), ST_GeomFromWKB(?))
+        SELECT mmsi, ts_start, ts_end, ST_GeomFromWKB(geom_wkb)
+        FROM arrow_table
     """
 
     if not processing_days:
@@ -195,22 +197,54 @@ def construct_trajectories_and_stops(
         )
 
         if trajs_to_insert:
-            conn.executemany(
-                insert_traj_query,
-                [
-                    (mmsi, ts_start, ts_end, geom_wkb)
-                    for (mmsi, ts_start, ts_end, geom_wkb) in trajs_to_insert
-                ],
+            traj_mmsis: list[int] = []
+            traj_ts_starts: list[int] = []
+            traj_ts_ends: list[int] = []
+            traj_geoms: list[bytes] = []
+
+            for mmsi, ts_start, ts_end, geom_wkb in trajs_to_insert:
+                traj_mmsis.append(int(mmsi))
+                traj_ts_starts.append(int(ts_start))
+                traj_ts_ends.append(int(ts_end))
+                traj_geoms.append(geom_wkb)
+
+            arrow_table = pa.table(
+                {
+                    "mmsi": pa.array(traj_mmsis, type=pa.int64()),
+                    "ts_start": pa.array(
+                        traj_ts_starts, type=pa.timestamp("s", tz="UTC")
+                    ),
+                    "ts_end": pa.array(traj_ts_ends, type=pa.timestamp("s", tz="UTC")),
+                    "geom_wkb": pa.array(traj_geoms, type=pa.binary()),
+                },
+                schema=TRAJ_LS_SCHEMA,
             )
+            conn.execute(insert_traj_query)
 
         if stops_to_insert:
-            conn.executemany(
-                insert_stop_query,
-                [
-                    (mmsi, ts_start, ts_end, geom_wkb)
-                    for (mmsi, ts_start, ts_end, geom_wkb) in stops_to_insert
-                ],
+            stop_mmsis: list[int] = []
+            stop_ts_starts: list[int] = []
+            stop_ts_ends: list[int] = []
+            stop_geoms: list[bytes] = []
+
+            for mmsi, ts_start, ts_end, geom_wkb in stops_to_insert:
+                stop_mmsis.append(int(mmsi))
+                stop_ts_starts.append(int(ts_start))
+                stop_ts_ends.append(int(ts_end))
+                stop_geoms.append(geom_wkb)
+
+            arrow_table = pa.table(
+                {
+                    "mmsi": pa.array(stop_mmsis, type=pa.int64()),
+                    "ts_start": pa.array(
+                        stop_ts_starts, type=pa.timestamp("s", tz="UTC")
+                    ),
+                    "ts_end": pa.array(stop_ts_ends, type=pa.timestamp("s", tz="UTC")),
+                    "geom_wkb": pa.array(stop_geoms, type=pa.binary()),
+                },
+                schema=STOP_POLY_SCHEMA,
             )
+            conn.execute(insert_stop_query)
 
         total_mmsis_processed += len(day_mmsis)
         elapsed_time = time.perf_counter() - start_time
