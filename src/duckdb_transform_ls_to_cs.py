@@ -37,7 +37,6 @@ def calculate_exit_timestamps(
     return exit_timestamps
 
 
-
 def transform_ls_trajectories_to_cs(
     conn: duckdb.DuckDBPyConnection,
     input_schema: str,
@@ -107,31 +106,28 @@ def transform_ls_trajectories_to_cs(
             )
 
             # Flatten: one row per cell
-            cell_rows = [
-                (trajectory_id, mmsi, ts_entry, ts_exit, cell)
-                for trajectory_id, mmsi, cells_with_ts in results
-                for (cell, ts_entry), ts_exit in zip(
-                    cells_with_ts,
-                    calculate_exit_timestamps(
-                        cells_with_ts,
-                        trajectory_end_by_id.get(
-                            trajectory_id,
-                            cells_with_ts[-1][1] if cells_with_ts else 0,
-                        ),
-                    ),
-                )
-            ]
-
             trajectory_ids: list[int] = []
             mmsis: list[int] = []
             ts_entries: list[int] = []
             ts_exits: list[int] = []
             cells: list[int] = []
 
-            if cell_rows:
-                trajectory_ids, mmsis, ts_entries, ts_exits, cells = map(
-                    list, zip(*cell_rows)
+            for trajectory_id, mmsi, cells_with_ts in results:
+                ts_end = trajectory_end_by_id.get(
+                    trajectory_id,
+                    cells_with_ts[-1][1] if cells_with_ts else 0,
                 )
+                cell_exit_timestamps = calculate_exit_timestamps(cells_with_ts, ts_end)
+
+                for (cell, ts_entry), ts_exit in zip(
+                    cells_with_ts, cell_exit_timestamps
+                ):
+                    trajectory_ids.append(trajectory_id)
+                    mmsis.append(mmsi)
+                    ts_entries.append(int(ts_entry))  # seconds
+                    ts_exits.append(int(ts_exit))  # seconds
+                    cells.append(cell)
+
             if cells:
                 traj_arrow_table = pa.table(
                     {
@@ -220,20 +216,19 @@ def transform_poly_stops_to_cs(
                     print(f"Worker error: {e}")
 
             # Flatten: one row per cell
-            stop_rows = [
-                (stop_id, mmsi, ts_start, ts_end, cell)
-                for stop_id, mmsi, ts_start, ts_end, cell_list in results
-                for cell in cell_list
-            ]
-
             stop_ids: list[int] = []
             mmsis: list[int] = []
             ts_starts: list[int] = []
             ts_ends: list[int] = []
             cells: list[int] = []
 
-            if stop_rows:
-                stop_ids, mmsis, ts_starts, ts_ends, cells = map(list, zip(*stop_rows))
+            for stop_id, mmsi, ts_start, ts_end, cell_list in results:
+                for cell in cell_list:
+                    stop_ids.append(stop_id)
+                    mmsis.append(mmsi)
+                    ts_starts.append(ts_start)
+                    ts_ends.append(ts_end)
+                    cells.append(cell)
 
             if cells:
                 stop_arrow_table = pa.table(
