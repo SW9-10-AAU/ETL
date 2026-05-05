@@ -125,6 +125,6 @@ def create_duckdb_tables(
     """)
 
     print(f"""Created DuckDB tables: 
-        '{ls_schema}': trajectory_ls, stop_poly, region_poly, passage_ls
-        '{cs_schema}': trajectory_cs, stop_cs, region_cs, passage_cs
+    '{ls_schema}': trajectory_ls, stop_poly, region_poly, passage_ls
+    '{cs_schema}': trajectory_cs, stop_cs, region_cs, passage_cs
     """)

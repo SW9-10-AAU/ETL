@@ -56,8 +56,7 @@ def filter_files_by_watermark_and_period(
 
 
 def _ensure_points_table(conn: duckdb.DuckDBPyConnection, db_schema: str):
-    conn.execute(
-        f"""
+    conn.execute(f"""
         CREATE TABLE IF NOT EXISTS {db_schema}.points (
             mmsi BIGINT NOT NULL,
             lat DOUBLE NOT NULL,
@@ -66,13 +65,11 @@ def _ensure_points_table(conn: duckdb.DuckDBPyConnection, db_schema: str):
             timestamp TIMESTAMP NOT NULL,
             epoch_ts DOUBLE NOT NULL
         );
-    """
-    )
+    """)
 
 
 def _ensure_ingestion_log_table(conn: duckdb.DuckDBPyConnection, db_schema: str):
-    conn.execute(
-        f"""
+    conn.execute(f"""
         CREATE TABLE IF NOT EXISTS {db_schema}.points_ingestion_log (
             file_name TEXT PRIMARY KEY,
             file_path TEXT NOT NULL,
@@ -81,8 +78,7 @@ def _ensure_ingestion_log_table(conn: duckdb.DuckDBPyConnection, db_schema: str)
             max_ts TIMESTAMP,
             loaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
-    """
-    )
+    """)
 
 
 def _get_ingestion_watermark(
@@ -124,8 +120,7 @@ def _insert_incremental_points(conn: duckdb.DuckDBPyConnection, db_schema: str) 
     ).fetchone()
     before_count = before_count_row[0] if before_count_row else 0
 
-    conn.execute(
-        f"""
+    conn.execute(f"""
         INSERT INTO {db_schema}.points (mmsi, lat, lon, sog, timestamp, epoch_ts)
         WITH valid_mmsi AS (
             SELECT mmsi
@@ -163,8 +158,7 @@ def _insert_incremental_points(conn: duckdb.DuckDBPyConnection, db_schema: str) 
         SELECT mmsi, lat, lon, sog, timestamp, epoch_ts
         FROM unseen
         ORDER BY mmsi, epoch_ts;
-    """
-    )
+    """)
 
     after_count_row = conn.execute(
         f"SELECT COUNT(*) FROM {db_schema}.points"
@@ -217,6 +211,9 @@ def create_duckdb_points(
         print(f"No AIS parquet files found in '{resolved_ais_data_path}'.")
         return
 
+    available_start = discovered_files[0][2]
+    available_end = discovered_files[-1][2]
+
     watermark_ts = _get_ingestion_watermark(conn, db_schema)
     watermark_date = watermark_ts.date() if watermark_ts is not None else None
 
@@ -225,6 +222,8 @@ def create_duckdb_points(
         "Select optional AIS ingestion period",
         default_start=default_start,
         default_end=default_end,
+        available_start=available_start,
+        available_end=available_end,
     )
 
     selected_files = filter_files_by_watermark_and_period(
