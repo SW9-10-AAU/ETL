@@ -18,13 +18,13 @@ BATCH_SIZE = 5000
 MAX_WORKERS = 4
 
 
-def calculate_occupation_seconds(
+def calculate_exit_timestamps(
     cells_with_ts: list[tuple[int, int]], ts_end: int
 ) -> list[int]:
     if not cells_with_ts:
         return []
 
-    occupation_seconds: list[int] = []
+    exit_timestamps: list[int] = []
     for idx, (_, entry_ts) in enumerate(cells_with_ts):
         if idx + 1 < len(cells_with_ts):
             exit_ts = cells_with_ts[idx + 1][1]
@@ -32,9 +32,9 @@ def calculate_occupation_seconds(
             exit_ts = ts_end  # Use trajectory end time for the last cell
 
         # Ensure exit_ts >= entry_ts
-        occupation_seconds.append(max(0, int(exit_ts - entry_ts)))
+        exit_timestamps.append(max(int(entry_ts), int(exit_ts)))
 
-    return occupation_seconds
+    return exit_timestamps
 
 
 def transform_ls_trajectories_to_cs(
@@ -51,16 +51,11 @@ def transform_ls_trajectories_to_cs(
     conn.execute("LOAD spatial")
     print(f"Processing trajectories in batches of {batch_size}...")
 
-    traj_ids_to_process: list[int] = [
-        row[0]
-        for row in conn.execute(
-            f"""
+    traj_ids_to_process: list[int] = [row[0] for row in conn.execute(f"""
                 SELECT trajectory_id FROM {input_schema}.trajectory_ls
                 EXCEPT
                 SELECT trajectory_id FROM {output_schema}.trajectory_cs
-                ORDER BY trajectory_id;"""
-        ).fetchall()
-    ]
+                ORDER BY trajectory_id;""").fetchall()]
 
     print(
         f"Found {len(traj_ids_to_process)} LineString trajectories to convert to CellString. Starting processing..."
@@ -78,14 +73,12 @@ def transform_ls_trajectories_to_cs(
             print(f"Fetching batch of {len(batch_ids)} LineString trajectories...")
             batch: list[TrajRow] = [
                 (int(tid), int(mmsi), ts_start, ts_end, bytes(geom_wkb))
-                for tid, mmsi, ts_start, ts_end, geom_wkb in conn.execute(
-                    f"""
+                for tid, mmsi, ts_start, ts_end, geom_wkb in conn.execute(f"""
                     SELECT trajectory_id, mmsi, EXTRACT(EPOCH FROM ts_start) AS ts_start, EXTRACT(EPOCH FROM ts_end) AS ts_end, ST_AsWKB(geom)
                     FROM {input_schema}.trajectory_ls
                     WHERE trajectory_id IN ({','.join(map(str, batch_ids))})
                     ORDER BY trajectory_id;
-                """
-                ).fetchall()
+                """).fetchall()
             ]
             if not batch:
                 break
@@ -115,8 +108,8 @@ def transform_ls_trajectories_to_cs(
             # Flatten: one row per cell
             trajectory_ids: list[int] = []
             mmsis: list[int] = []
-            timestamps: list[int] = []
-            occupation_seconds: list[int] = []
+            ts_entries: list[int] = []
+            ts_exits: list[int] = []
             cells: list[int] = []
 
             for trajectory_id, mmsi, cells_with_ts in results:
@@ -124,25 +117,25 @@ def transform_ls_trajectories_to_cs(
                     trajectory_id,
                     cells_with_ts[-1][1] if cells_with_ts else 0,
                 )
-                cell_occupation_seconds = calculate_occupation_seconds(
-                    cells_with_ts, ts_end
-                )
+                cell_exit_timestamps = calculate_exit_timestamps(cells_with_ts, ts_end)
 
-                for (cell, ts), occupation in zip(
-                    cells_with_ts, cell_occupation_seconds
+                for (cell, ts_entry), ts_exit in zip(
+                    cells_with_ts, cell_exit_timestamps
                 ):
                     trajectory_ids.append(trajectory_id)
                     mmsis.append(mmsi)
-                    timestamps.append(ts)  # seconds
-                    occupation_seconds.append(occupation)
+                    ts_entries.append(int(ts_entry))  # seconds
+                    ts_exits.append(int(ts_exit))  # seconds
                     cells.append(cell)
             if cells:
                 arrow_table = pa.table(
                     {
                         "trajectory_id": pa.array(trajectory_ids, type=pa.int32()),
                         "mmsi": pa.array(mmsis, type=pa.int64()),
-                        "ts": pa.array(timestamps, type=pa.timestamp("s", tz="UTC")),
-                        "delta_sec": pa.array(occupation_seconds, type=pa.int32()),
+                        "ts_entry": pa.array(
+                            ts_entries, type=pa.timestamp("s", tz="UTC")
+                        ),
+                        "ts_exit": pa.array(ts_exits, type=pa.timestamp("s", tz="UTC")),
                         "cell_z21": pa.array(cells, type=pa.uint64()),
                     },
                     schema=TRAJ_CS_SCHEMA,
@@ -179,16 +172,11 @@ def transform_poly_stops_to_cs(
     conn.execute("LOAD spatial")
     print(f"Processing stops in batches of {batch_size}...")
 
-    stop_ids_to_process: list[int] = [
-        row[0]
-        for row in conn.execute(
-            f"""
+    stop_ids_to_process: list[int] = [row[0] for row in conn.execute(f"""
                 SELECT stop_id FROM {input_schema}.stop_poly
                 EXCEPT
                 SELECT stop_id FROM {output_schema}.stop_cs
-                ORDER BY stop_id;"""
-        ).fetchall()
-    ]
+                ORDER BY stop_id;""").fetchall()]
 
     print(
         f"Found {len(stop_ids_to_process)} Polygon stops to convert to CellString. Starting processing..."
@@ -206,14 +194,12 @@ def transform_poly_stops_to_cs(
             print(f"Fetching batch of {len(batch_ids)} Polygon stops...")
             batch: list[StopRow] = [
                 (int(sid), int(mmsi), ts_start, ts_end, bytes(geom_wkb))
-                for sid, mmsi, ts_start, ts_end, geom_wkb in conn.execute(
-                    f"""
+                for sid, mmsi, ts_start, ts_end, geom_wkb in conn.execute(f"""
                     SELECT stop_id, mmsi, EXTRACT(EPOCH FROM ts_start) AS ts_start, EXTRACT(EPOCH FROM ts_end) AS ts_end, ST_AsWKB(geom)
                     FROM {input_schema}.stop_poly
                     WHERE stop_id IN ({','.join(map(str, batch_ids))})
                     ORDER BY stop_id;
-                """
-                ).fetchall()
+                """).fetchall()
             ]
             if not batch:
                 break

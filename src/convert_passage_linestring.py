@@ -25,13 +25,11 @@ def convert_passage_linestring_to_cs_postgres(linestring: LineString, name: str)
 
     # Insert passage as linestring into table
     cur.execute(
-        sql.SQL(
-            """
+        sql.SQL("""
             INSERT INTO {ls_schema}.passage_ls (name, geom)
             VALUES (%s, ST_GeomFromWKB(%s, 4326))
             RETURNING passage_id
-        """
-        ).format(ls_schema=sql.Identifier(ls_schema)),
+        """).format(ls_schema=sql.Identifier(ls_schema)),
         (name, linestring.wkb),
     )
     passage_row = cur.fetchone()
@@ -52,12 +50,10 @@ def convert_passage_linestring_to_cs_postgres(linestring: LineString, name: str)
     )
 
     cur.execute(
-        sql.SQL(
-            """
+        sql.SQL("""
             INSERT INTO {cs_schema}.passage_cs (passage_id, name, cellstring_z13, cellstring_z17, cellstring_z21)
             VALUES (%s, %s, %s, %s, %s)
-        """
-        ).format(cs_schema=sql.Identifier(cs_schema)),
+        """).format(cs_schema=sql.Identifier(cs_schema)),
         (passage_id, name, cellstring_z13, cellstring_z17, cellstring_z21),
     )
     print("Inserted passage cellstrings into PostGIS table")
