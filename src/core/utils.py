@@ -1,32 +1,50 @@
 from math import inf
-from geopy.distance import geodesic
-from shapely import Polygon, Point, from_wkt
+
+import numpy as np
+from shapely import Polygon, from_wkt
 
 KNOT_AS_MPS = 0.514444  # 1 knot = 0.514444 m/s
 MIN_POINTS_IN_SEGMENT = 2  # Minimum number of points in a trajectory or stop segment
 
+EARTH_RADIUS_M = 6_371_000.0  # Mean Earth radius in meters
 
-def distance_m(p1: Point, p2: Point) -> float:
-    """Return distance between two Shapely Points in meters."""
-    return geodesic(
-        (p1.y, p1.x), (p2.y, p2.x)
-    ).meters  # x and y is swapped because this is (lat,lon), and Shapely/PostGIS is (lon,lat)
+# Coordinate (lon, lat, epoch_ts)
+Coord = tuple[float, float, float]
 
 
-def extract_time_s(p: Point) -> float:
-    """Extract time in seconds from the M dimension of a Shapely Point."""
-    return p.m
+def haversine_distance_m(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
+    """Haversine distance in meters between two (lon, lat) points."""
+    lon1, lat1, lon2, lat2 = (
+        np.radians(lon1),
+        np.radians(lat1),
+        np.radians(lon2),
+        np.radians(lat2),
+    )
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    a = np.sin(dlat / 2) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2) ** 2
+    return float(EARTH_RADIUS_M * 2 * np.arcsin(np.sqrt(a)))
 
 
-def extract_start_end_time_s(points: list[Point]) -> tuple[float, float]:
-    """Extract start and end time in seconds from a list of Shapely Points."""
-    return extract_time_s(points[0]), extract_time_s(points[-1])
+def distance_m(c1: Coord, c2: Coord) -> float:
+    """Return distance between two Coords in meters (Haversine)."""
+    return haversine_distance_m(c1[0], c1[1], c2[0], c2[1])
 
 
-def compute_motion(prev_point: Point, curr_point: Point) -> tuple[float, float, float]:
-    """Compute time difference (s), distance difference (m), and average vessel speed (knots) between two points."""
-    time_diff = extract_time_s(curr_point) - extract_time_s(prev_point)
-    dist_diff = distance_m(prev_point, curr_point)
+def extract_time_s(c: Coord) -> float:
+    """Extract time in seconds from a Coord (the third element)."""
+    return c[2]
+
+
+def extract_start_end_time_s(coords: list[Coord]) -> tuple[float, float]:
+    """Extract start and end time in seconds from a list of Coords."""
+    return coords[0][2], coords[-1][2]
+
+
+def compute_motion(prev: Coord, curr: Coord) -> tuple[float, float, float]:
+    """Compute time difference (s), distance difference (m), and average vessel speed (knots) between two Coords."""
+    time_diff = curr[2] - prev[2]
+    dist_diff = haversine_distance_m(prev[0], prev[1], curr[0], curr[1])
     avg_vessel_speed = (dist_diff / time_diff / KNOT_AS_MPS) if time_diff > 0 else inf
     return time_diff, dist_diff, avg_vessel_speed
 
@@ -34,46 +52,46 @@ def compute_motion(prev_point: Point, curr_point: Point) -> tuple[float, float, 
 def compute_mbr_area(poly: Polygon) -> float:
     """Compute the area of the Minimum Bounding Rectangle (MBR) of a polygon in square meters."""
     minx, miny, maxx, maxy = poly.bounds
-    w = geodesic((miny, minx), (miny, maxx)).meters
-    h = geodesic((miny, minx), (maxy, minx)).meters
+    w = haversine_distance_m(minx, miny, maxx, miny)
+    h = haversine_distance_m(minx, miny, minx, maxy)
     return w * h
 
 
-def compute_centroid_of_points(points: list[Point]) -> tuple[float, float, int]:
+def compute_centroid_of_coords(coords: list[Coord]) -> tuple[float, float, int]:
     """Return (sum_x, sum_y, count) for incremental centroid tracking."""
-    sx = sum(p.x for p in points)
-    sy = sum(p.y for p in points)
-    return sx, sy, len(points)
+    sx = sum(c[0] for c in coords)
+    sy = sum(c[1] for c in coords)
+    return sx, sy, len(coords)
 
 
 def merge_candidate_stops(
-    candidate_stops: list[list[Point]],
+    candidate_stops: list[list[Coord]],
     merge_time_threshold: float,
     merge_distance_threshold: float,
-) -> list[list[Point]]:
+) -> list[list[Coord]]:
     """Merge nearby candidate stops based on distance and time thresholds."""
     if not candidate_stops:
         return []
 
-    merged_stops: list[list[Point]] = []
+    merged_stops: list[list[Coord]] = []
     current_merged_stop = candidate_stops[0]
 
     # Running centroid as (sum_x, sum_y, count) — avoids rebuilding MultiPoint each iteration
-    merged_sx, merged_sy, merged_n = compute_centroid_of_points(current_merged_stop)
+    merged_sx, merged_sy, merged_n = compute_centroid_of_coords(current_merged_stop)
 
     for current_candidate_stop in candidate_stops[1:]:
-        cand_sx, cand_sy, cand_n = compute_centroid_of_points(current_candidate_stop)
-
-        center_merged = Point(merged_sx / merged_n, merged_sy / merged_n)
-        center_candidate = Point(cand_sx / cand_n, cand_sy / cand_n)
+        cand_sx, cand_sy, cand_n = compute_centroid_of_coords(current_candidate_stop)
 
         # Time difference between end of current merged stop and start of candidate stop
-        time_diff = extract_time_s(current_candidate_stop[0]) - extract_time_s(
-            current_merged_stop[-1]
-        )
+        time_diff = current_candidate_stop[0][2] - current_merged_stop[-1][2]
 
         # Distance between centroids of the current merged stop and the candidate stop
-        dist_diff = distance_m(center_merged, center_candidate)
+        dist_diff = haversine_distance_m(
+            merged_sx / merged_n,
+            merged_sy / merged_n,
+            cand_sx / cand_n,
+            cand_sy / cand_n,
+        )
 
         if time_diff < merge_time_threshold and dist_diff < merge_distance_threshold:
             # Merge candidate stop into current merged stop
@@ -95,14 +113,14 @@ def merge_candidate_stops(
     return merged_stops
 
 
-def add_connecting_point_to_segment(current_segment: list[Point], point: Point):
+def add_connecting_point_to_segment(current_segment: list[Coord], coord: Coord):
     """Add the connecting point (previous point) to the current segment if it is empty (i.e. starting a new segment). A segment can be a trajectory or a stop."""
     if len(current_segment) == 0:
-        current_segment.append(point)
+        current_segment.append(coord)
 
 
 def append_segment_if_nonempty_and_clear_segment(
-    candidate_segments: list[list[Point]], current_segment: list[Point]
+    candidate_segments: list[list[Coord]], current_segment: list[Coord]
 ):
     """Appends current segment to candidate segments if it has at least 2 points. Finally, it clears the segment (regardless of whether it was appended). A segment can be a trajectory or a stop."""
     if len(current_segment) >= MIN_POINTS_IN_SEGMENT:
@@ -112,8 +130,8 @@ def append_segment_if_nonempty_and_clear_segment(
 
 
 def try_merge_invalid_merged_stop_with_trajectories(
-    trajs: list[list[Point]],
-    invalid_merged_stop: list[Point],
+    trajs: list[list[Coord]],
+    invalid_merged_stop: list[Coord],
     traj_max_speed_kn: float,
     traj_max_gap_s: float,
     min_ais_points_in_traj: int,
@@ -121,8 +139,8 @@ def try_merge_invalid_merged_stop_with_trajectories(
     """Insert or merge a non-valid stop with existing trajectories."""
 
     # First, validate the invalid_merged_stop points to ensure no traj with unrealistic speeds/time gaps is created
-    for p1, p2 in zip(invalid_merged_stop, invalid_merged_stop[1:]):
-        time_diff, _, avg_vessel_speed = compute_motion(p1, p2)
+    for c1, c2 in zip(invalid_merged_stop, invalid_merged_stop[1:]):
+        time_diff, _, avg_vessel_speed = compute_motion(c1, c2)
         if avg_vessel_speed > traj_max_speed_kn or time_diff > traj_max_gap_s:
             return  # Discard the invalid stop
 
@@ -138,10 +156,10 @@ def try_merge_invalid_merged_stop_with_trajectories(
         first_traj_pt = traj[0]
         last_traj_pt = traj[-1]
 
-        # Compare full (x, y, m) - exact equality
-        if last_traj_pt.coords[0] == first_stop_pt.coords[0]:
+        # Compare full (lon, lat, epoch_ts) - exact equality
+        if last_traj_pt == first_stop_pt:
             traj_before_idx = i
-        if first_traj_pt.coords[0] == last_stop_pt.coords[0]:
+        if first_traj_pt == last_stop_pt:
             traj_after_idx = i
 
     # Case 1: Stop connects/bridges two trajectories (stop starts where one trajectory ends and ends where another trajectory starts)
@@ -177,8 +195,8 @@ def try_merge_invalid_merged_stop_with_trajectories(
         trajs.append(invalid_merged_stop)
 
 
-def points_to_linestringm_as_wkb(points: list[Point]) -> bytes:
-    """Build a LineStringM, treating the third coordinate as M (epoch timestamp) from a list of Points. Returns the LineStringM as WKB."""
-    coords_m = " , ".join(f"{p.x} {p.y} {int(p.m)}" for p in points)
+def coords_to_linestringm_as_wkb(coords: list[Coord]) -> bytes:
+    """Build a LineStringM from a list of Coords. Returns the LineStringM as WKB."""
+    coords_m = " , ".join(f"{c[0]} {c[1]} {int(c[2])}" for c in coords)
 
     return from_wkt(f"LINESTRING M ({coords_m})").wkb
