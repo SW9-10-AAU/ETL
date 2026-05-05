@@ -102,16 +102,11 @@ def _create_staging_table(
     conn: duckdb.DuckDBPyConnection, selected_files: list[tuple[str, str, date]]
 ):
     conn.execute(f"DROP TABLE IF EXISTS {TEMP_AIS_STAGE};")
-    first_path = selected_files[0][0]
+    file_paths = [file_path for file_path, _, _ in selected_files]
     conn.execute(
-        f"CREATE TEMP TABLE {TEMP_AIS_STAGE} AS SELECT * FROM read_parquet(?) LIMIT 0",
-        [first_path],
+        f"CREATE TEMP TABLE {TEMP_AIS_STAGE} AS SELECT * FROM read_parquet(?)",
+        [file_paths],
     )
-    for file_path, _, _ in selected_files:
-        conn.execute(
-            f"INSERT INTO {TEMP_AIS_STAGE} SELECT * FROM read_parquet(?)",
-            [file_path],
-        )
 
 
 def _insert_incremental_points(conn: duckdb.DuckDBPyConnection, db_schema: str) -> int:
