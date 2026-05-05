@@ -35,8 +35,8 @@ AISPointWKB = tuple[bytes, float | None]  # (geom as WKB, sog)
 DuckDBRawPoint = tuple[float, float, float | None, float]  # (lon, lat, sog, epoch_ts)
 InputPoint = AISPointWKB | DuckDBRawPoint
 AISPoint = tuple[Point, float | None]  # (geom as PointM, sog)
-Traj = tuple[int, float, float, bytes]  # (mmsi, ts_start, ts_end, geom as WKB)
-Stop = tuple[int, float, float, bytes]  # (mmsi, ts_start, ts_end, geom as WKB)
+Traj = tuple[int, int, int, bytes]  # (mmsi, ts_start, ts_end, geom as WKB)
+Stop = tuple[int, int, int, bytes]  # (mmsi, ts_start, ts_end, geom as WKB)
 ProcessResult = tuple[
     int, list[Traj], list[Stop]
 ]  # (mmsi, trajs_to_insert, stops_to_insert)
@@ -167,6 +167,8 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
     for merged_stop in merged_stops:
         max_points_in_stop = max(max_points_in_stop, len(merged_stop))
         ts_start, ts_end = extract_start_end_time_s(merged_stop)
+        ts_start = int(ts_start)
+        ts_end = int(ts_end)
         stop_duration = ts_end - ts_start
 
         if len(merged_stop) >= MIN_STOP_POINTS and stop_duration >= MIN_STOP_DURATION:
@@ -213,6 +215,8 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
     # Phase 5: Final validation of trajectories
     for trajectory in candidate_trajs:
         ts_start, ts_end = extract_start_end_time_s(trajectory)
+        ts_start = int(ts_start)
+        ts_end = int(ts_end)
         if len(trajectory) >= MIN_AIS_POINTS_IN_TRAJ and ts_end > ts_start:
             start_linestringm = time.perf_counter()
             trajs_to_insert.append(

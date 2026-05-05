@@ -112,18 +112,6 @@ def construct_trajectories_and_stops(
     latest_ts = get_latest_constructed_ts_duckdb(conn, output_schema)
     processing_days = get_processing_days_duckdb(conn, points_schema, latest_ts)
 
-    insert_traj_query = f"""
-        INSERT INTO {output_schema}.trajectory_ls (mmsi, ts_start, ts_end, geom)
-        SELECT mmsi, ts_start, ts_end, ST_GeomFromWKB(geom_wkb)
-        FROM arrow_table
-    """
-
-    insert_stop_query = f"""
-        INSERT INTO {output_schema}.stop_poly (mmsi, ts_start, ts_end, geom)
-        SELECT mmsi, ts_start, ts_end, ST_GeomFromWKB(geom_wkb)
-        FROM arrow_table
-    """
-
     if not processing_days:
         print("No days with unprocessed points.")
         return
@@ -197,18 +185,16 @@ def construct_trajectories_and_stops(
         )
 
         if trajs_to_insert:
-            traj_mmsis: list[int] = []
-            traj_ts_starts: list[int] = []
-            traj_ts_ends: list[int] = []
-            traj_geoms: list[bytes] = []
+            traj_mmsis: list[int] = [mmsi for mmsi, _, _, _ in trajs_to_insert]
+            traj_ts_starts: list[int] = [
+                ts_start for _, ts_start, _, _ in trajs_to_insert
+            ]
+            traj_ts_ends: list[int] = [ts_end for _, _, ts_end, _ in trajs_to_insert]
+            traj_geoms: list[bytes] = [
+                geom_wkb for _, _, _, geom_wkb in trajs_to_insert
+            ]
 
-            for mmsi, ts_start, ts_end, geom_wkb in trajs_to_insert:
-                traj_mmsis.append(int(mmsi))
-                traj_ts_starts.append(int(ts_start))
-                traj_ts_ends.append(int(ts_end))
-                traj_geoms.append(geom_wkb)
-
-            arrow_table = pa.table(
+            traj_arrow_table = pa.table(
                 {
                     "mmsi": pa.array(traj_mmsis, type=pa.int64()),
                     "ts_start": pa.array(
@@ -219,21 +205,23 @@ def construct_trajectories_and_stops(
                 },
                 schema=TRAJ_LS_SCHEMA,
             )
-            conn.execute(insert_traj_query)
+            conn.execute(f"""
+                INSERT INTO {output_schema}.trajectory_ls (mmsi, ts_start, ts_end, geom)
+                SELECT mmsi, ts_start, ts_end, ST_GeomFromWKB(geom_wkb)
+                FROM traj_arrow_table
+            """)
 
         if stops_to_insert:
-            stop_mmsis: list[int] = []
-            stop_ts_starts: list[int] = []
-            stop_ts_ends: list[int] = []
-            stop_geoms: list[bytes] = []
+            stop_mmsis: list[int] = [mmsi for mmsi, _, _, _ in stops_to_insert]
+            stop_ts_starts: list[int] = [
+                ts_start for _, ts_start, _, _ in stops_to_insert
+            ]
+            stop_ts_ends: list[int] = [ts_end for _, _, ts_end, _ in stops_to_insert]
+            stop_geoms: list[bytes] = [
+                geom_wkb for _, _, _, geom_wkb in stops_to_insert
+            ]
 
-            for mmsi, ts_start, ts_end, geom_wkb in stops_to_insert:
-                stop_mmsis.append(int(mmsi))
-                stop_ts_starts.append(int(ts_start))
-                stop_ts_ends.append(int(ts_end))
-                stop_geoms.append(geom_wkb)
-
-            arrow_table = pa.table(
+            stop_arrow_table = pa.table(
                 {
                     "mmsi": pa.array(stop_mmsis, type=pa.int64()),
                     "ts_start": pa.array(
@@ -244,7 +232,11 @@ def construct_trajectories_and_stops(
                 },
                 schema=STOP_POLY_SCHEMA,
             )
-            conn.execute(insert_stop_query)
+            conn.execute(f"""
+                INSERT INTO {output_schema}.stop_poly (mmsi, ts_start, ts_end, geom)
+                SELECT mmsi, ts_start, ts_end, ST_GeomFromWKB(geom_wkb)
+                FROM stop_arrow_table
+            """)
 
         total_mmsis_processed += len(day_mmsis)
         elapsed_time = time.perf_counter() - start_time
