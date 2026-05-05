@@ -129,7 +129,7 @@ def main_duckdb():
         if should_run_step(
             "ETL_CREATE_POINTS",
             "Do you want to create or incrementally update points table from parquet files?",
-            default_yes=False,
+            default_yes=True,
         ):
             create_duckdb_points(
                 connection, ls_schema, ais_data_path=get_ais_data_path()

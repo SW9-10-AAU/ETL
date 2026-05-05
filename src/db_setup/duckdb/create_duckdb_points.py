@@ -5,7 +5,11 @@ from pathlib import Path
 
 import duckdb
 
-from db_setup.utils.db_utils import get_ais_data_path, get_ais_default_period
+from db_setup.utils.db_utils import (
+    format_eta,
+    get_ais_data_path,
+    get_ais_default_period,
+)
 from prompt_utils import prompt_optional_date_range
 
 AIS_FILE_PATTERN = re.compile(r"^aisdk-(\d{4}-\d{2}-\d{2})\.pq$")
@@ -56,8 +60,7 @@ def filter_files_by_watermark_and_period(
 
 
 def _ensure_points_table(conn: duckdb.DuckDBPyConnection, db_schema: str):
-    conn.execute(
-        f"""
+    conn.execute(f"""
         CREATE TABLE IF NOT EXISTS {db_schema}.points (
             mmsi BIGINT NOT NULL,
             lat DOUBLE NOT NULL,
@@ -66,13 +69,11 @@ def _ensure_points_table(conn: duckdb.DuckDBPyConnection, db_schema: str):
             timestamp TIMESTAMP NOT NULL,
             epoch_ts DOUBLE NOT NULL
         );
-    """
-    )
+    """)
 
 
 def _ensure_ingestion_log_table(conn: duckdb.DuckDBPyConnection, db_schema: str):
-    conn.execute(
-        f"""
+    conn.execute(f"""
         CREATE TABLE IF NOT EXISTS {db_schema}.points_ingestion_log (
             file_name TEXT PRIMARY KEY,
             file_path TEXT NOT NULL,
@@ -81,8 +82,7 @@ def _ensure_ingestion_log_table(conn: duckdb.DuckDBPyConnection, db_schema: str)
             max_ts TIMESTAMP,
             loaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
-    """
-    )
+    """)
 
 
 def _get_ingestion_watermark(
@@ -111,11 +111,23 @@ def _create_staging_table(
         f"CREATE TEMP TABLE {TEMP_AIS_STAGE} AS SELECT * FROM read_parquet(?) LIMIT 0",
         [first_path],
     )
-    for file_path, _, _ in selected_files:
+
+    total_files = len(selected_files)
+    start_time = time.perf_counter()
+    for i, (file_path, file_name, _) in enumerate(selected_files, 1):
         conn.execute(
             f"INSERT INTO {TEMP_AIS_STAGE} SELECT * FROM read_parquet(?)",
             [file_path],
         )
+        elapsed = time.perf_counter() - start_time
+        avg_time = elapsed / i
+        eta = (total_files - i) * avg_time
+        print(
+            f"\rLoading parquet files... {i}/{total_files} ({file_name}) - ETA: {format_eta(eta)}",
+            end="",
+            flush=True,
+        )
+    print()
 
 
 def _insert_incremental_points(conn: duckdb.DuckDBPyConnection, db_schema: str) -> int:
@@ -124,8 +136,7 @@ def _insert_incremental_points(conn: duckdb.DuckDBPyConnection, db_schema: str) 
     ).fetchone()
     before_count = before_count_row[0] if before_count_row else 0
 
-    conn.execute(
-        f"""
+    conn.execute(f"""
         INSERT INTO {db_schema}.points (mmsi, lat, lon, sog, timestamp, epoch_ts)
         WITH valid_mmsi AS (
             SELECT mmsi
@@ -163,8 +174,7 @@ def _insert_incremental_points(conn: duckdb.DuckDBPyConnection, db_schema: str) 
         SELECT mmsi, lat, lon, sog, timestamp, epoch_ts
         FROM unseen
         ORDER BY mmsi, epoch_ts;
-    """
-    )
+    """)
 
     after_count_row = conn.execute(
         f"SELECT COUNT(*) FROM {db_schema}.points"
@@ -217,6 +227,9 @@ def create_duckdb_points(
         print(f"No AIS parquet files found in '{resolved_ais_data_path}'.")
         return
 
+    available_start = discovered_files[0][2]
+    available_end = discovered_files[-1][2]
+
     watermark_ts = _get_ingestion_watermark(conn, db_schema)
     watermark_date = watermark_ts.date() if watermark_ts is not None else None
 
@@ -225,6 +238,8 @@ def create_duckdb_points(
         "Select optional AIS ingestion period",
         default_start=default_start,
         default_end=default_end,
+        available_start=available_start,
+        available_end=available_end,
     )
 
     selected_files = filter_files_by_watermark_and_period(
@@ -260,5 +275,5 @@ def create_duckdb_points(
     conn.execute(f"DROP TABLE IF EXISTS {TEMP_AIS_STAGE};")
 
     print(
-        f"Incremental points load completed: {inserted_points:,} new points inserted from {len(selected_files)} files in {time.perf_counter() - start_time:.2f}s."
+        f"{inserted_points:,} new points inserted from {len(selected_files)} files in {time.perf_counter() - start_time:.2f}s."
     )

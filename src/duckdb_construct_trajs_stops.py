@@ -4,6 +4,7 @@ from concurrent.futures import Future, ProcessPoolExecutor, as_completed
 from datetime import date
 
 import duckdb
+import pyarrow as pa
 
 from core.points_to_ls_poly import (
     DictInputPoint,
@@ -12,22 +13,45 @@ from core.points_to_ls_poly import (
     Traj,
     process_single_mmsi,
 )
+from db_setup.duckdb.pyarrow_schemas import STOP_POLY_SCHEMA, TRAJ_LS_SCHEMA
+from db_setup.utils.db_utils import format_eta
 
 FutureResult = Future[ProcessResult]  # Future returning ProcessResult
+
+
+def ensure_points_table_exists(
+    conn: duckdb.DuckDBPyConnection, points_schema: str
+) -> None:
+    rows = conn.execute("""
+        SELECT table_schema
+        FROM information_schema.tables
+        WHERE table_name = 'points'
+        ORDER BY table_schema;
+    """).fetchall()
+    available_schemas = [row[0] for row in rows]
+    if points_schema not in available_schemas:
+        if available_schemas:
+            available = ", ".join(available_schemas)
+            raise RuntimeError(
+                "Missing points table: "
+                f"{points_schema}.points. Available points tables: {available}."
+            )
+        raise RuntimeError(
+            "Missing points table: "
+            f"{points_schema}.points. No points tables found in the database."
+        )
 
 
 def get_latest_constructed_ts_duckdb(
     conn: duckdb.DuckDBPyConnection, output_schema: str
 ):
     """Fetch latest constructed ts_end across stop_poly and trajectory_ls."""
-    row = conn.execute(
-        f"""
+    row = conn.execute(f"""
         SELECT GREATEST(
             COALESCE((SELECT MAX(ts_end) FROM {output_schema}.stop_poly), TIMESTAMP '1970-01-01'),
             COALESCE((SELECT MAX(ts_end) FROM {output_schema}.trajectory_ls), TIMESTAMP '1970-01-01')
         ) AS latest_ts;
-    """
-    ).fetchone()
+    """).fetchone()
     return row[0] if row else None
 
 
@@ -109,18 +133,9 @@ def construct_trajectories_and_stops(
     max_workers: int = 4,
 ):
     """Construct trajectories and stops per day using global latest constructed timestamp."""
+    ensure_points_table_exists(conn, points_schema)
     latest_ts = get_latest_constructed_ts_duckdb(conn, output_schema)
     processing_days = get_processing_days_duckdb(conn, points_schema, latest_ts)
-
-    insert_traj_query = f"""
-        INSERT INTO {output_schema}.trajectory_ls (mmsi, ts_start, ts_end, geom)
-        VALUES (?, to_timestamp(?), to_timestamp(?), ST_GeomFromWKB(?))
-    """
-
-    insert_stop_query = f"""
-        INSERT INTO {output_schema}.stop_poly (mmsi, ts_start, ts_end, geom)
-        VALUES (?, to_timestamp(?), to_timestamp(?), ST_GeomFromWKB(?))
-    """
 
     if not processing_days:
         print("No days with unprocessed points.")
@@ -195,33 +210,71 @@ def construct_trajectories_and_stops(
         )
 
         if trajs_to_insert:
-            conn.executemany(
-                insert_traj_query,
-                [
-                    (mmsi, ts_start, ts_end, geom_wkb)
-                    for (mmsi, ts_start, ts_end, geom_wkb) in trajs_to_insert
-                ],
+            traj_mmsis: list[int] = [mmsi for mmsi, _, _, _ in trajs_to_insert]
+            traj_ts_starts: list[int] = [
+                ts_start for _, ts_start, _, _ in trajs_to_insert
+            ]
+            traj_ts_ends: list[int] = [ts_end for _, _, ts_end, _ in trajs_to_insert]
+            traj_geoms: list[bytes] = [
+                geom_wkb for _, _, _, geom_wkb in trajs_to_insert
+            ]
+
+            traj_arrow_table = pa.table(
+                {
+                    "mmsi": pa.array(traj_mmsis, type=pa.int64()),
+                    "ts_start": pa.array(
+                        traj_ts_starts, type=pa.timestamp("s", tz="UTC")
+                    ),
+                    "ts_end": pa.array(traj_ts_ends, type=pa.timestamp("s", tz="UTC")),
+                    "geom_wkb": pa.array(traj_geoms, type=pa.binary()),
+                },
+                schema=TRAJ_LS_SCHEMA,
             )
+            conn.execute(f"""
+                INSERT INTO {output_schema}.trajectory_ls (mmsi, ts_start, ts_end, geom)
+                SELECT mmsi, ts_start, ts_end, ST_GeomFromWKB(geom_wkb)
+                FROM traj_arrow_table
+            """)
 
         if stops_to_insert:
-            conn.executemany(
-                insert_stop_query,
-                [
-                    (mmsi, ts_start, ts_end, geom_wkb)
-                    for (mmsi, ts_start, ts_end, geom_wkb) in stops_to_insert
-                ],
+            stop_mmsis: list[int] = [mmsi for mmsi, _, _, _ in stops_to_insert]
+            stop_ts_starts: list[int] = [
+                ts_start for _, ts_start, _, _ in stops_to_insert
+            ]
+            stop_ts_ends: list[int] = [ts_end for _, _, ts_end, _ in stops_to_insert]
+            stop_geoms: list[bytes] = [
+                geom_wkb for _, _, _, geom_wkb in stops_to_insert
+            ]
+
+            stop_arrow_table = pa.table(
+                {
+                    "mmsi": pa.array(stop_mmsis, type=pa.int64()),
+                    "ts_start": pa.array(
+                        stop_ts_starts, type=pa.timestamp("s", tz="UTC")
+                    ),
+                    "ts_end": pa.array(stop_ts_ends, type=pa.timestamp("s", tz="UTC")),
+                    "geom_wkb": pa.array(stop_geoms, type=pa.binary()),
+                },
+                schema=STOP_POLY_SCHEMA,
             )
+            conn.execute(f"""
+                INSERT INTO {output_schema}.stop_poly (mmsi, ts_start, ts_end, geom)
+                SELECT mmsi, ts_start, ts_end, ST_GeomFromWKB(geom_wkb)
+                FROM stop_arrow_table
+            """)
 
         total_mmsis_processed += len(day_mmsis)
         elapsed_time = time.perf_counter() - start_time
         batch_time = time.perf_counter() - batch_start_time
+        avg_time_per_day = elapsed_time / day_num
+        eta = (len(processing_days) - day_num) * avg_time_per_day
         print(
             f"Inserted batch results for day {point_day.isoformat()} | Elapsed: {elapsed_time:.2f}s | Batch time: {batch_time:.2f}s"
         )
 
         day_elapsed = time.perf_counter() - day_start_time
         print(
-            f"Completed day {point_day.isoformat()} in {day_elapsed:.2f}s ({len(day_mmsis)} MMSIs)."
+            f"Completed day {point_day.isoformat()} in {day_elapsed:.2f}s ({len(day_mmsis)} MMSIs) - Progress: {day_num/len(processing_days):.2%} - ETA: {format_eta(eta)}"
         )
 
     total_time = time.perf_counter() - start_time

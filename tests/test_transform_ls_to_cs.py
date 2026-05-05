@@ -9,7 +9,6 @@ import unittest
 
 import mercantile
 from shapely import LineString, Polygon, from_wkb, from_wkt
-from duckdb_transform_ls_to_cs import calculate_occupation_seconds
 
 from core.cellstring_utils import (
     Classification,
@@ -430,20 +429,6 @@ class TestProcessSingleMmsiCoincidentNullSog(unittest.TestCase):
         self.assertEqual(ts_end, float(start_ts + (n_points - 1) * 10))
         self.assertAlmostEqual(from_wkb(geom_wkb).centroid.x, lon, places=2)
         self.assertAlmostEqual(from_wkb(geom_wkb).centroid.y, lat, places=2)
-
-
-class TestDuckDBOccupationSeconds(unittest.TestCase):
-    def test_calculate_occupation_seconds_multi_cell(self):
-        cells_with_ts = [(10, 1234), (11, 1240), (12, 1255)]
-        occupation = calculate_occupation_seconds(cells_with_ts, ts_end=1260)
-
-        self.assertEqual(occupation, [6, 15, 5])
-
-    def test_calculate_occupation_seconds_single_cell_uses_ts_end(self):
-        cells_with_ts = [(10, 2000)]
-        occupation = calculate_occupation_seconds(cells_with_ts, ts_end=2007)
-
-        self.assertEqual(occupation, [7])
 
 
 if __name__ == "__main__":

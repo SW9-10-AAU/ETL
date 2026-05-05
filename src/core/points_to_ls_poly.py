@@ -2,14 +2,15 @@ from typing import cast
 import time
 from shapely import Polygon, from_wkb, from_wkt, Point, MultiPoint, concave_hull
 from core.utils import (
+    Coord,
     add_connecting_point_to_segment,
     append_segment_if_nonempty_and_clear_segment,
     compute_mbr_area,
     compute_motion,
     extract_start_end_time_s,
-    extract_time_s,
+    haversine_distance_m,
     merge_candidate_stops,
-    points_to_linestringm_as_wkb,
+    coords_to_linestringm_as_wkb,
     try_merge_invalid_merged_stop_with_trajectories,
 )
 
@@ -34,9 +35,9 @@ MIN_AIS_POINTS_IN_TRAJ = 10  # Minimum AIS messages required to record a traject
 AISPointWKB = tuple[bytes, float | None]  # (geom as WKB, sog)
 DuckDBRawPoint = tuple[float, float, float | None, float]  # (lon, lat, sog, epoch_ts)
 InputPoint = AISPointWKB | DuckDBRawPoint
-AISPoint = tuple[Point, float | None]  # (geom as PointM, sog)
-Traj = tuple[int, float, float, bytes]  # (mmsi, ts_start, ts_end, geom as WKB)
-Stop = tuple[int, float, float, bytes]  # (mmsi, ts_start, ts_end, geom as WKB)
+AISPoint = tuple[Coord, float | None]  # (coord, sog)
+Traj = tuple[int, int, int, bytes]  # (mmsi, ts_start, ts_end, geom as WKB)
+Stop = tuple[int, int, int, bytes]  # (mmsi, ts_start, ts_end, geom as WKB)
 ProcessResult = tuple[
     int, list[Traj], list[Stop]
 ]  # (mmsi, trajs_to_insert, stops_to_insert)
@@ -60,23 +61,26 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
 
     points: list[AISPoint] = []
 
-    # Phase 1: Parse input points into AISPoints (Point, SOG) tuples
+    # Phase 1: Parse input points into (Coord, SOG) tuples
     for input_point in input_points:
         if len(input_point) == 2:
+            # WKB path (PostgreSQL): parse WKB, extract coords immediately
             geom_wkb, sog = input_point
-            points.append((cast(Point, from_wkb(geom_wkb)), sog))
+            pt = cast(Point, from_wkb(geom_wkb))
+            points.append(((pt.x, pt.y, pt.m), sog))
         elif len(input_point) == 4:
+            # DuckDB path: no Shapely needed at all
             lon, lat, sog, epoch_ts = input_point
-            pt = cast(Point, from_wkt(f"POINT M ({lon} {lat} {int(epoch_ts)})"))
-            points.append((pt, float(sog) if sog is not None else None))
+            coord: Coord = (float(lon), float(lat), float(epoch_ts))
+            points.append((coord, float(sog) if sog is not None else None))
 
     time_phase1 = time.perf_counter() - start_phase1
 
-    prev_point = None
-    current_traj: list[Point] = []
-    current_stop: list[Point] = []
-    candidate_trajs: list[list[Point]] = []
-    candidate_stops: list[list[Point]] = []
+    prev_coord: Coord | None = None
+    current_traj: list[Coord] = []
+    current_stop: list[Coord] = []
+    candidate_trajs: list[list[Coord]] = []
+    candidate_stops: list[list[Coord]] = []
 
     # Final trajectories and stops to insert
     trajs_to_insert: list[Traj] = []
@@ -85,27 +89,27 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
     start_phase2 = time.perf_counter()
 
     # Phase 2: Iterate through points to construct candidate trajectories and stops
-    for current_point, sog in points:
+    for current_coord, sog in points:
 
         # Initialization of first point
-        if prev_point is None:
+        if prev_coord is None:
             if sog is None or sog < STOP_SOG_THRESHOLD:
-                current_stop.append(current_point)
+                current_stop.append(current_coord)
             else:
-                current_traj.append(current_point)
+                current_traj.append(current_coord)
 
-            prev_point = current_point
+            prev_coord = current_coord
             continue
 
-        current_time = extract_time_s(current_point)
+        current_time = current_coord[2]
 
         # Skip points that have identical timestamps
-        if current_time == extract_time_s(prev_point):
+        if current_time == prev_coord[2]:
             continue
 
         # Compute differences between previous and current point
         time_diff, dist_diff, avg_vessel_speed = compute_motion(
-            prev_point, current_point
+            prev_coord, current_coord
         )
 
         # Use SOG if SOG is not null, otherwise use the computed average speed between points
@@ -117,18 +121,18 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
             and time_diff < STOP_TIME_THRESHOLD
             and dist_diff < STOP_DISTANCE_THRESHOLD
         ):
-            add_connecting_point_to_segment(current_stop, prev_point)
-            current_stop.append(current_point)
+            add_connecting_point_to_segment(current_stop, prev_coord)
+            current_stop.append(current_coord)
 
             # Append trajectory (if any)
             append_segment_if_nonempty_and_clear_segment(candidate_trajs, current_traj)
 
         # Trajectory condition
         else:
-            add_connecting_point_to_segment(current_traj, prev_point)
+            add_connecting_point_to_segment(current_traj, prev_coord)
             if avg_vessel_speed < TRAJ_MAX_SPEED_KN:  # Filter out outliers
                 if time_diff < TRAJ_MAX_GAP_S:
-                    current_traj.append(current_point)
+                    current_traj.append(current_coord)
                 else:
                     # Append trajectory (start a new one due to large time gap)
                     append_segment_if_nonempty_and_clear_segment(
@@ -141,7 +145,7 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
             append_segment_if_nonempty_and_clear_segment(candidate_stops, current_stop)
 
         # Update previous point
-        prev_point = current_point
+        prev_coord = current_coord
 
     # Phase 2.1: Final append (remaining traj or stop)
     append_segment_if_nonempty_and_clear_segment(candidate_trajs, current_traj)
@@ -167,11 +171,14 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
     for merged_stop in merged_stops:
         max_points_in_stop = max(max_points_in_stop, len(merged_stop))
         ts_start, ts_end = extract_start_end_time_s(merged_stop)
+        ts_start = int(ts_start)
+        ts_end = int(ts_end)
         stop_duration = ts_end - ts_start
 
         if len(merged_stop) >= MIN_STOP_POINTS and stop_duration >= MIN_STOP_DURATION:
             start_hull = time.perf_counter()
-            geom_points = MultiPoint(merged_stop)
+            # Convert Coord tuples to Shapely Points only here (for concave hull)
+            geom_points = MultiPoint([(c[0], c[1]) for c in merged_stop])
 
             # Phase 4.1: Compute concave hull
             hull = concave_hull(geom_points, ratio=0.2, allow_holes=False)
@@ -213,10 +220,12 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
     # Phase 5: Final validation of trajectories
     for trajectory in candidate_trajs:
         ts_start, ts_end = extract_start_end_time_s(trajectory)
+        ts_start = int(ts_start)
+        ts_end = int(ts_end)
         if len(trajectory) >= MIN_AIS_POINTS_IN_TRAJ and ts_end > ts_start:
             start_linestringm = time.perf_counter()
             trajs_to_insert.append(
-                (mmsi, ts_start, ts_end, points_to_linestringm_as_wkb(trajectory))
+                (mmsi, ts_start, ts_end, coords_to_linestringm_as_wkb(trajectory))
             )
             time_linestringm += time.perf_counter() - start_linestringm
 
