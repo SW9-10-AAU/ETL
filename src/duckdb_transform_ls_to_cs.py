@@ -37,6 +37,7 @@ def calculate_exit_timestamps(
     return exit_timestamps
 
 
+
 def transform_ls_trajectories_to_cs(
     conn: duckdb.DuckDBPyConnection,
     input_schema: str,
