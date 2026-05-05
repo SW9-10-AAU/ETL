@@ -18,6 +18,31 @@ from db_setup.duckdb.pyarrow_schemas import STOP_POLY_SCHEMA, TRAJ_LS_SCHEMA
 FutureResult = Future[ProcessResult]  # Future returning ProcessResult
 
 
+def ensure_points_table_exists(
+    conn: duckdb.DuckDBPyConnection, points_schema: str
+) -> None:
+    rows = conn.execute(
+        """
+        SELECT table_schema
+        FROM information_schema.tables
+        WHERE table_name = 'points'
+        ORDER BY table_schema;
+    """
+    ).fetchall()
+    available_schemas = [row[0] for row in rows]
+    if points_schema not in available_schemas:
+        if available_schemas:
+            available = ", ".join(available_schemas)
+            raise RuntimeError(
+                "Missing points table: "
+                f"{points_schema}.points. Available points tables: {available}."
+            )
+        raise RuntimeError(
+            "Missing points table: "
+            f"{points_schema}.points. No points tables found in the database."
+        )
+
+
 def get_latest_constructed_ts_duckdb(
     conn: duckdb.DuckDBPyConnection, output_schema: str
 ):
@@ -109,6 +134,7 @@ def construct_trajectories_and_stops(
     max_workers: int = 4,
 ):
     """Construct trajectories and stops per day using global latest constructed timestamp."""
+    ensure_points_table_exists(conn, points_schema)
     latest_ts = get_latest_constructed_ts_duckdb(conn, output_schema)
     processing_days = get_processing_days_duckdb(conn, points_schema, latest_ts)
 
