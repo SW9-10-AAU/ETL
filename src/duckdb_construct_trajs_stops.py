@@ -14,6 +14,7 @@ from core.points_to_ls_poly import (
     process_single_mmsi,
 )
 from db_setup.duckdb.pyarrow_schemas import STOP_POLY_SCHEMA, TRAJ_LS_SCHEMA
+from db_setup.utils.db_utils import format_eta
 
 FutureResult = Future[ProcessResult]  # Future returning ProcessResult
 
@@ -265,13 +266,15 @@ def construct_trajectories_and_stops(
         total_mmsis_processed += len(day_mmsis)
         elapsed_time = time.perf_counter() - start_time
         batch_time = time.perf_counter() - batch_start_time
+        avg_time_per_day = elapsed_time / day_num
+        eta = (len(processing_days) - day_num) * avg_time_per_day
         print(
             f"Inserted batch results for day {point_day.isoformat()} | Elapsed: {elapsed_time:.2f}s | Batch time: {batch_time:.2f}s"
         )
 
         day_elapsed = time.perf_counter() - day_start_time
         print(
-            f"Completed day {point_day.isoformat()} in {day_elapsed:.2f}s ({len(day_mmsis)} MMSIs)."
+            f"Completed day {point_day.isoformat()} in {day_elapsed:.2f}s ({len(day_mmsis)} MMSIs) - Progress: {day_num/len(processing_days):.2%} - ETA: {format_eta(eta)}"
         )
 
     total_time = time.perf_counter() - start_time

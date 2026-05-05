@@ -1,4 +1,5 @@
 from concurrent.futures import Future, ProcessPoolExecutor, as_completed
+import time
 import duckdb
 import pyarrow as pa
 from core.ls_poly_to_cs import (
@@ -10,6 +11,7 @@ from core.ls_poly_to_cs import (
     process_trajectory_row,
 )
 from db_setup.duckdb.pyarrow_schemas import STOP_CS_SCHEMA, TRAJ_CS_SCHEMA
+from db_setup.utils.db_utils import format_eta
 
 FutureResultTraj = Future[ProcessResultTraj]
 FutureResultStop = Future[ProcessResultStop]
@@ -44,7 +46,7 @@ def transform_ls_trajectories_to_cs(
     max_workers: int = MAX_WORKERS,
     batch_size: int = BATCH_SIZE,
 ):
-    print(f"\n--- Processing trajectories with (using {max_workers} workers) ---")
+    print(f"\n--- Processing trajectories (using {max_workers} workers) ---")
     total_processed = 0
     total_cells_inserted = 0
 
@@ -61,6 +63,9 @@ def transform_ls_trajectories_to_cs(
         f"Found {len(traj_ids_to_process)} LineString trajectories to convert to CellString. Starting processing..."
     )
     next_index = 0
+    start_time = time.perf_counter()
+    total_batches = (len(traj_ids_to_process) + batch_size - 1) // batch_size
+    batch_index = 1
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         while next_index < len(traj_ids_to_process):
@@ -70,7 +75,7 @@ def transform_ls_trajectories_to_cs(
             if not batch_ids:
                 break
 
-            print(f"Fetching batch of {len(batch_ids)} LineString trajectories...")
+            print(f"Fetching batch {batch_index}/{total_batches} of {len(batch_ids)} LineString trajectories...")
             batch: list[TrajRow] = [
                 (int(tid), int(mmsi), ts_start, ts_end, bytes(geom_wkb))
                 for tid, mmsi, ts_start, ts_end, geom_wkb in conn.execute(f"""
@@ -88,7 +93,7 @@ def transform_ls_trajectories_to_cs(
             }
 
             print(
-                f"Processing batch of {len(batch)} trajectories (total processed so far: {total_processed:,})..."
+                f"Processing batch {batch_index}/{total_batches} of {len(batch)} trajectories..."
             )
 
             futures: list[FutureResultTraj] = [
@@ -102,7 +107,7 @@ def transform_ls_trajectories_to_cs(
                     print(f"Worker error: {e}")
 
             print(
-                f"Processed batch of {len(results)} trajectories, inserting into the database..."
+                f"Processed batch {batch_index}/{total_batches} of {len(results)} trajectories, inserting into the database..."
             )
 
             # Flatten: one row per cell
@@ -145,14 +150,18 @@ def transform_ls_trajectories_to_cs(
                     f"INSERT INTO {output_schema}.trajectory_cs SELECT * FROM traj_arrow_table"
                 )
                 print(
-                    f"Inserted batch of {len(results)} trajectories ({len(cells):,} cells)."
+                    f"Inserted batch {batch_index}/{total_batches} of {len(results)} trajectories ({len(cells):,} cells)."
                 )
                 total_cells_inserted += len(cells)
 
             total_processed += len(results)
+            elapsed = time.perf_counter() - start_time
+            avg_time = elapsed / total_processed if total_processed else 0
+            eta = (len(traj_ids_to_process) - total_processed) * avg_time
             print(
-                f"Progress ({total_processed/len(traj_ids_to_process):.2%}): {total_processed:,} of {len(traj_ids_to_process):,} trajectories ({total_cells_inserted:,} cells)"
+                f"Progress ({total_processed/len(traj_ids_to_process):.2%}): {total_processed:,} of {len(traj_ids_to_process):,} trajectories ({total_cells_inserted:,} cells) - ETA: {format_eta(eta)}"
             )
+            batch_index += 1
 
     print(
         f"Finished processing all trajectories ({total_processed:,} trajectories, {total_cells_inserted:,} cells)"
@@ -183,6 +192,9 @@ def transform_poly_stops_to_cs(
         f"Found {len(stop_ids_to_process)} Polygon stops to convert to CellString. Starting processing..."
     )
     next_index = 0
+    start_time = time.perf_counter()
+    total_batches = (len(stop_ids_to_process) + batch_size - 1) // batch_size
+    batch_index = 1
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         while next_index < len(stop_ids_to_process):
@@ -192,7 +204,7 @@ def transform_poly_stops_to_cs(
             if not batch_ids:
                 break
 
-            print(f"Fetching batch of {len(batch_ids)} Polygon stops...")
+            print(f"Fetching batch {batch_index}/{total_batches} of {len(batch_ids)} Polygon stops...")
             batch: list[StopRow] = [
                 (int(sid), int(mmsi), ts_start, ts_end, bytes(geom_wkb))
                 for sid, mmsi, ts_start, ts_end, geom_wkb in conn.execute(f"""
@@ -246,13 +258,17 @@ def transform_poly_stops_to_cs(
                 conn.execute(
                     f"INSERT INTO {output_schema}.stop_cs SELECT * FROM stop_arrow_table"
                 )
-                print(f"Inserted batch of {len(results)} stops ({len(cells):,} cells).")
+                print(f"Inserted batch {batch_index}/{total_batches} of {len(results)} stops ({len(cells):,} cells).")
                 total_cells_inserted += len(cells)
 
             total_processed += len(results)
+            elapsed = time.perf_counter() - start_time
+            avg_time = elapsed / total_processed if total_processed else 0
+            eta = (len(stop_ids_to_process) - total_processed) * avg_time
             print(
-                f"Progress ({total_processed/len(stop_ids_to_process):.2%}): {total_processed:,} of {len(stop_ids_to_process):,} stops ({total_cells_inserted:,} cells)"
+                f"Progress ({total_processed/len(stop_ids_to_process):.2%}): {total_processed:,} of {len(stop_ids_to_process):,} stops ({total_cells_inserted:,} cells) - ETA: {format_eta(eta)}"
             )
+            batch_index += 1
 
     print(
         f"Finished processing all stops ({total_processed:,} stops, {total_cells_inserted:,} cells)"

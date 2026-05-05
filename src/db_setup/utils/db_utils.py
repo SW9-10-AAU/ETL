@@ -3,6 +3,20 @@ from dotenv import load_dotenv
 from datetime import date
 
 
+def format_eta(seconds: float) -> str:
+    """Format seconds as human-readable time (e.g., 65s -> 1m 5s)."""
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    elif seconds < 3600:
+        minutes = seconds // 60
+        secs = seconds % 60
+        return f"{minutes:.0f}m {secs:.0f}s"
+    else:
+        hours = seconds // 3600
+        minutes = (seconds % 3600) // 60
+        return f"{hours:.0f}h {minutes:.0f}m"
+
+
 def _get_required_env(key: str) -> str:
     value = os.getenv(key)
     if not value:
