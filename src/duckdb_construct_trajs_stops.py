@@ -21,14 +21,12 @@ FutureResult = Future[ProcessResult]  # Future returning ProcessResult
 def ensure_points_table_exists(
     conn: duckdb.DuckDBPyConnection, points_schema: str
 ) -> None:
-    rows = conn.execute(
-        """
+    rows = conn.execute("""
         SELECT table_schema
         FROM information_schema.tables
         WHERE table_name = 'points'
         ORDER BY table_schema;
-    """
-    ).fetchall()
+    """).fetchall()
     available_schemas = [row[0] for row in rows]
     if points_schema not in available_schemas:
         if available_schemas:
