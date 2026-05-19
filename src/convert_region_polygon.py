@@ -29,13 +29,11 @@ def convert_region_polygon_to_cs_postgresql(
 
     # Insert region as polygon into table
     cur.execute(
-        sql.SQL(
-            """
+        sql.SQL("""
             INSERT INTO {ls_schema}.region_poly (name, geom)
             VALUES (%s, ST_GeomFromWKB(%s, 4326))
             RETURNING region_id
-        """
-        ).format(ls_schema=sql.Identifier(ls_schema)),
+        """).format(ls_schema=sql.Identifier(ls_schema)),
         (name, polygon.wkb),
     )
     region_row = cur.fetchone()
@@ -55,15 +53,15 @@ def convert_region_polygon_to_cs_postgresql(
     )
 
     cur.execute(
-        sql.SQL(
-            """
+        sql.SQL("""
             INSERT INTO {cs_schema}.region_cs (region_id, name, cellstring_z13, cellstring_z17, cellstring_z21)
             VALUES (%s, %s, %s, %s, %s)
-        """
-        ).format(cs_schema=sql.Identifier(cs_schema)),
+        """).format(cs_schema=sql.Identifier(cs_schema)),
         (region_id, name, cellstring_z13, cellstring_z17, cellstring_z21),
     )
-    print(f"Inserted region cellstrings (ID: {region_id}, Name: {name}) into PostGIS table")
+    print(
+        f"Inserted region cellstrings (ID: {region_id}, Name: {name}) into PostGIS table"
+    )
     conn.commit()
     cur.close()
 
@@ -91,47 +89,66 @@ def convert_region_polygon_to_cs_duckdb(
     ls_schema = get_ls_schema("duckdb")
     cs_schema = get_cs_schema("duckdb")
     duckdb_path = get_db_path_or_url("duckdb")
-    conn = duckdb.connect(duckdb_path)
+    connection = None
+    try:
+        connection = duckdb.connect(duckdb_path)
+        print(f"Connected to DuckDB at '{duckdb_path}'.")
 
-    if skip_z21:
-        print("DuckDB requires z21 cells; ignoring skip_z21=True.")
-        skip_z21 = False
+        if skip_z21:
+            print("DuckDB requires z21 cells; ignoring skip_z21=True.")
+            skip_z21 = False
 
-    # Insert region polygon as geom from WKB
-    conn.execute("LOAD SPATIAL;")
-    region_row = conn.execute(
-        f"""INSERT INTO {ls_schema}.region_poly (name, geom)
-         VALUES (?, ST_GeomFromWKB(?))
-         RETURNING region_id""",
-        [name, polygon.wkb],
-    ).fetchone()
-    if region_row is None:
-        raise RuntimeError("Failed to insert region geometry into DuckDB")
+        # Insert region polygon as geom from WKB
+        connection.execute("LOAD SPATIAL;")
+        region_row = connection.execute(
+            f"""INSERT INTO {ls_schema}.region_poly (name, geom)
+            VALUES (?, ST_GeomFromWKB(?))
+            RETURNING region_id""",
+            [name, polygon.wkb],
+        ).fetchone()
+        if region_row is None:
+            raise RuntimeError("Failed to insert region geometry into DuckDB")
 
-    region_id = int(region_row[0])
-    print(f"Inserted region polygon (ID: {region_id}, Name: {name}) into DuckDB table")
-
-    print("Converting polygon to cellstring(s)")
-    _, _, cellstring_z21 = convert_polygon_to_cellstrings(polygon, skip_z21=skip_z21)
-    print(f"Conversion succeeded with {len(cellstring_z21)} cells (zoom 21).")
-
-    if cellstring_z21:
-        arrow_table = pa.table(
-            {
-                "region_id": pa.array([region_id] * len(cellstring_z21), type=pa.int32()),
-                "name": pa.array([name] * len(cellstring_z21), type=pa.string()),
-                "cell_z21": pa.array(cellstring_z21, type=pa.uint64()),
-            },
-            schema=REGION_CS_SCHEMA,
-        )
-        conn.execute(f"INSERT INTO {cs_schema}.region_cs SELECT * FROM arrow_table")
+        region_id = int(region_row[0])
         print(
-            f"Inserted region cellstring(s) (ID: {region_id}, Name: {name}) into DuckDB table"
+            f"Inserted region polygon (ID: {region_id}, Name: {name}) into DuckDB table"
         )
-    else:
-        print("No region cells to insert into DuckDB table")
 
-    conn.close()
+        print("Converting polygon to cellstring(s)")
+        _, _, cellstring_z21 = convert_polygon_to_cellstrings(
+            polygon, skip_z21=skip_z21
+        )
+        print(f"Conversion succeeded with {len(cellstring_z21)} cells (zoom 21).")
+
+        if cellstring_z21:
+            arrow_table = pa.table(
+                {
+                    "region_id": pa.array(
+                        [region_id] * len(cellstring_z21), type=pa.int32()
+                    ),
+                    "name": pa.array([name] * len(cellstring_z21), type=pa.string()),
+                    "cell_z21": pa.array(cellstring_z21, type=pa.uint64()),
+                },
+                schema=REGION_CS_SCHEMA,
+            )
+            connection.execute(
+                f"INSERT INTO {cs_schema}.region_cs SELECT * FROM arrow_table"
+            )
+            print(
+                f"Inserted region cellstring(s) (ID: {region_id}, Name: {name}) into DuckDB table"
+            )
+        else:
+            print("No region cells to insert into DuckDB table")
+    except KeyboardInterrupt:
+        print("\nETL interrupted. Shutting down DuckDB connection...")
+        raise SystemExit(130)
+    finally:
+        if connection is not None:
+            try:
+                connection.close()
+                print("DuckDB connection closed.")
+            except Exception as close_error:
+                print("Warning: failed to close DuckDB conn cleanly: " f"{close_error}")
 
     print(
         f"Region ({name}, region_id: {region_id}) uploaded with geometry in '{ls_schema}' and cellstring(s) in '{cs_schema}'."
@@ -169,11 +186,10 @@ def main():
         (
             "medium-large_region_high_traffic",
             [
-              [11.217732760313481, 57.59328938571025],
-              [11.217732760313481, 57.49110293791702],
-              [11.405738229992068, 57.49110293791702],
-              [11.405738229992068, 57.59328938571025],
-              
+                [11.217732760313481, 57.59328938571025],
+                [11.217732760313481, 57.49110293791702],
+                [11.405738229992068, 57.49110293791702],
+                [11.405738229992068, 57.59328938571025],
             ],
         ),
         (
@@ -213,7 +229,7 @@ def main():
                 [10.81773276031348, 57.041102937917024],
                 [11.005738229992067, 57.041102937917024],
                 [11.005738229992067, 57.14328938571025],
-            ]
+            ],
         ),
         (
             "large_region_low_traffic",

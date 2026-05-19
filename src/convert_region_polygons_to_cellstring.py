@@ -23,15 +23,13 @@ def convert_region_polygons_to_cs_postgres():
 
     # Fetch all region polygons from benchmark.region_poly (not already converted)
     cur.execute(
-        sql.SQL(
-            """
+        sql.SQL("""
             SELECT region_poly.region_id, region_poly.name, ST_AsBinary(region_poly.geom)
             FROM {ls_schema}.region_poly as region_poly
             LEFT JOIN {cs_schema}.region_cs AS region_cs ON region_poly.region_id = region_cs.region_id
             WHERE region_cs.region_id IS NULL
             ORDER BY region_poly.region_id;
-        """
-        ).format(
+        """).format(
             ls_schema=sql.Identifier(ls_schema),
             cs_schema=sql.Identifier(cs_schema),
         )
@@ -56,12 +54,10 @@ def convert_region_polygons_to_cs_postgres():
         )
 
         cur.execute(
-            sql.SQL(
-                """
+            sql.SQL("""
                 INSERT INTO {cs_schema}.region_cs (region_id, name, cellstring_z13, cellstring_z17, cellstring_z21)
                 VALUES (%s, %s, %s, %s, %s)
-            """
-            ).format(cs_schema=sql.Identifier(cs_schema)),
+            """).format(cs_schema=sql.Identifier(cs_schema)),
             (region_id, name, cellstring_z13, cellstring_z17, cellstring_z21),
         )
         conn.commit()
@@ -87,15 +83,13 @@ def convert_region_polygons_to_cs_duckdb():
 
     # Fetch all region polygons from region_poly table (not already converted)
     conn.execute("LOAD spatial;")
-    rows = conn.execute(
-        f"""
+    rows = conn.execute(f"""
             SELECT region_poly.region_id, region_poly.name, ST_AsWKB(geom)
             FROM {ls_schema}.region_poly
             LEFT JOIN {cs_schema}.region_cs ON region_poly.region_id = region_cs.region_id
             WHERE region_cs.region_id IS NULL
             ORDER BY region_poly.region_id;
-        """
-    ).fetchall()
+        """).fetchall()
     print(f"Fetched {len(rows)} region polygon(s) from {ls_schema}.region_poly table")
 
     for row in rows:

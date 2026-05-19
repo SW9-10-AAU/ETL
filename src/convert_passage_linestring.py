@@ -78,42 +78,59 @@ def convert_passage_linestring_to_cs_duckdb(linestring: LineString, name: str):
     ls_schema = get_ls_schema("duckdb")
     cs_schema = get_cs_schema("duckdb")
     db_path = get_db_path_or_url("duckdb")
-    conn = duckdb.connect(db_path)
+    connection = None
+    try:
+        connection = duckdb.connect(db_path)
+        print(f"Connected to DuckDB at '{db_path}'.")
 
-    # Insert passage as linestring into table
-    conn.execute("LOAD spatial;")
-    passage_row = conn.execute(
-        f"""INSERT INTO {ls_schema}.passage_ls (name, geom)
-           VALUES (?, ST_GeomFromWKB(?))
-           RETURNING passage_id""",
-        [name, linestring.wkb],
-    ).fetchone()
-    if passage_row is None:
-        raise RuntimeError("Failed to insert passage geometry into DuckDB")
+        # Insert passage as linestring into table
+        connection.execute("LOAD spatial;")
+        passage_row = connection.execute(
+            f"""INSERT INTO {ls_schema}.passage_ls (name, geom)
+            VALUES (?, ST_GeomFromWKB(?))
+            RETURNING passage_id""",
+            [name, linestring.wkb],
+        ).fetchone()
+        if passage_row is None:
+            raise RuntimeError("Failed to insert passage geometry into DuckDB")
 
-    passage_id = int(passage_row[0])
-    print("Inserted passage linestring into DuckDB table")
+        passage_id = int(passage_row[0])
+        print("Inserted passage linestring into DuckDB table")
 
-    print("Converting passage to cellstrings")
-    cellstring_z21 = convert_linestring_to_cellids(linestring, 21)
-    print(f"Conversion succeeded with {len(cellstring_z21)} cells (zoom 21).")
+        print("Converting passage to cellstrings")
+        cellstring_z21 = convert_linestring_to_cellids(linestring, 21)
+        print(f"Conversion succeeded with {len(cellstring_z21)} cells (zoom 21).")
 
-    if cellstring_z21:
-        arrow_table = pa.table(
-            {
-                "passage_id": pa.array(
-                    [passage_id] * len(cellstring_z21), type=pa.int32()
-                ),
-                "name": pa.array([name] * len(cellstring_z21), type=pa.string()),
-                "cell_z21": pa.array(cellstring_z21, type=pa.uint64()),
-            },
-            schema=PASSAGE_CS_SCHEMA,
-        )
-        conn.execute(f"INSERT INTO {cs_schema}.passage_cs SELECT * FROM arrow_table")
-        print("Inserted passage cellstrings into DuckDB table")
-    else:
-        print("No passage cells to insert into DuckDB table")
-    conn.close()
+        if cellstring_z21:
+            arrow_table = pa.table(
+                {
+                    "passage_id": pa.array(
+                        [passage_id] * len(cellstring_z21), type=pa.int32()
+                    ),
+                    "name": pa.array([name] * len(cellstring_z21), type=pa.string()),
+                    "cell_z21": pa.array(cellstring_z21, type=pa.uint64()),
+                },
+                schema=PASSAGE_CS_SCHEMA,
+            )
+            connection.execute(
+                f"INSERT INTO {cs_schema}.passage_cs SELECT * FROM arrow_table"
+            )
+            print("Inserted passage cellstrings into DuckDB table")
+        else:
+            print("No passage cells to insert into DuckDB table")
+    except KeyboardInterrupt:
+        print("\nETL interrupted. Shutting down DuckDB connection...")
+        raise SystemExit(130)
+    finally:
+        if connection is not None:
+            try:
+                connection.close()
+                print("DuckDB connection closed.")
+            except Exception as close_error:
+                print(
+                    "Warning: failed to close DuckDB connection cleanly: "
+                    f"{close_error}"
+                )
 
     print(
         f"Passage ({name}, passage_id: {passage_id}) uploaded with geometry in '{ls_schema}' and cellstrings in '{cs_schema}'."
