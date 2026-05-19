@@ -16,17 +16,23 @@ db_path = get_db_path_or_url("duckdb")
 connection = duckdb.connect(db_path)
 print("Connected to DuckDB")
 
-cache_file = "heatmap_z19_cache.parquet"
+# cache_file = "heatmap_z19_cache.parquet"
+cache_file = "heatmap_z19_top10_cache.parquet"
+
+# img_name = "denmark_ship_traffic_z19"
+img_name = "denmark_ship_traffic_z19_top10"
 
 # 1. Caching Mechanism: Check if Parquet cache exists
 if not os.path.exists(cache_file):
     print("Cache not found. Executing query and writing to Parquet...")
-    query = """
+    query = f"""
     COPY (
         WITH distinct_vessel_cells AS (
             SELECT mmsi, CS_GetParentCell(cell_z21, 21, 19) AS cell_z19 FROM p10_cs.trajectory_cs
+            WHERE mmsi IN (219281000,219437000,248189000,220464000,219435000,636023946,219358000,219115000,636023944,220253000,477552100,219136000,636091995,563076300,219543000,245897000,636024484,266331000,220431000,256800000)
             UNION 
             SELECT mmsi, CS_GetParentCell(cell_z21, 21, 19) AS cell_z19 FROM p10_cs.stop_cs
+            WHERE mmsi IN (219281000,219437000,248189000,220464000,219435000,636023946,219358000,219115000,636023944,220253000,477552100,219136000,636091995,563076300,219543000,245897000,636024484,266331000,220431000,256800000)
         ),
         cell_counts AS (
             SELECT cell_z19, COUNT(mmsi) AS mmsi_count
@@ -39,7 +45,7 @@ if not os.path.exists(cache_file):
             (CS_CellToTileZXY(cell_z19, 19)).x AS tile_x,
             (CS_CellToTileZXY(cell_z19, 19)).y AS tile_y
         FROM cell_counts
-    ) TO 'heatmap_z19_cache.parquet' (FORMAT PARQUET);
+    ) TO '{cache_file}' (FORMAT PARQUET);
     """
     query_start_time = time.perf_counter()
 
@@ -72,32 +78,34 @@ DK_LAT_MIN, DK_LAT_MAX = 52.5, 58.5
 ZOOM = 19
 
 # Calculate Slippy Map bounds
-# Note: Lower latitude results in a higher Y tile index.
 x_min_dk, y_max_dk = lonlat_to_zxy(DK_LON_MIN, DK_LAT_MIN, ZOOM)
 x_max_dk, y_min_dk = lonlat_to_zxy(DK_LON_MAX, DK_LAT_MAX, ZOOM)
 
-# 2. Create the Canvas using standard (min, max) bounds
+# 1. Calculate spatial ranges in Web Mercator tile units
+dx_tiles = x_max_dk - x_min_dk
+dy_tiles = y_max_dk - y_min_dk
+
+# 2. Define a target dimension and calculate the proportional counterpart
+TARGET_WIDTH = 3840
+aspect_ratio = dy_tiles / dx_tiles
+calculated_height = int(TARGET_WIDTH * aspect_ratio)
+
+# 3. Create the Canvas using the proportional dimensions
 cvs = ds.Canvas(
-    plot_width=3840,
-    plot_height=3840,
+    plot_width=TARGET_WIDTH,
+    plot_height=calculated_height,
     x_range=(x_min_dk, x_max_dk),
-    y_range=(y_min_dk, y_max_dk),  # <-- FIXED: Must be strictly (min, max)
+    y_range=(y_min_dk, y_max_dk),
 )
 
-# 3. Aggregate points onto the canvas
+# 4. Aggregate points onto the canvas
 agg = cvs.points(df, "tile_x", "tile_y", ds.sum("mmsi_count"))
 
-# 3b. Invert the Y-axis on the aggregated DataArray
-# Datashader natively places the minimum Y value at the bottom of the image.
-# Reversing the array's Y-axis aligns it with the Slippy Map orientation (North at top).
+# 5. Invert the Y-axis on the aggregated DataArray
 agg = agg[::-1, :]
 
-# 4. Shade the aggregation matrix
+# 6. Shade and Export
 img = tf.shade(agg, cmap=plt.get_cmap("inferno"), how="log")
-
-# 5. Set the background color
 img = tf.set_background(img, "#1a1a1a")
-
-# 6. Export
-export_image(img, "denmark_ship_traffic_z19_datashader", background="#1a1a1a")
-print("Heatmap generated and saved as 'denmark_ship_traffic_z19_datashader.png'")
+export_image(img, img_name, background="#1a1a1a")
+print(f"Heatmap generated and saved as '{img_name}.png'")
