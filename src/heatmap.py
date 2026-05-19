@@ -16,11 +16,11 @@ db_path = get_db_path_or_url("duckdb")
 connection = duckdb.connect(db_path)
 print("Connected to DuckDB")
 
-# cache_file = "heatmap_z19_cache.parquet"
-cache_file = "heatmap_z19_top10_cache.parquet"
+ZOOM = 7
 
-# img_name = "denmark_ship_traffic_z19"
-img_name = "denmark_ship_traffic_z19_top10"
+cache_file = f"heatmap_z{ZOOM}_full_cache.parquet"
+
+img_name = f"denmark_ship_traffic_z{ZOOM}_full"
 
 # 1. Caching Mechanism: Check if Parquet cache exists
 if not os.path.exists(cache_file):
@@ -28,22 +28,22 @@ if not os.path.exists(cache_file):
     query = f"""
     COPY (
         WITH distinct_vessel_cells AS (
-            SELECT mmsi, CS_GetParentCell(cell_z21, 21, 19) AS cell_z19 FROM p10_cs.trajectory_cs
-            WHERE mmsi IN (219281000,219437000,248189000,220464000,219435000,636023946,219358000,219115000,636023944,220253000,477552100,219136000,636091995,563076300,219543000,245897000,636024484,266331000,220431000,256800000)
+            SELECT mmsi, CS_GetParentCell(cell_z21, 21, {ZOOM}) AS cell FROM p10_cs.trajectory_cs
+            -- WHERE mmsi IN (219281000,219437000,248189000,220464000,219435000,636023946,219358000,219115000,636023944,220253000,477552100,219136000,636091995,563076300,219543000,245897000,636024484,266331000,220431000,256800000)
             UNION 
-            SELECT mmsi, CS_GetParentCell(cell_z21, 21, 19) AS cell_z19 FROM p10_cs.stop_cs
-            WHERE mmsi IN (219281000,219437000,248189000,220464000,219435000,636023946,219358000,219115000,636023944,220253000,477552100,219136000,636091995,563076300,219543000,245897000,636024484,266331000,220431000,256800000)
+            SELECT mmsi, CS_GetParentCell(cell_z21, 21, {ZOOM}) AS cell FROM p10_cs.stop_cs
+            -- WHERE mmsi IN (219281000,219437000,248189000,220464000,219435000,636023946,219358000,219115000,636023944,220253000,477552100,219136000,636091995,563076300,219543000,245897000,636024484,266331000,220431000,256800000)
         ),
         cell_counts AS (
-            SELECT cell_z19, COUNT(mmsi) AS mmsi_count
+            SELECT cell, COUNT(mmsi) AS mmsi_count
             FROM distinct_vessel_cells
-            GROUP BY cell_z19
+            GROUP BY cell
         )
         SELECT
-            cell_z19,
+            cell,
             mmsi_count,
-            (CS_CellToTileZXY(cell_z19, 19)).x AS tile_x,
-            (CS_CellToTileZXY(cell_z19, 19)).y AS tile_y
+            (CS_CellToTileZXY(cell, {ZOOM})).x AS tile_x,
+            (CS_CellToTileZXY(cell, {ZOOM})).y AS tile_y
         FROM cell_counts
     ) TO '{cache_file}' (FORMAT PARQUET);
     """
@@ -75,7 +75,6 @@ def lonlat_to_zxy(lon, lat, z):
 # Denmark's approximate bounding box
 DK_LON_MIN, DK_LON_MAX = 1.5, 17.5
 DK_LAT_MIN, DK_LAT_MAX = 52.5, 58.5
-ZOOM = 19
 
 # Calculate Slippy Map bounds
 x_min_dk, y_max_dk = lonlat_to_zxy(DK_LON_MIN, DK_LAT_MIN, ZOOM)
@@ -85,12 +84,12 @@ x_max_dk, y_min_dk = lonlat_to_zxy(DK_LON_MAX, DK_LAT_MAX, ZOOM)
 dx_tiles = x_max_dk - x_min_dk
 dy_tiles = y_max_dk - y_min_dk
 
-# 2. Define a target dimension and calculate the proportional counterpart
+# 2. Render at high resolution, then spread each tile into a visible block
 TARGET_WIDTH = 3840
-aspect_ratio = dy_tiles / dx_tiles
-calculated_height = int(TARGET_WIDTH * aspect_ratio)
+pixels_per_tile = TARGET_WIDTH / max(dx_tiles, 1)
+calculated_height = max(int(TARGET_WIDTH * (dy_tiles / max(dx_tiles, 1))), 1)
 
-# 3. Create the Canvas using the proportional dimensions
+# 3. Create the Canvas using the high-resolution dimensions
 cvs = ds.Canvas(
     plot_width=TARGET_WIDTH,
     plot_height=calculated_height,
@@ -104,8 +103,9 @@ agg = cvs.points(df, "tile_x", "tile_y", ds.sum("mmsi_count"))
 # 5. Invert the Y-axis on the aggregated DataArray
 agg = agg[::-1, :]
 
-# 6. Shade and Export
+# 6. Shade, spread, and export
 img = tf.shade(agg, cmap=plt.get_cmap("inferno"), how="log")
+img = tf.spread(img, px=max(1, int(round(pixels_per_tile / 2))), shape="square")
 img = tf.set_background(img, "#1a1a1a")
 export_image(img, img_name, background="#1a1a1a")
 print(f"Heatmap generated and saved as '{img_name}.png'")
