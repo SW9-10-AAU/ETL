@@ -222,5 +222,6 @@ geojson/
 # Claude
 /.claude/
 
-# Parquet
+# Other files
 *.parquet
+*.png

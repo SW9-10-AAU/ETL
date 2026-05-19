@@ -1,9 +1,12 @@
 import os
 import time
 import duckdb
-import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.colors import LogNorm
+
+import datashader as ds
+from datashader.utils import export_image
+import datashader.transfer_functions as tf
+import matplotlib.pyplot as plt
 
 from db_setup.utils.db_utils import get_db_path_or_url
 
@@ -52,52 +55,31 @@ else:
 print("Loading data for visualization...")
 df = connection.execute(f"SELECT * FROM '{cache_file}'").df()
 
-# 2. Determine bounding box
-x_min, x_max = float(df["tile_x"].min()), float(df["tile_x"].max())
-y_min, y_max = float(df["tile_y"].min()), float(df["tile_y"].max())
+# 1. Define bounding box
+x_min, x_max = df["tile_x"].min(), df["tile_x"].max()
+y_min, y_max = df["tile_y"].min(), df["tile_y"].max()
 
-width = int(x_max - x_min + 1)
-height = int(y_max - y_min + 1)
-
-# 3. Allocate a dense 2D array
-grid = np.full((height, width), np.nan)
-
-# 4. Populate the grid
-y_indices = (df["tile_y"] - y_min).astype(int)
-x_indices = (df["tile_x"] - x_min).astype(int)
-grid[y_indices, x_indices] = df["mmsi_count"]
-
-# 5. Render the heatmap
-fig, ax = plt.subplots(figsize=(14, 12))
-
-im = ax.imshow(
-    grid,
-    cmap="inferno",
-    origin="upper",
-    norm=LogNorm(),
-    extent=(x_min - 0.5, x_max + 0.5, y_max + 0.5, y_min - 0.5),
+# 2. Create the Canvas using standard (min, max) bounds
+cvs = ds.Canvas(
+    plot_width=3840,
+    plot_height=3840,
+    x_range=(x_min, x_max),
+    y_range=(y_min, y_max),  # <-- FIXED: Must be strictly (min, max)
 )
 
-# Formatting
-ax.set_facecolor("#1a1a1a")
-plt.colorbar(im, label="Distinct MMSI Count (Log Scale)", fraction=0.046, pad=0.04)
-plt.title("Ship Traffic Coverage in Denmark (Distinct MMSIs, Z19)", fontsize=14)
-plt.xlabel("Tile X")
-plt.ylabel("Tile Y")
+# 3. Aggregate points onto the canvas
+agg = cvs.points(df, "tile_x", "tile_y", ds.sum("mmsi_count"))
 
-plt.tight_layout()
+# 3b. Invert the Y-axis on the aggregated DataArray
+# Datashader natively places the minimum Y value at the bottom of the image.
+# Reversing the array's Y-axis aligns it with the Slippy Map orientation (North at top).
+agg = agg[::-1, :]
 
-# 6. Export the plot (Must be called before plt.show())
-# Save as PDF for lossless inclusion in LaTeX (ACM format)
-pdf_path = "denmark_ship_traffic_z19.pdf"
-plt.savefig(pdf_path, format="pdf", bbox_inches="tight")
-print(f"Plot exported to {pdf_path}")
+# 4. Shade the aggregation matrix
+img = tf.shade(agg, cmap=plt.get_cmap("inferno"), how="log")
 
-# Save as a high-DPI PNG for standard viewing/presentations
-png_path = "denmark_ship_traffic_z19.png"
-plt.savefig(
-    png_path, format="png", dpi=300, bbox_inches="tight", facecolor=fig.get_facecolor()
-)
-print(f"Plot exported to {png_path}")
+# 5. Set the background color
+img = tf.set_background(img, "#1a1a1a")
 
-plt.show()
+# 6. Export
+export_image(img, "denmark_ship_traffic_z19_datashader", background="#1a1a1a")
