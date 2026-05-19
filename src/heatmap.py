@@ -67,8 +67,8 @@ def lonlat_to_zxy(lon, lat, z):
 
 
 # Denmark's approximate bounding box
-DK_LON_MIN, DK_LON_MAX = 8.0, 15.2
-DK_LAT_MIN, DK_LAT_MAX = 54.5, 57.8
+DK_LON_MIN, DK_LON_MAX = 1.5, 17.5
+DK_LAT_MIN, DK_LAT_MAX = 52.5, 58.5
 ZOOM = 19
 
 # Calculate Slippy Map bounds
