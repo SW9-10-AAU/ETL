@@ -2,6 +2,7 @@ import os
 import time
 import duckdb
 import matplotlib.pyplot as plt
+import math
 
 import datashader as ds
 from datashader.utils import export_image
@@ -55,16 +56,32 @@ else:
 print("Loading data for visualization...")
 df = connection.execute(f"SELECT * FROM '{cache_file}'").df()
 
-# 1. Define bounding box
-x_min, x_max = df["tile_x"].min(), df["tile_x"].max()
-y_min, y_max = df["tile_y"].min(), df["tile_y"].max()
+
+def lonlat_to_zxy(lon, lat, z):
+    """Converts WGS84 lon/lat to Slippy Map XYZ coordinates."""
+    n = 2.0**z
+    x = (lon + 180.0) / 360.0 * n
+    lat_rad = math.radians(lat)
+    y = (1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n
+    return int(x), int(y)
+
+
+# Denmark's approximate bounding box
+DK_LON_MIN, DK_LON_MAX = 8.0, 15.2
+DK_LAT_MIN, DK_LAT_MAX = 54.5, 57.8
+ZOOM = 19
+
+# Calculate Slippy Map bounds
+# Note: Lower latitude results in a higher Y tile index.
+x_min_dk, y_max_dk = lonlat_to_zxy(DK_LON_MIN, DK_LAT_MIN, ZOOM)
+x_max_dk, y_min_dk = lonlat_to_zxy(DK_LON_MAX, DK_LAT_MAX, ZOOM)
 
 # 2. Create the Canvas using standard (min, max) bounds
 cvs = ds.Canvas(
     plot_width=3840,
     plot_height=3840,
-    x_range=(x_min, x_max),
-    y_range=(y_min, y_max),  # <-- FIXED: Must be strictly (min, max)
+    x_range=(x_min_dk, x_max_dk),
+    y_range=(y_min_dk, y_max_dk),  # <-- FIXED: Must be strictly (min, max)
 )
 
 # 3. Aggregate points onto the canvas
@@ -83,3 +100,4 @@ img = tf.set_background(img, "#1a1a1a")
 
 # 6. Export
 export_image(img, "denmark_ship_traffic_z19_datashader", background="#1a1a1a")
+print("Heatmap generated and saved as 'denmark_ship_traffic_z19_datashader.png'")
