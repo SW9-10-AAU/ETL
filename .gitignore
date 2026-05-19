@@ -221,3 +221,6 @@ geojson/
 
 # Claude
 /.claude/
+
+# Parquet
+*.parquet
