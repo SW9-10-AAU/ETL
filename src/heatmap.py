@@ -16,11 +16,26 @@ db_path = get_db_path_or_url("duckdb")
 connection = duckdb.connect(db_path)
 print("Connected to DuckDB")
 
-ZOOM = 7
+ZOOM = 19
+TIME_PERIOD = "full"  # Options: "1d", "7d", "30d", "180d", full
 
-cache_file = f"heatmap_z{ZOOM}_full_cache.parquet"
+START_TIME = "2025-10-01 00:00:00.000"
+END_TIME = "2025-10-02 00:00:00.000"
 
-img_name = f"denmark_ship_traffic_z{ZOOM}_full"
+if TIME_PERIOD == "1d":
+    END_TIME = "2025-10-02 00:00:00.000"
+elif TIME_PERIOD == "7d":
+    END_TIME = "2025-10-08 00:00:00.000"
+elif TIME_PERIOD == "30d":
+    END_TIME = "2025-10-31 00:00:00.000"
+elif TIME_PERIOD == "180d":
+    END_TIME = "2026-03-30 00:00:00.000"
+elif TIME_PERIOD == "full":
+    END_TIME = "2026-04-26 00:00:00.000"
+
+cache_file = f"heatmap_z{ZOOM}_{TIME_PERIOD}_cache.parquet"
+
+img_name = f"denmark_ship_traffic_z{ZOOM}_{TIME_PERIOD}"
 
 # 1. Caching Mechanism: Check if Parquet cache exists
 if not os.path.exists(cache_file):
@@ -30,9 +45,13 @@ if not os.path.exists(cache_file):
         WITH distinct_vessel_cells AS (
             SELECT mmsi, CS_GetParentCell(cell_z21, 21, {ZOOM}) AS cell FROM p10_cs.trajectory_cs
             -- WHERE mmsi IN (219281000,219437000,248189000,220464000,219435000,636023946,219358000,219115000,636023944,220253000,477552100,219136000,636091995,563076300,219543000,245897000,636024484,266331000,220431000,256800000)
+                WHERE ts_entry <= TIMESTAMP '{END_TIME}'
+                AND ts_exit >= TIMESTAMP '{START_TIME}' 
             UNION 
             SELECT mmsi, CS_GetParentCell(cell_z21, 21, {ZOOM}) AS cell FROM p10_cs.stop_cs
             -- WHERE mmsi IN (219281000,219437000,248189000,220464000,219435000,636023946,219358000,219115000,636023944,220253000,477552100,219136000,636091995,563076300,219543000,245897000,636024484,266331000,220431000,256800000)
+                WHERE ts_start <= TIMESTAMP '{END_TIME}'
+                AND ts_end >= TIMESTAMP '{START_TIME}' 
         ),
         cell_counts AS (
             SELECT cell, COUNT(mmsi) AS mmsi_count
