@@ -135,14 +135,14 @@ def try_merge_invalid_merged_stop_with_trajectories(
     traj_max_speed_kn: float,
     traj_max_gap_s: float,
     min_ais_points_in_traj: int,
-):
+) -> int:
     """Insert or merge a non-valid stop with existing trajectories."""
 
     # First, validate the invalid_merged_stop points to ensure no traj with unrealistic speeds/time gaps is created
     for c1, c2 in zip(invalid_merged_stop, invalid_merged_stop[1:]):
         time_diff, _, avg_vessel_speed = compute_motion(c1, c2)
         if avg_vessel_speed > traj_max_speed_kn or time_diff > traj_max_gap_s:
-            return  # Discard the invalid stop
+            return len(invalid_merged_stop)  # Discard the invalid stop
 
     # Used to compare start/end points between stop and trajectories
     first_stop_pt = invalid_merged_stop[0]
@@ -178,21 +178,26 @@ def try_merge_invalid_merged_stop_with_trajectories(
         trajs.pop(
             traj_after_idx if traj_after_idx > traj_before_idx else traj_before_idx + 1
         )
-        return
+        return 0
 
     # Case 2: Stop continues a trajectory (stop starts where a trajectory ends)
     if traj_before_idx is not None:
         trajs[traj_before_idx].extend(invalid_merged_stop)
-        return
+        return 0
 
     # Case 3: Stop precedes a trajectory (stop ends where a trajectory starts)
     if traj_after_idx is not None:
         trajs[traj_after_idx] = invalid_merged_stop + trajs[traj_after_idx]
-        return
+        return 0
 
     # Case 4: No merge possible = treat as new trajectory (if it has enough points)
     if len(invalid_merged_stop) >= min_ais_points_in_traj:
         trajs.append(invalid_merged_stop)
+        return 0
+    else:
+        return len(
+            invalid_merged_stop
+        )  # Discard the invalid stop (not enough points to form a trajectory)
 
 
 def coords_to_linestringm_as_wkb(coords: list[Coord]) -> bytes:

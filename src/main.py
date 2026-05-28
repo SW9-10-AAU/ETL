@@ -1,6 +1,7 @@
 import math
 import os
 import sys
+import time
 
 from db_setup.utils.db_utils import (
     get_ais_data_path,
@@ -138,19 +139,33 @@ def main_duckdb():
         if should_run_step(
             "ETL_CONSTRUCT", "Do you want to construct trajectories and stops?"
         ):
+            start_time = time.perf_counter()
             construct_trajectories_and_stops(
                 connection, ls_schema, ls_schema, num_workers
+            )
+            end_time = time.perf_counter()
+            print(
+                f"Trajectory/stop construction completed in {end_time - start_time:.2f} seconds."
             )
 
         if should_run_step(
             "ETL_TRANSFORM",
             "Do you want to transform trajectories/stops to CellStrings?",
         ):
+            start_time = time.perf_counter()
             transform_ls_trajectories_to_cs(
                 connection, ls_schema, cs_schema, num_workers, batch_size=3000
             )
+            print(
+                f"Trajectory transformation completed in {time.perf_counter() - start_time:.2f} seconds. Starting stop transformation..."
+            )
+            start_time = time.perf_counter()
             transform_poly_stops_to_cs(
                 connection, ls_schema, cs_schema, num_workers, batch_size=3000
+            )
+            end_time = time.perf_counter()
+            print(
+                f"Stop transformation completed in {end_time - start_time:.2f} seconds."
             )
     except KeyboardInterrupt:
         print("\nETL interrupted. Shutting down DuckDB connection...")

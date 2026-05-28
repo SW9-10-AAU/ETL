@@ -159,6 +159,7 @@ def construct_trajectories_and_stops(
     )
 
     total_mmsis_processed = 0
+    total_points_discarded = 0
     for day_num, point_day in enumerate(processing_days, start=1):
         day_start_time = time.perf_counter()
         day_mmsis = get_mmsis_duckdb(conn, points_schema, point_day, latest_ts)
@@ -166,7 +167,7 @@ def construct_trajectories_and_stops(
             continue
 
         print(
-            f"\n=== Procesing batch {day_num}/{len(processing_days)}: {point_day.isoformat()} ({len(day_mmsis)} MMSIs: {day_mmsis[0]} to {day_mmsis[-1]}) ==="
+            f"\n=== Processing batch {day_num}/{len(processing_days)}: {point_day.isoformat()} ({len(day_mmsis)} MMSIs: {day_mmsis[0]} to {day_mmsis[-1]}) ==="
         )
 
         batch_start_time = time.perf_counter()
@@ -198,9 +199,10 @@ def construct_trajectories_and_stops(
             for future in as_completed(futures):
                 mmsi = futures[future]
                 try:
-                    mmsi, trajs, stops = future.result()
+                    mmsi, trajs, stops, points_discarded = future.result()
                     trajs_to_insert.extend(trajs)
                     stops_to_insert.extend(stops)
+                    total_points_discarded += points_discarded
                 except Exception as e:
                     print(f"Error processing MMSI {mmsi}: {e}")
                     continue
@@ -280,5 +282,5 @@ def construct_trajectories_and_stops(
     total_time = time.perf_counter() - start_time
     print("\nAll MMSIs processed.")
     print(
-        f"Total time: {total_time/60:.2f} min | Avg per MMSI: {total_time/max(total_mmsis_processed, 1):.2f}s"
+        f"Total time: {total_time/60:.2f} min | Avg per MMSI: {total_time/max(total_mmsis_processed, 1):.2f}s | Total points discarded: {total_points_discarded:,}"
     )

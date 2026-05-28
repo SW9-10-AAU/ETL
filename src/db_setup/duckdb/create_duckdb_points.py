@@ -272,8 +272,14 @@ def create_duckdb_points(
     inserted_points = _insert_incremental_points(conn, db_schema)
 
     _log_loaded_files(conn, db_schema, selected_files)
+    parquet_points_row = conn.execute(
+        f"SELECT COUNT(*) FROM {TEMP_AIS_STAGE}"
+    ).fetchone()
+    parquet_points_count = parquet_points_row[0] if parquet_points_row else 0
     conn.execute(f"DROP TABLE IF EXISTS {TEMP_AIS_STAGE};")
 
+    points_filtered_away = parquet_points_count - inserted_points
+
     print(
-        f"{inserted_points:,} new points inserted from {len(selected_files)} files in {time.perf_counter() - start_time:.2f}s."
+        f"{inserted_points:,} new points (parquet points: {parquet_points_count:,}, filtered away {points_filtered_away:,} points {points_filtered_away / parquet_points_count if parquet_points_count else 0:.2%}) inserted from {len(selected_files)} files in {time.perf_counter() - start_time:.2f}s."
     )

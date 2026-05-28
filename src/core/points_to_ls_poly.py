@@ -39,8 +39,8 @@ AISPoint = tuple[Coord, float | None]  # (coord, sog)
 Traj = tuple[int, int, int, bytes]  # (mmsi, ts_start, ts_end, geom as WKB)
 Stop = tuple[int, int, int, bytes]  # (mmsi, ts_start, ts_end, geom as WKB)
 ProcessResult = tuple[
-    int, list[Traj], list[Stop]
-]  # (mmsi, trajs_to_insert, stops_to_insert)
+    int, list[Traj], list[Stop], int
+]  # (mmsi, trajs_to_insert, stops_to_insert, points_discarded)
 
 AISPointRow = tuple[int, bytes, float | None]  # (mmsi, geom as WKB, sog)
 DictInputPoint = dict[
@@ -51,10 +51,12 @@ DictInputPoint = dict[
 def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessResult:
     """
     Process the points of a single MMSI - constructs trajectories and stops.
-    Returns (mmsi, trajs_to_insert, stops_to_insert).
+    Returns (mmsi, trajs_to_insert, stops_to_insert, points_discarded).
     """
+    points_discarded = 0
+
     if not input_points:
-        return (mmsi, [], [])
+        return (mmsi, [], [], points_discarded)
 
     start_total = time.perf_counter()
     start_phase1 = time.perf_counter()
@@ -105,6 +107,7 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
 
         # Skip points that have identical timestamps
         if current_time == prev_coord[2]:
+            points_discarded += 1
             continue
 
         # Compute differences between previous and current point
@@ -139,6 +142,7 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
                         candidate_trajs, current_traj
                     )
             else:
+                points_discarded += 1
                 continue  # Don't update previous point to the skewed AIS point
 
             # Append candidate stop (if any)
@@ -203,7 +207,7 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
 
         start_fallback = time.perf_counter()
         # Phase 4.2: Fallback - Try to merge invalid merged stop with trajectories
-        try_merge_invalid_merged_stop_with_trajectories(
+        points_discarded += try_merge_invalid_merged_stop_with_trajectories(
             trajs=candidate_trajs,
             invalid_merged_stop=merged_stop,
             traj_max_speed_kn=TRAJ_MAX_SPEED_KN,
@@ -228,6 +232,8 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
                 (mmsi, ts_start, ts_end, coords_to_linestringm_as_wkb(trajectory))
             )
             time_linestringm += time.perf_counter() - start_linestringm
+        else:
+            points_discarded += len(trajectory)
 
     time_phase5 = time.perf_counter() - start_phase5
 
@@ -237,4 +243,4 @@ def process_single_mmsi(mmsi: int, input_points: list[InputPoint]) -> ProcessRes
     #     f"[MMSI: {mmsi}] ({len(points)} points, {len(trajs_to_insert)} trajectories, {len(stops_to_insert)} stops) processed in {total_time:.2f}s ([1]={time_phase1:.2f}s, [2]={time_phase2:.2f}s, [3]={time_phase3:.2f}s, [4]={time_phase4:.2f}s, [4.1]={time_concave_hull:.2f}s, [4.2]={time_merge_stops_with_trajs:.2f}s, [5]={time_phase5:.2f}s)"
     # )
 
-    return (mmsi, trajs_to_insert, stops_to_insert)
+    return (mmsi, trajs_to_insert, stops_to_insert, points_discarded)
