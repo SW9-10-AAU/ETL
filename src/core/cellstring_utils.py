@@ -135,6 +135,41 @@ def linecover(
     return cells_with_time
 
 
+def polycover(
+    poly: Polygon | MultiPolygon,
+    zoom_target: int = DEFAULT_ZOOM,
+    zoom_init: int = 13,
+    zoom_step: int = 4,
+) -> list[int]:
+    if poly.is_empty:
+        return []
+
+    cellstring: list[int] = []
+
+    minx, miny, maxx, maxy = poly.bounds
+    tiles = list(mercantile.tiles(minx, miny, maxx, maxy, zoom_init))
+
+    while tiles:
+        tile = tiles.pop(0)
+        bounds = mercantile.bounds(tile)
+        tile_poly = box(bounds.west, bounds.south, bounds.east, bounds.north)
+
+        if tile.z == zoom_target:
+            if poly.intersects(tile_poly):
+                cellstring.append(xyz_to_quadkey_int(zoom_target, tile.x, tile.y))
+        else:
+            if poly.contains(tile_poly):
+                child_tiles = get_all_children_at_zoom(tile, zoom_target)
+                for child in child_tiles:
+                    cellstring.append(xyz_to_quadkey_int(zoom_target, child.x, child.y))
+            elif poly.intersects(tile_poly):
+                zoom_next = min(tile.z + zoom_step, zoom_target)
+                child_tiles = get_all_children_at_zoom(tile, zoom_next)
+                tiles.extend(child_tiles)
+
+    return cellstring
+
+
 def classify_tile_containment(
     poly: Polygon | MultiPolygon, tile: mercantile.Tile
 ) -> Classification:
