@@ -1,9 +1,11 @@
+from collections import deque
 import math
 from enum import Enum
 
 import mercantile
 from shapely import LineString, Polygon, MultiPolygon, box
 
+from shapely.prepared import prep
 from ukc_core.quadkey_utils import quadkey_to_int, zxy_to_quadkey
 
 
@@ -145,24 +147,25 @@ def polycover(
         return []
 
     cellstring: list[int] = []
+    prepared_poly = prep(poly)
 
     minx, miny, maxx, maxy = poly.bounds
-    tiles = list(mercantile.tiles(minx, miny, maxx, maxy, zoom_init))
+    tiles = deque(mercantile.tiles(minx, miny, maxx, maxy, zoom_init))
 
     while tiles:
-        tile = tiles.pop(0)
+        tile = tiles.popleft()
         bounds = mercantile.bounds(tile)
         tile_poly = box(bounds.west, bounds.south, bounds.east, bounds.north)
 
         if tile.z == zoom_target:
-            if poly.intersects(tile_poly):
+            if prepared_poly.intersects(tile_poly):
                 cellstring.append(xyz_to_quadkey_int(zoom_target, tile.x, tile.y))
         else:
-            if poly.contains(tile_poly):
+            if prepared_poly.contains(tile_poly):
                 child_tiles = get_all_children_at_zoom(tile, zoom_target)
                 for child in child_tiles:
                     cellstring.append(xyz_to_quadkey_int(zoom_target, child.x, child.y))
-            elif poly.intersects(tile_poly):
+            elif prepared_poly.intersects(tile_poly):
                 zoom_next = min(tile.z + zoom_step, zoom_target)
                 child_tiles = get_all_children_at_zoom(tile, zoom_next)
                 tiles.extend(child_tiles)
