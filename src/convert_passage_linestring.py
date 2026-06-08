@@ -1,3 +1,5 @@
+import time
+
 from shapely import LineString
 
 from core.ls_poly_to_cs import convert_linestring_to_cellids
@@ -97,9 +99,12 @@ def convert_passage_linestring_to_cs_duckdb(linestring: LineString, name: str):
         passage_id = int(passage_row[0])
         print("Inserted passage linestring into DuckDB table")
 
-        print("Converting passage to cellstrings")
+        print("Converting passage to cellstring")
+        start_time = time.perf_counter()
         cellstring_z21 = convert_linestring_to_cellids(linestring, 21)
-        print(f"Conversion succeeded with {len(cellstring_z21)} cells (zoom 21).")
+        print(
+            f"Conversion succeeded with {len(cellstring_z21)} cells (zoom 21) in {time.perf_counter() - start_time:.2f} seconds."
+        )
 
         if cellstring_z21:
             arrow_table = pa.table(
