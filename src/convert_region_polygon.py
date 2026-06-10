@@ -1,4 +1,7 @@
+import time
+
 from shapely import Polygon, MultiPolygon
+from core.cellstring_utils import polycover
 from db_setup.utils.db_utils import (
     get_cs_schema,
     get_db_backend,
@@ -114,11 +117,12 @@ def convert_region_polygon_to_cs_duckdb(
             f"Inserted region polygon (ID: {region_id}, Name: {name}) into DuckDB table"
         )
 
-        print("Converting polygon to cellstring(s)")
-        _, _, cellstring_z21 = convert_polygon_to_cellstrings(
-            polygon, skip_z21=skip_z21
+        start_time = time.perf_counter()
+        print("Converting polygon to cellstring")
+        cellstring_z21 = polycover(polygon, 21)
+        print(
+            f"Conversion succeeded with {len(cellstring_z21)} cells (zoom 21) in {time.perf_counter() - start_time:.2f} seconds."
         )
-        print(f"Conversion succeeded with {len(cellstring_z21)} cells (zoom 21).")
 
         if cellstring_z21:
             arrow_table = pa.table(

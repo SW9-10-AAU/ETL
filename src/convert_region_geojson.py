@@ -64,7 +64,9 @@ def convert_region_geojson_to_cs(geojson_path: str, name: str, skip_z21: bool = 
             f"MultiPolygon contains {num_polygons} polygon(s) with {total_points} total points"
         )
         if db_backend == "postgresql":
-            convert_region_polygon_to_cs_postgresql(multiPolygon, name, skip_z21=skip_z21)
+            convert_region_polygon_to_cs_postgresql(
+                multiPolygon, name, skip_z21=skip_z21
+            )
         elif db_backend == "duckdb":
             convert_region_polygon_to_cs_duckdb(multiPolygon, name, skip_z21=skip_z21)
     else:

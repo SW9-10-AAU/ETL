@@ -1,9 +1,11 @@
+from collections import deque
 import math
 from enum import Enum
 
 import mercantile
 from shapely import LineString, Polygon, MultiPolygon, box
 
+from shapely.prepared import prep
 from ukc_core.quadkey_utils import quadkey_to_int, zxy_to_quadkey
 
 
@@ -67,15 +69,16 @@ def linecover(
     prev_cell_id: int | None = None
 
     coords = list(ls.coords)
+    has_m = len(coords[0]) > 2  # Check if the LineString has M values for timestamps
+
     for i in range(len(coords) - 1):
         x0_f, y0_f = _point_to_tile_fraction(coords[i][0], coords[i][1], zoom)
         x1_f, y1_f = _point_to_tile_fraction(coords[i + 1][0], coords[i + 1][1], zoom)
 
         segment_cells: list[int] = []
 
-        has_z = len(coords[i]) > 2 and len(coords[i + 1]) > 2
-        ts_segment_start = int(coords[i][2]) if has_z else 0
-        ts_segment_end = int(coords[i + 1][2]) if has_z else 0
+        ts_segment_start = int(coords[i][2]) if has_m else 0
+        ts_segment_end = int(coords[i + 1][2]) if has_m else 0
 
         dx = x1_f - x0_f
         dy = y1_f - y0_f
@@ -115,24 +118,57 @@ def linecover(
         # Linear interpolation of timestamps across all cells in this segment
         num_cells = len(segment_cells)
         for idx, cell_id in enumerate(segment_cells):
-            if (
-                num_cells == 1
-            ):  # If the start and end points are in the same cell, we duplicate the cell, but with different timestamps
-                if cell_id != prev_cell_id:
-                    cells_with_time.append((cell_id, ts_segment_start))
-                    prev_cell_id = cell_id
-                continue  # Important to skip the rest of the loop
+            timestamp: int = 0
+            if num_cells == 1:
+                # If the start and end points are in the same cell, we assign the start timestamp to that cell
+                timestamp = ts_segment_start
             else:
-                # Linear interpolation: first cell gets ts0, last cell gets ts1
+                # Linear time interpolation
                 progress = idx / (num_cells - 1)
-                interpolated_ts = round(
+                timestamp = round(
                     ts_segment_start + progress * (ts_segment_end - ts_segment_start)
                 )
             if cell_id != prev_cell_id:
-                cells_with_time.append((cell_id, interpolated_ts))
+                cells_with_time.append((cell_id, timestamp))
                 prev_cell_id = cell_id
 
     return cells_with_time
+
+
+def polycover(
+    poly: Polygon | MultiPolygon,
+    zoom_target: int = DEFAULT_ZOOM,
+    zoom_init: int = 13,
+    zoom_step: int = 4,
+) -> list[int]:
+    if poly.is_empty:
+        return []
+
+    cellstring: list[int] = []
+    prepared_poly = prep(poly)
+
+    minx, miny, maxx, maxy = poly.bounds
+    tiles = deque(mercantile.tiles(minx, miny, maxx, maxy, zoom_init))
+
+    while tiles:
+        tile = tiles.popleft()
+        bounds = mercantile.bounds(tile)
+        tile_poly = box(bounds.west, bounds.south, bounds.east, bounds.north)
+
+        if tile.z == zoom_target:
+            if prepared_poly.intersects(tile_poly):
+                cellstring.append(xyz_to_quadkey_int(zoom_target, tile.x, tile.y))
+        else:
+            if prepared_poly.contains(tile_poly):
+                child_tiles = get_all_children_at_zoom(tile, zoom_target)
+                for child in child_tiles:
+                    cellstring.append(xyz_to_quadkey_int(zoom_target, child.x, child.y))
+            elif prepared_poly.intersects(tile_poly):
+                zoom_next = min(tile.z + zoom_step, zoom_target)
+                child_tiles = get_all_children_at_zoom(tile, zoom_next)
+                tiles.extend(child_tiles)
+
+    return cellstring
 
 
 def classify_tile_containment(
